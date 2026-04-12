@@ -2,7 +2,7 @@
  * cannon-es physics world wrapper.
  */
 
-import { World } from "cannon-es";
+import { SAPBroadphase, World } from "cannon-es";
 
 export class PhysicsWorld {
 	readonly world: World;
@@ -28,5 +28,3 @@ export class PhysicsWorld {
 		}
 	}
 }
-
-import { SAPBroadphase } from "cannon-es";

@@ -207,7 +207,7 @@ See [`docs/research/NETWORKING_RESEARCH.md`](research/NETWORKING_RESEARCH.md) fo
 - [ ] Drift angle detection and scoring
 - [ ] Canvas-based skid marks
 - [ ] Tire smoke particles
-- [ ] Engine sound (Tone.js)
+- [ ] Engine sound (Web Audio API — see docs/AUDIO_TODO.md)
 
 ### Phase 3: Track & Race (Days 3-4)
 - [ ] Checkpoint/gate system for lap counting
@@ -268,7 +268,7 @@ game/
 │   │   │   ├── HostRelay.ts         ← Host relay logic
 │   │   │   └── ClientSync.ts        ← Client state interpolation
 │   │   ├── audio/
-│   │   │   └── AudioManager.ts      ← Tone.js audio
+│   │   │   └── AudioManager.ts      ← Web Audio API (postponed)
 │   │   ├── effects/
 │   │   │   ├── SkidMarks.ts         ← Canvas skid marks
 │   │   │   ├── ParticleSystem.ts    ← Tire smoke particles
@@ -287,9 +287,17 @@ game/
 │       ├── constants.ts             ← Physics constants, tuning params
 │       └── types.ts                 ← Shared type definitions
 ├── public/
+│   ├── models/cars/                ← Car GLBs (Kenney karts + circuit-rush)
 │   └── assets/
-│       ├── kenney-car-kit/          ← Kenney vehicle models (GLB)
-│       └── kenney-racing-kit/       ← Kenney racing track pieces (GLB)
+│       ├── kenney-car-kit/          ← Full Kenney vehicle pack (GLB)
+│       └── kenney-racing-kit/       ← Full Kenney racing pack (GLB)
+├── .github/workflows/ci.yml        ← GitHub Actions (typecheck + biome + build)
+├── .husky/pre-commit               ← Pre-commit hook (biome + tsc)
+├── Dockerfile                      ← Multi-stage Bun → nginx
+├── compose.yaml                    ← Docker Compose (production + dev)
+├── nginx.conf                      ← SPA routing for production
+├── .nvmrc                          ← Node 22
+├── CONTRIBUTING.md                 ← Dev workflow guide
 ├── index.html
 ├── package.json
 ├── biome.json
@@ -301,10 +309,11 @@ game/
 
 ## Related Documents
 
-- **Parent research:** [`../../RESEARCH.md`](../../RESEARCH.md) — Original deep research
-- **Repo analysis:** [`../../ANALYSIS.md`](../../ANALYSIS.md) — Full repo-by-repo analysis
-- **Source index:** [`../../SOURCES.md`](../../SOURCES.md) — All reference file locations
+- **Audio TODO:** [`docs/AUDIO_TODO.md`](AUDIO_TODO.md) — What's missing, where to get it
 - **Architecture:** [`docs/architecture.md`](architecture.md) — System architecture details
 - **Physics:** [`docs/research/PHYSICS_RESEARCH.md`](research/PHYSICS_RESEARCH.md) — Physics deep dive
 - **Networking:** [`docs/research/NETWORKING_RESEARCH.md`](research/NETWORKING_RESEARCH.md) — Networking deep dive
+- **Audio research:** [`docs/research/AUDIO_RESEARCH.md`](research/AUDIO_RESEARCH.md) — Engine sound synthesis
 - **Engine comparison:** [`docs/research/ENGINE_COMPARISON.md`](research/ENGINE_COMPARISON.md) — Why Three.js
+- **Asset index:** [`docs/assets/INDEX.md`](assets/INDEX.md) — Complete asset inventory
+- **Contributing:** [`CONTRIBUTING.md`](../CONTRIBUTING.md) — How to work on this project
