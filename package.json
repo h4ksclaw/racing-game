@@ -1,0 +1,35 @@
+{
+	"name": "racing-game",
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"dev:server": "bun run src/server/index.ts",
+		"build": "tsc --noEmit && vite build",
+		"preview": "vite preview",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"format": "biome format --write .",
+		"typecheck": "tsc --noEmit",
+		"prepare": "husky"
+	},
+	"lint-staged": {
+		"*.{ts,tsx}": [
+			"biome check --write",
+			"biome format --write"
+		]
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.11",
+		"@types/express": "^5.0.6",
+		"@types/node": "^25.6.0",
+		"@types/three": "^0.183.1",
+		"typescript": "^6.0.2"
+	},
+	"dependencies": {
+		"cannon-es": "^0.20.0",
+		"express": "^5.2.1",
+		"peerjs": "^1.5.5",
+		"three": "^0.183.2"
+	}
+}

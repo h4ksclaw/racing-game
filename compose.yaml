@@ -1,0 +1,16 @@
+services:
+  game:
+    build: .
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+
+  dev:
+    build:
+      target: install
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: bun run dev
