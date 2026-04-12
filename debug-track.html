@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Track Generator Debug</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; font-family: 'Courier New', monospace; color: #eee; }
+canvas { display: block; }
+
+#ui {
+  position: absolute; top: 12px; left: 12px; z-index: 10;
+  background: rgba(0,0,0,0.75); padding: 14px 18px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  backdrop-filter: blur(8px);
+  min-width: 260px;
+}
+#ui h1 { font-size: 14px; margin-bottom: 10px; color: #8be9fd; text-transform: uppercase; letter-spacing: 2px; }
+.row { display: flex; align-items: center; justify-content: space-between; margin: 6px 0; font-size: 12px; }
+.row label { color: #aaa; }
+.row input[type=number] { width: 70px; background: #333; border: 1px solid #555; color: #fff; padding: 3px 6px; border-radius: 4px; font-family: inherit; font-size: 12px; }
+.row input[type=range] { width: 100px; accent-color: #8be9fd; }
+.row span.val { color: #8be9fd; min-width: 30px; text-align: right; }
+button {
+  margin-top: 10px; padding: 6px 14px; background: #8be9fd; color: #1a1a2e;
+  border: none; border-radius: 4px; font-family: inherit; font-weight: bold;
+  font-size: 12px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px;
+  width: 100%;
+}
+button:hover { background: #a4e8ff; }
+#info {
+  position: absolute; bottom: 12px; left: 12px; z-index: 10;
+  background: rgba(0,0,0,0.75); padding: 10px 14px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: #aaa;
+  backdrop-filter: blur(8px);
+}
+#info .stat { margin: 2px 0; }
+#info .stat span { color: #8be9fd; }
+#controls-hint {
+  position: absolute; bottom: 12px; right: 12px; z-index: 10;
+  background: rgba(0,0,0,0.75); padding: 10px 14px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: #666;
+  backdrop-filter: blur(8px);
+}
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h1>🏁 Track Generator</h1>
+  <div class="row"><label>Seed</label><input type="number" id="seed" value="42" min="0" max="99999"></div>
+  <div class="row"><label>Control Points</label><input type="number" id="numPoints" value="14" min="6" max="24"></div>
+  <div class="row"><label>Track Width</label><span class="val" id="widthVal">12</span><input type="range" id="trackWidth" min="8" max="18" value="12" step="1"></div>
+  <div class="row"><label>Elevation</label><span class="val" id="elevVal">40</span><input type="range" id="elevation" min="0" max="80" value="40" step="5"></div>
+  <div class="row"><label>Tightness</label><span class="val" id="tightVal">5</span><input type="range" id="tightness" min="1" max="10" value="5" step="1"></div>
+  <div class="row"><label>Downhill Bias</label><span class="val" id="downhillVal">60</span><input type="range" id="downhillBias" min="0" max="100" value="60" step="5"></div>
+  <button id="generate">⟳ Generate</button>
+  <button id="random" style="background:#bd93f9; margin-top:4px;">🎲 Random Seed</button>
+</div>
+
+<div id="info"></div>
+
+<div id="controls-hint">
+  LMB: rotate · RMB: pan · Scroll: zoom · Middle: reset view
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
+// ─── Seeded PRNG (mulberry32) ───
+function mulberry32(seed) {
+  let s = seed | 0;
+  return function() {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ─── 1D Value Noise ───
+function createNoise(rng) {
+  const perm = new Uint8Array(512);
+  for (let i = 0; i < 256; i++) perm[i] = i;
+  for (let i = 255; i > 0; i--) {
+    const j = (rng() * (i + 1)) | 0;
+    [perm[i], perm[j]] = [perm[j], perm[i]];
+  }
+  for (let i = 0; i < 256; i++) perm[i + 256] = perm[i];
+
+  function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+  function lerp(a, b, t) { return a + t * (b - a); }
+  function grad(hash, x) { return (hash & 1) === 0 ? x : -x; }
+
+  return function noise1D(x) {
+    const xi = Math.floor(x) & 255;
+    const xf = x - Math.floor(x);
+    const u = fade(xf);
+    return lerp(grad(perm[xi], xf), grad(perm[xi + 1], xf - 1), u);
+  };
+}
+
+// ─── Track Generator ───
+class TrackGen {
+  constructor(seed, opts = {}) {
+    this.seed = seed;
+    this.opts = { ...opts };
+  }
+
+  generate() {
+    const rng = mulberry32(this.seed);
+    const noise = createNoise(rng);
+
+    const numPts = this.opts.numPoints || 14;
+    const tightness = this.opts.tightness || 5;
+    const elevationAmp = this.opts.elevation || 40;
+    const downhillBias = (this.opts.downhillBias || 60) / 100;
+
+    // ─── Step 1: Generate control points on a deformed circle ───
+    const baseRadius = 350 + (10 - tightness) * 50;
+    const controlPoints2D = [];
+
+    for (let i = 0; i < numPts; i++) {
+      const baseAngle = (i / numPts) * Math.PI * 2;
+      const radiusJitter = (rng() * 2 - 1) * baseRadius * 0.35;
+      const angleJitter = (rng() * 2 - 1) * (Math.PI * 2 / numPts) * 0.4;
+      const r = baseRadius + radiusJitter;
+      const a = baseAngle + angleJitter;
+      controlPoints2D.push({ x: Math.cos(a) * r, z: Math.sin(a) * r });
+    }
+
+    // Smooth to reduce extreme jitter
+    for (let pass = 0; pass < 2; pass++) {
+      const smoothed = [];
+      for (let i = 0; i < numPts; i++) {
+        const prev = controlPoints2D[(i - 1 + numPts) % numPts];
+        const curr = controlPoints2D[i];
+        const next = controlPoints2D[(i + 1) % numPts];
+        smoothed.push({
+          x: curr.x * 0.6 + (prev.x + next.x) * 0.2,
+          z: curr.z * 0.6 + (prev.z + next.z) * 0.2,
+        });
+      }
+      for (let i = 0; i < numPts; i++) controlPoints2D[i] = smoothed[i];
+    }
+
+    // ─── Step 2: Create 3D control points with elevation ───
+    const controlPoints3D = controlPoints2D.map((p, i) => {
+      const t = i / numPts;
+      let elevBias;
+      if (t < 0.7) {
+        elevBias = -t * downhillBias;
+      } else {
+        const climbT = (t - 0.7) / 0.3;
+        elevBias = -0.7 * downhillBias + climbT * 0.7 * downhillBias;
+      }
+      const noiseVal = noise(t * 3 + this.seed * 0.01) * 2 - 1;
+      const y = elevBias * elevationAmp + noiseVal * elevationAmp * 0.3;
+      return new THREE.Vector3(p.x, y, p.z);
+    });
+
+    // ─── Step 3: Create closed CatmullRom spline ───
+    const curve = new THREE.CatmullRomCurve3(controlPoints3D, true, 'catmullrom', 0.5);
+
+    // ─── Step 4: Sample the curve densely ───
+    const numSamples = Math.max(500, Math.round(curve.getLength() * 0.5));
+    const sampledPoints = curve.getPoints(numSamples);
+    const tangents = [];
+    for (let i = 0; i < sampledPoints.length; i++) {
+      tangents.push(curve.getTangent(i / sampledPoints.length));
+    }
+
+    // ─── Step 5: Build road mesh ───
+    const width = this.opts.width || 12;
+    const shoulderWidth = 2;
+    const kerbWidth = 0.8;
+    const up = new THREE.Vector3(0, 1, 0);
+
+    // Compute per-sample data
+    const samples = sampledPoints.map((point, i) => {
+      const tangent = tangents[i];
+      const binormal = new THREE.Vector3().crossVectors(tangent, up);
+      if (binormal.lengthSq() < 0.001) binormal.set(1, 0, 0);
+      binormal.normalize();
+      const halfW = width / 2;
+      return {
+        left: point.clone().add(binormal.clone().multiplyScalar(-halfW)),
+        right: point.clone().add(binormal.clone().multiplyScalar(halfW)),
+        kerbLeft: point.clone().add(binormal.clone().multiplyScalar(-(halfW + kerbWidth))),
+        kerbRight: point.clone().add(binormal.clone().multiplyScalar(halfW + kerbWidth)),
+        grassLeft: point.clone().add(binormal.clone().multiplyScalar(-(halfW + kerbWidth + shoulderWidth))),
+        grassRight: point.clone().add(binormal.clone().multiplyScalar(halfW + kerbWidth + shoulderWidth)),
+        binormal,
+        tangent,
+        point,
+      };
+    });
+
+    // Road geometry
+    const roadVerts = [];
+    const roadIndices = [];
+    const kerbVerts = [];
+    const kerbIndices = [];
+    const grassVerts = [];
+    const grassIndices = [];
+
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i];
+      roadVerts.push(s.left.x, s.left.y + 0.02, s.left.z, s.right.x, s.right.y + 0.02, s.right.z);
+      kerbVerts.push(
+        s.left.x, s.left.y + 0.03, s.left.z,
+        s.kerbLeft.x, s.kerbLeft.y + 0.03, s.kerbLeft.z,
+        s.right.x, s.right.y + 0.03, s.right.z,
+        s.kerbRight.x, s.kerbRight.y + 0.03, s.kerbRight.z,
+      );
+      grassVerts.push(
+        s.kerbLeft.x, s.kerbLeft.y + 0.01, s.kerbLeft.z,
+        s.grassLeft.x, s.grassLeft.y + 0.01, s.grassLeft.z,
+        s.kerbRight.x, s.kerbRight.y + 0.01, s.kerbRight.z,
+        s.grassRight.x, s.grassRight.y + 0.01, s.grassRight.z,
+      );
+
+      const next = (i + 1) % samples.length;
+      const ni = next;
+
+      // Road: 2 verts per sample, triangle strip
+      const rb = i * 2;
+      roadIndices.push(rb, rb + 1, rb + 2, rb + 1, rb + 3, rb + 2);
+
+      // Kerb: 4 verts per sample
+      const kb = i * 4;
+      kerbIndices.push(kb, kb + 1, kb + 4, kb + 1, kb + 5, kb + 4);
+      kerbIndices.push(kb + 2, kb + 6, kb + 3, kb + 3, kb + 6, kb + 7);
+
+      // Grass: 4 verts per sample
+      const gb = i * 4;
+      grassIndices.push(gb, gb + 1, gb + 4, gb + 1, gb + 5, gb + 4);
+      grassIndices.push(gb + 2, gb + 6, gb + 3, gb + 3, gb + 6, gb + 7);
+    }
+
+    // ─── Step 6: Center line dashes ───
+    const centerVerts = [];
+    const centerIndices = [];
+    const dashLen = 4;
+    const gapLen = 3;
+    const totalDash = dashLen + gapLen;
+    const dashHalfW = 0.15;
+    let dashPhase = 0;
+    let dashOn = false;
+    let dashVertCount = 0;
+
+    for (let i = 0; i < samples.length; i++) {
+      const next = (i + 1) % samples.length;
+      const segLen = samples[i].point.distanceTo(samples[next].point);
+      dashPhase += segLen;
+
+      const wasOn = dashOn;
+      dashOn = (dashPhase % totalDash) < dashLen;
+
+      if (dashOn) {
+        const s = samples[i];
+        const bn = s.binormal;
+        centerVerts.push(
+          s.point.x + bn.x * dashHalfW, s.point.y + 0.05, s.point.z + bn.z * dashHalfW,
+          s.point.x - bn.x * dashHalfW, s.point.y + 0.05, s.point.z - bn.z * dashHalfW,
+        );
+        dashVertCount++;
+        if (dashVertCount >= 2) {
+          const base = (dashVertCount - 2) * 2;
+          centerIndices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+        }
+      }
+    }
+
+    // ─── Step 7: Start/finish checkers ───
+    const checkerVerts = [];
+    const checkerIndices = [];
+    const sf = samples[0];
+    const checkerSize = 1.0;
+    const numCheckers = Math.ceil(width / checkerSize);
+
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < numCheckers; col++) {
+        const offset = (col - numCheckers / 2 + 0.5) * checkerSize;
+        const fwdOffset = (row - 0.5) * checkerSize;
+        const bn = sf.binormal;
+        const tn = sf.tangent;
+        const cx = sf.point.x + bn.x * offset + tn.x * fwdOffset;
+        const cy = sf.point.y + 0.06;
+        const cz = sf.point.z + bn.z * offset + tn.z * fwdOffset;
+        const hw = checkerSize / 2;
+        const base = checkerVerts.length / 3;
+        checkerVerts.push(
+          cx - bn.x * hw - tn.x * hw, cy, cz - bn.z * hw - tn.z * hw,
+          cx + bn.x * hw - tn.x * hw, cy, cz + bn.z * hw - tn.z * hw,
+          cx + bn.x * hw + tn.x * hw, cy, cz + bn.z * hw + tn.z * hw,
+          cx - bn.x * hw + tn.x * hw, cy, cz - bn.z * hw + tn.z * hw,
+        );
+        checkerIndices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      }
+    }
+
+    // ─── Step 8: Curvature computation for scenery ───
+    const curvatures = samples.map((s, i) => {
+      // Look ahead/behind by a wider window for meaningful curvature
+      const lookAhead = Math.max(10, Math.round(samples.length * 0.02));
+      const prev = samples[(i - lookAhead + samples.length) % samples.length];
+      const next = samples[(i + lookAhead) % samples.length];
+      const v1 = new THREE.Vector3().subVectors(s.point, prev.point);
+      const v2 = new THREE.Vector3().subVectors(next.point, s.point);
+      return v1.angleTo(v2);
+    });
+
+    // ─── Step 9: Scenery placement ───
+    const scenery = { barriers: [], fences: [], trees: [], lights: [], pylons: [] };
+    const edgeW = width / 2 + kerbWidth + shoulderWidth;
+    const spacing = Math.max(8, Math.round(width * 0.7));
+
+    for (let i = 0; i < samples.length; i += spacing) {
+      const s = samples[i];
+      const curv = curvatures[i];
+      for (const side of [-1, 1]) {
+        const pos = s.point.clone().add(s.binormal.clone().multiplyScalar(side * (edgeW + 0.5)));
+        const rot = Math.atan2(-s.tangent.x, -s.tangent.z);
+        if (curv > 0.15) {
+          scenery.barriers.push({ position: pos, rotation: rot });
+        } else if (curv > 0.08) {
+          scenery.pylons.push({ position: pos, rotation: rot });
+        } else {
+          scenery.fences.push({ position: pos, rotation: rot });
+        }
+      }
+    }
+
+    // Trees
+    const numTrees = 80 + Math.round(rng() * 60);
+    for (let i = 0; i < numTrees; i++) {
+      const idx = Math.floor(rng() * samples.length) % samples.length;
+      const s = samples[idx];
+      const side = rng() > 0.5 ? 1 : -1;
+      const dist = edgeW + 5 + rng() * 40;
+      const pos = s.point.clone().add(s.binormal.clone().multiplyScalar(side * dist));
+      pos.y = 0;
+      scenery.trees.push({ position: pos, scale: 0.7 + rng() * 1.0, type: rng() > 0.6 ? 'large' : 'small' });
+    }
+
+    // Light posts
+    let lightDist = 0;
+    let lightSide = -1;
+    for (let i = 0; i < samples.length; i++) {
+      const next = (i + 1) % samples.length;
+      lightDist += samples[i].point.distanceTo(samples[next].point);
+      if (lightDist >= 50) {
+        lightDist = 0;
+        lightSide *= -1;
+        const s = samples[i];
+        const pos = s.point.clone().add(s.binormal.clone().multiplyScalar(lightSide * (edgeW + 2)));
+        pos.y = 0;
+        scenery.lights.push({ position: pos, rotation: Math.atan2(-s.tangent.x, -s.tangent.z) });
+      }
+    }
+
+    return {
+      curve, samples, controlPoints3D,
+      roadVerts: new Float32Array(roadVerts), roadIndices: new Uint32Array(roadIndices),
+      kerbVerts: new Float32Array(kerbVerts), kerbIndices: new Uint32Array(kerbIndices),
+      grassVerts: new Float32Array(grassVerts), grassIndices: new Uint32Array(grassIndices),
+      centerVerts: new Float32Array(centerVerts), centerIndices: new Uint32Array(centerIndices),
+      checkerVerts: new Float32Array(checkerVerts), checkerIndices: new Uint32Array(checkerIndices),
+      scenery, length: curve.getLength(),
+      numControlPoints: controlPoints3D.length,
+      numSamples: samples.length,
+      elevationRange: {
+        min: Math.min(...controlPoints3D.map(p => p.y)),
+        max: Math.max(...controlPoints3D.map(p => p.y)),
+      },
+      seed: this.seed, width,
+    };
+  }
+}
+
+// ─── Three.js Scene ───
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB);
+scene.fog = new THREE.Fog(0x87CEEB, 500, 1000);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 2000);
+camera.position.set(100, 200, 300);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI * 0.48;
+controls.minDistance = 10;
+controls.maxDistance = 800;
+
+// Lighting
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const sun = new THREE.DirectionalLight(0xfff4e0, 1.2);
+sun.position.set(100, 200, 80);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -400;
+sun.shadow.camera.right = 400;
+sun.shadow.camera.top = 400;
+sun.shadow.camera.bottom = -400;
+sun.shadow.camera.far = 800;
+scene.add(sun);
+scene.add(new THREE.HemisphereLight(0x87CEEB, 0x4d7c3f, 0.4));
+
+// Materials (Kenney palette)
+const roadMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+const kerbMat = new THREE.MeshLambertMaterial({ color: 0xcc3333 });
+const grassMat = new THREE.MeshLambertMaterial({ color: 0x4d8f6e });
+const centerLineMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+const checkerWhiteMat = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
+const groundMat = new THREE.MeshLambertMaterial({ color: 0x4d8f6e });
+const controlPointMat = new THREE.MeshBasicMaterial({ color: 0xff6600 });
+const splineMat = new THREE.LineBasicMaterial({ color: 0x00ff88 });
+
+let trackGroup = new THREE.Group();
+scene.add(trackGroup);
+
+function makeGeo(verts, indices) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+  geo.setIndex(new THREE.BufferAttribute(indices, 1));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function makeTree(type) {
+  const g = new THREE.Group();
+  const h = type === 'large' ? 2.5 : 1.5;
+  const r = type === 'large' ? 0.25 : 0.15;
+  const cr = type === 'large' ? 2.5 : 1.5;
+  const ch = type === 'large' ? 3.5 : 2.0;
+  const trunkMat = new THREE.MeshLambertMaterial({ color: type === 'large' ? 0x5a3a1a : 0x6b4226 });
+  const crownMat = new THREE.MeshLambertMaterial({ color: type === 'large' ? 0x1e6b2e : 0x2d7a3a });
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.7, r, h, 6), trunkMat);
+  trunk.position.y = h / 2;
+  trunk.castShadow = true;
+  g.add(trunk);
+  const c1 = new THREE.Mesh(new THREE.ConeGeometry(cr, ch, 7), crownMat);
+  c1.position.y = h + ch * 0.3;
+  c1.castShadow = true;
+  g.add(c1);
+  const c2 = new THREE.Mesh(new THREE.ConeGeometry(cr * 0.7, ch * 0.6, 7), crownMat);
+  c2.position.y = h + ch * 0.7;
+  c2.castShadow = true;
+  g.add(c2);
+  return g;
+}
+
+function makeBarrier(isRed) {
+  const m = new THREE.Mesh(
+    new THREE.BoxGeometry(0.25, 0.4, 1.0),
+    new THREE.MeshLambertMaterial({ color: isRed ? 0xdd3333 : 0xeeeeee })
+  );
+  m.castShadow = true;
+  return m;
+}
+
+function makeFence() {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color: 0x999999 });
+  const p1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.8, 0.08), mat);
+  p1.position.set(-0.45, 0.4, 0);
+  g.add(p1);
+  const p2 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.8, 0.08), mat);
+  p2.position.set(0.45, 0.4, 0);
+  g.add(p2);
+  const r1 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 0.04), mat);
+  r1.position.y = 0.6;
+  g.add(r1);
+  const r2 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 0.04), mat);
+  r2.position.y = 0.3;
+  g.add(r2);
+  return g;
+}
+
+function makePylon() {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color: 0xff8800 });
+  const base2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.08, 0.4), mat);
+  base2.position.set(0, 0.04, 0);
+  g.add(base2);
+  const pole2 = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 1.2, 6), mat);
+  pole2.position.set(0, 0.68, 0);
+  g.add(pole2);
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.05), mat);
+  sign.position.y = 1.5;
+  g.add(sign);
+  return g;
+}
+
+function makeLightPost() {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color: 0xaaaaaa });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 6, 6), mat);
+  pole.position.y = 3;
+  pole.castShadow = true;
+  g.add(pole);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 0.08), mat);
+  arm.position.set(0.75, 6, 0);
+  g.add(arm);
+  const light = new THREE.Mesh(
+    new THREE.BoxGeometry(0.8, 0.15, 0.3),
+    new THREE.MeshBasicMaterial({ color: 0xffffcc })
+  );
+  light.position.set(1.5, 5.9, 0);
+  g.add(light);
+  return g;
+}
+
+function buildScene(data) {
+  while (trackGroup.children.length) {
+    const c = trackGroup.children[0];
+    trackGroup.remove(c);
+    if (c.geometry) c.geometry.dispose();
+  }
+
+  // Ground
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1500, 1500), groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.1;
+  ground.receiveShadow = true;
+  trackGroup.add(ground);
+
+  // Road
+  const roadMesh = new THREE.Mesh(makeGeo(data.roadVerts, data.roadIndices), roadMat);
+  roadMesh.receiveShadow = true;
+  trackGroup.add(roadMesh);
+
+  // Kerbs
+  if (data.kerbVerts.length > 0) {
+    trackGroup.add(new THREE.Mesh(makeGeo(data.kerbVerts, data.kerbIndices), kerbMat));
+  }
+
+  // Grass shoulders
+  if (data.grassVerts.length > 0) {
+    const gm = new THREE.Mesh(makeGeo(data.grassVerts, data.grassIndices), grassMat);
+    gm.receiveShadow = true;
+    trackGroup.add(gm);
+  }
+
+  // Center line
+  if (data.centerVerts.length > 0) {
+    trackGroup.add(new THREE.Mesh(makeGeo(data.centerVerts, data.centerIndices), centerLineMat));
+  }
+
+  // Checkers
+  if (data.checkerVerts.length > 0) {
+    trackGroup.add(new THREE.Mesh(makeGeo(data.checkerVerts, data.checkerIndices), checkerWhiteMat));
+  }
+
+  // Control points
+  for (const cp of data.controlPoints3D) {
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 6), controlPointMat);
+    sphere.position.copy(cp);
+    trackGroup.add(sphere);
+  }
+
+  // Spline line
+  const splineGeo = new THREE.BufferGeometry().setFromPoints(data.curve.getPoints(300));
+  const splineLine = new THREE.Line(splineGeo, splineMat);
+  splineLine.position.y = 0.15;
+  trackGroup.add(splineLine);
+
+  // Scenery
+  const { scenery } = data;
+
+  for (let i = 0; i < scenery.barriers.length; i++) {
+    const b = scenery.barriers[i];
+    const mesh = makeBarrier(i % 2 === 0);
+    mesh.position.copy(b.position);
+    mesh.position.y = 0.2;
+    mesh.rotation.y = b.rotation;
+    trackGroup.add(mesh);
+  }
+
+  for (const f of scenery.fences) {
+    const mesh = makeFence();
+    mesh.position.copy(f.position);
+    mesh.rotation.y = f.rotation;
+    trackGroup.add(mesh);
+  }
+
+  for (const p of scenery.pylons) {
+    const mesh = makePylon();
+    mesh.position.copy(p.position);
+    mesh.rotation.y = p.rotation;
+    trackGroup.add(mesh);
+  }
+
+  for (const t of scenery.trees) {
+    const mesh = makeTree(t.type);
+    mesh.position.copy(t.position);
+    mesh.scale.setScalar(t.scale);
+    trackGroup.add(mesh);
+  }
+
+  for (const l of scenery.lights) {
+    const mesh = makeLightPost();
+    mesh.position.copy(l.position);
+    mesh.rotation.y = l.rotation;
+    trackGroup.add(mesh);
+  }
+
+  // Start flag
+  const sf = data.samples[0].point;
+  const flagPole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.1, 8, 6),
+    new THREE.MeshLambertMaterial({ color: 0xffffff })
+  );
+  flagPole.position.set(sf.x, sf.y + 4, sf.z);
+  trackGroup.add(flagPole);
+
+  const flagCloth = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 1),
+    new THREE.MeshLambertMaterial({ color: 0xff0000, side: THREE.DoubleSide })
+  );
+  flagCloth.position.set(sf.x, sf.y + 7.5, sf.z);
+  flagCloth.rotation.y = Math.atan2(data.samples[0].tangent.x, data.samples[0].tangent.z);
+  trackGroup.add(flagCloth);
+
+  // Center camera
+  const center = new THREE.Vector3();
+  for (const s of data.samples) center.add(s.point);
+  center.divideScalar(data.samples.length);
+  controls.target.copy(center);
+  camera.position.set(center.x + 100, center.y + 200, center.z + 300);
+}
+
+function getParams() {
+  const url = new URL(window.location.href);
+  return {
+    seed: Number.parseInt(url.searchParams.get('seed') || document.getElementById('seed').value) || 42,
+    numPoints: Number.parseInt(url.searchParams.get('points') || document.getElementById('numPoints').value) || 14,
+    width: Number.parseInt(url.searchParams.get('width') || document.getElementById('trackWidth').value) || 12,
+    elevation: Number.parseInt(url.searchParams.get('elev') || document.getElementById('elevation').value) || 40,
+    tightness: Number.parseInt(url.searchParams.get('tight') || document.getElementById('tightness').value) || 5,
+    downhillBias: Number.parseInt(url.searchParams.get('downhill') || document.getElementById('downhillBias').value) || 60,
+  };
+}
+
+function updateURL(p) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('seed', p.seed);
+  url.searchParams.set('points', p.numPoints);
+  url.searchParams.set('width', p.width);
+  url.searchParams.set('elev', p.elevation);
+  url.searchParams.set('tight', p.tightness);
+  url.searchParams.set('downhill', p.downhillBias);
+  window.history.replaceState({}, '', url);
+}
+
+function updateInfo(d) {
+  document.getElementById('info').innerHTML = `
+    <div class="stat">Seed: <span>${d.seed}</span></div>
+    <div class="stat">Track length: <span>${d.length.toFixed(0)}m</span> (${(d.length / 1000).toFixed(2)}km)</div>
+    <div class="stat">Control points: <span>${d.numControlPoints}</span></div>
+    <div class="stat">Track width: <span>${d.width}m</span></div>
+    <div class="stat">Elevation: <span>${d.elevationRange.min.toFixed(1)}m to ${d.elevationRange.max.toFixed(1)}m</span></div>
+    <div class="stat">Est. lap time: <span>${(d.length / 22.2 / 60).toFixed(1)}min</span> (@ 80km/h avg)</div>
+    <div class="stat">Barriers: <span>${d.scenery.barriers.length}</span> · Fences: <span>${d.scenery.fences.length}</span> · Trees: <span>${d.scenery.trees.length}</span> · Lights: <span>${d.scenery.lights.length}</span></div>
+  `;
+}
+
+function generate() {
+  const params = getParams();
+  updateURL(params);
+  const gen = new TrackGen(params.seed, params);
+  const data = gen.generate();
+  buildScene(data);
+  updateInfo(data);
+}
+
+// Slider displays
+document.getElementById('trackWidth').addEventListener('input', e => document.getElementById('widthVal').textContent = e.target.value);
+document.getElementById('elevation').addEventListener('input', e => document.getElementById('elevVal').textContent = e.target.value);
+document.getElementById('tightness').addEventListener('input', e => document.getElementById('tightVal').textContent = e.target.value);
+document.getElementById('downhillBias').addEventListener('input', e => document.getElementById('downhillVal').textContent = e.target.value);
+document.getElementById('generate').addEventListener('click', generate);
+document.getElementById('random').addEventListener('click', () => {
+  document.getElementById('seed').value = Math.floor(Math.random() * 99999);
+  generate();
+});
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+generate();
+</script>
+</body>
+</html>

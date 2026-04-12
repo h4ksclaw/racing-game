@@ -155,6 +155,55 @@ See [`docs/research/PHYSICS_RESEARCH.md`](research/PHYSICS_RESEARCH.md) for full
 
 ---
 
+## Procedural Track Generation
+
+### Debug Page
+- **URL:** `http://localhost:3000/debug-track/` (when `bun run dev` is running)
+- **Built source:** `debug-track.html` at repo root (Vite entry point)
+- **Build config:** `vite-debug.config.js`
+- **Built output:** `public/debug-track/` (pre-built, served as static)
+- **URL params:** `?seed=42&points=14&width=12&elev=40&tight=5&downhill=60`
+- **Features:** OrbitControls, seed slider, random seed button, track stats overlay
+
+### Architecture
+
+```
+SEED → mulberry32 PRNG → control points on deformed circle →
+CatmullRomCurve3 (closed) → dense sampling → road mesh + scenery
+```
+
+**Key design decisions:**
+- **Deformed circle** (not random walk) for guaranteed loop closure
+- **Base radius:** 350-850m depending on tightness → 3.5-3.7km track length
+- **Seeded PRNG:** `mulberry32` — same seed = identical track across all clients
+- **1D value noise** for elevation profile (seeded permutation table)
+- **Kenney-style colors:** road `#444`, kerbs `#cc3333`, grass `#4d8f6e`
+- **Scenery:** barriers on curves (curvature > 0.15), fences on straights, pylons on gentle turns
+- **Trees:** 80-140 procedurally scattered, two sizes
+- **Light posts:** every 50m, alternating sides
+
+### Track Generation Pipeline (for game integration)
+
+1. Server generates seed + parameters (~50 bytes)
+2. All clients receive seed, run identical `TrackGen.generate()`
+3. Output: road mesh (BufferGeometry), scenery positions, spline curve
+4. Road mesh → cannon-es trimesh collider
+5. Barriers → cannon-es box colliders
+6. Spline curve → checkpoint/lap validation
+
+### Realistic Track Values
+
+| Parameter | Target | Notes |
+|-----------|--------|-------|
+| Track width | 12m | 3 lanes, room to pass |
+| Lap length | 3-5km | ~3min at 80km/h avg |
+| Min turn radius | ~50m | From CatmullRom smoothing |
+| Elevation range | 30-60m | Noise + downhill bias |
+| Grade | 3-6% | Noticeable but not brutal |
+| Surface | Dark grey (#444) | Kenney style, vertex-colored |
+
+---
+
 ## Networking Architecture
 
 ```
@@ -210,9 +259,13 @@ See [`docs/research/NETWORKING_RESEARCH.md`](research/NETWORKING_RESEARCH.md) fo
 - [ ] Engine sound (Web Audio API — see docs/AUDIO_TODO.md)
 
 ### Phase 3: Track & Race (Days 3-4)
+- [ ] Procedural track generation (seed-based deterministic, CatmullRom spline)
+- [ ] Track visualizer/debug page (public/debug-track/)
+- [ ] Road mesh from spline with Kenney-style materials
+- [ ] Scenery placement (barriers, fences, trees, lights, pylons)
 - [ ] Checkpoint/gate system for lap counting
 - [ ] Lap timer and best lap tracking
-- [ ] Multiple track layouts
+- [ ] Multiple track layouts (via seed)
 - [ ] Minimap (canvas overlay)
 - [ ] Start/finish detection
 
@@ -287,6 +340,9 @@ game/
 │       ├── constants.ts             ← Physics constants, tuning params
 │       └── types.ts                 ← Shared type definitions
 ├── public/
+│   ├── debug-track/                ← Procedural track visualizer (pre-built)
+│   │   ├── index.html
+│   │   └── assets/
 │   ├── models/cars/                ← Car GLBs (Kenney karts + circuit-rush)
 │   └── assets/
 │       ├── kenney-car-kit/          ← Full Kenney vehicle pack (GLB)
