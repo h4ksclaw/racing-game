@@ -127,21 +127,21 @@ From `src/shared/constants.ts` and reference projects:
 
 | Constant | Value | What It Controls |
 |----------|-------|------------------|
+| `GRAVITY` | -20 | Downward force. -20 for arcade feel (driftking uses this). |
 | `CHASSIS_MASS` | 150 | Vehicle weight. Heavier = more inertia, harder to drift. Racez.io uses 200. |
-| `VEHICLE_WIDTH` | 1.8 | Chassis box half-extent X |
-| `VEHICLE_HEIGHT` | 0.6 | Chassis box half-extent Y |
-| `VEHICLE_LENGTH` | 4.0 | Chassis box half-extent Z |
+| `CHASSIS_HALF_EXTENTS` | {x:0.9, y:0.3, z:2.0} | Chassis collision box size |
 | `WHEEL_RADIUS` | 0.35 | Wheel collision radius |
 | `WHEEL_WIDTH` | 0.3 | Wheel collision width |
 | `SUSPENSION_REST_LENGTH` | 0.3 | Default suspension length |
-| `SUSPENSION_STIFFNESS` | 60 | Spring stiffness. Higher = stiffer ride. Racez.io: 50. |
-| `DAMPING_COMPRESSION` | 0.3 | Compression damping |
-| `DAMPING_RELAXATION` | 0.5 | Relaxation damping |
-| `FRICTION_SLIP` | 5.0 | Normal tire grip. Drop to 0.5 on handbrake for drift. |
-| `ROLL_INFLUENCE` | 0.1 | Body roll amount. 0 = no roll, 1 = full. |
+| `SUSPENSION_STIFFNESS` | 30 | Spring stiffness. Higher = stiffer ride. |
+| `DAMPING_COMPRESSION` | 4.4 | Compression damping (from driftking) |
+| `DAMPING_RELAXATION` | 2.3 | Relaxation damping (from driftking) |
+| `FRICTION_SLIP_NORMAL` | 5.0 | Normal tire grip. Drop to 0.5 on handbrake for drift. |
+| `FRICTION_SLIP_DRIFT` | 0.5 | Drift tire grip (handbrake) |
+| `ROLL_INFLUENCE` | 0.01 | Body roll amount. 0 = no roll, 1 = full. |
 | `MAX_ENGINE_FORCE` | 1200 | Forward acceleration force on drive wheels |
-| `MAX_BRAKE_FORCE` | 50 | Braking force on all wheels |
-| `MAX_STEER_ANGLE` | 0.5 | Max steering in radians (~29°). Speed-dependent in practice. |
+| `MAX_BRAKE_FORCE` | 100 | Braking force on all wheels |
+| `MAX_STEER` | 0.5 | Max steering in radians (~29°). Speed-dependent in practice. |
 | `PHYSICS_STEP` | 1/60 | Fixed physics timestep |
 | `PHYSICS_SUBSTEPS` | 3 | Substeps per physics step for stability |
 
@@ -176,16 +176,17 @@ See [`docs/research/PHYSICS_RESEARCH.md`](research/PHYSICS_RESEARCH.md) for full
 └──────────────────┘               └──────────────┘
 ```
 
-**Data per tick (~50ms):**
+**Data per tick (~33ms at 30Hz):**
 ```typescript
-{
-  position: { x, y, z },        // toFixed(2)
-  quaternion: { x, y, z, w },  // toFixed(4)
-  raceProgress: { gateIndex, distanceToNextGate },
-  playerColor: string,
-  playerName: string,
-  speed: number
-}
+// NetworkMessage type "state" — sent by each client to host
+type CarState = {
+  position: { x: number, y: number, z: number },
+  quaternion: { x: number, y: number, z: number, w: number },
+  velocity: { x: number, y: number, z: number },
+  speed: number,         // km/h
+  steerAngle: number,
+  raceProgress: { gateIndex: number, distanceToNextGate: number, lap: number },
+};
 ```
 
 See [`docs/research/NETWORKING_RESEARCH.md`](research/NETWORKING_RESEARCH.md) for full details.

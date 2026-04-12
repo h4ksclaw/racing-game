@@ -9,12 +9,10 @@ export class HostRelay {
 	constructor(private network: NetworkManager) {}
 
 	/** Broadcast all car states to connected clients */
-	broadcastCarStates(cars: Record<string, CarState>): void {
+	broadcastCarStates(players: Record<string, CarState>): void {
 		const message: NetworkMessage = {
-			type: "carUpdateAll",
-			playerId: "host",
-			cars,
-			timestamp: Date.now(),
+			type: "stateAll",
+			players,
 		};
 		this.network.broadcast(message);
 	}
@@ -22,9 +20,8 @@ export class HostRelay {
 	/** Start the race (countdown → go) */
 	startCountdown(): void {
 		const message: NetworkMessage = {
-			type: "countdownStart",
-			playerId: "host",
-			timestamp: Date.now(),
+			type: "countdown",
+			seconds: 3,
 		};
 		this.network.broadcast(message);
 
@@ -34,17 +31,14 @@ export class HostRelay {
 	startRace(): void {
 		const message: NetworkMessage = {
 			type: "raceStart",
-			playerId: "host",
-			timestamp: Date.now(),
 		};
 		this.network.broadcast(message);
 	}
 
-	broadcastFinish(playerId: string): void {
+	broadcastFinish(results: Array<{ playerId: string; name: string; time: number }>): void {
 		const message: NetworkMessage = {
 			type: "raceFinish",
-			playerId,
-			timestamp: Date.now(),
+			results,
 		};
 		this.network.broadcast(message);
 	}

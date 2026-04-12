@@ -20,19 +20,19 @@ export class ClientSync {
 
 	private handleMessage(msg: NetworkMessage): void {
 		switch (msg.type) {
-			case "carUpdateAll":
-				if (msg.cars) {
-					for (const [id, state] of Object.entries(msg.cars)) {
-						this.updateRemoteCar(id, state as CarState);
-					}
+			case "stateAll":
+				for (const [id, state] of Object.entries(msg.players)) {
+					this.updateRemoteCar(id, state);
 				}
 				break;
-			case "carUpdate":
-				if (msg.playerId && msg.data) {
-					this.updateRemoteCar(msg.playerId, msg.data as CarState);
-				}
+			case "state":
+				this.updateRemoteCar(msg.playerId, msg.car);
 				break;
-			// TODO: Handle countdownStart, raceStart, raceFinish
+			case "countdown":
+			case "raceStart":
+			case "raceFinish":
+				// TODO: Handle race events
+				break;
 		}
 	}
 
@@ -59,12 +59,11 @@ export class ClientSync {
 	/** Send local car state to host */
 	sendLocalState(state: CarState): void {
 		const message: NetworkMessage = {
-			type: "carUpdate",
+			type: "state",
 			playerId: this.network.getPeerId() ?? "unknown",
-			data: state,
-			timestamp: Date.now(),
+			car: state,
 		};
-		this.network.broadcast(message);
+		this.network.send(this.network.getPeerId() ?? "unknown", message);
 	}
 
 	disconnect(): void {
