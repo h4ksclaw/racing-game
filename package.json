@@ -11,6 +11,7 @@
 		"lint:fix": "biome check --write src/",
 		"typecheck": "tsc --noEmit",
 		"check": "tsc --noEmit && biome check src/",
+		"fix": "biome check --write src/ && tsc --noEmit",
 		"prepare": "husky"
 	},
 	"lint-staged": {
