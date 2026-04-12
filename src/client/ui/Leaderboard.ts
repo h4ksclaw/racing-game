@@ -5,7 +5,12 @@
 import type { PlayerInfo } from "@shared/types.ts";
 
 export class Leaderboard {
-	constructor(_container: HTMLElement) {}
+	// biome-ignore lint/correctness/noUnusedPrivateClassMembers: stub — will be used when implemented
+	private container: HTMLElement;
+
+	constructor(container: HTMLElement) {
+		this.container = container;
+	}
 
 	/** Update the leaderboard display */
 	update(players: PlayerInfo[], finishOrder: string[]): void {

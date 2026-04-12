@@ -3,7 +3,16 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true
+			"recommended": true,
+			"complexity": {
+				"noForEach": "warn"
+			},
+			"style": {
+				"noNonNullAssertion": "warn"
+			},
+			"suspicious": {
+				"noExplicitAny": "warn"
+			}
 		}
 	},
 	"formatter": {
@@ -17,7 +26,12 @@
 			"semicolons": "always"
 		}
 	},
+	"json": {
+		"formatter": {
+			"trailingCommas": "none"
+		}
+	},
 	"files": {
-		"includes": ["src/**/*.ts"]
+		"includes": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.json"]
 	}
 }
