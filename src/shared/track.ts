@@ -554,7 +554,7 @@ export function generateScenery(
 		const rightCurve = curvature < -0.05;
 
 		// Trees (avoid tight curve inner side)
-		if (rng() < 0.75 * sceneryDensity) {
+		if (rng() < 0.85 * sceneryDensity) {
 			const side = leftCurve ? 1 : rightCurve ? -1 : rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
 			const dist = 6 + rng() * 150;
@@ -567,7 +567,7 @@ export function generateScenery(
 			});
 		}
 		// Second tree (extra density)
-		if (rng() < 0.75 * sceneryDensity) {
+		if (rng() < 0.85 * sceneryDensity) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
 			const dist = 8 + rng() * 150;
@@ -580,7 +580,7 @@ export function generateScenery(
 			});
 		}
 		// Third tree (extra density)
-		if (rng() < 0.6 * sceneryDensity) {
+		if (rng() < 0.75 * sceneryDensity) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
 			const dist = 10 + rng() * 150;
@@ -593,7 +593,7 @@ export function generateScenery(
 			});
 		}
 		// Fourth tree (wider spread)
-		if (rng() < 0.5 * sceneryDensity) {
+		if (rng() < 0.65 * sceneryDensity) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
 			const dist = 15 + rng() * 200;
@@ -603,6 +603,20 @@ export function generateScenery(
 				position: pos,
 				rotation: rng() * Math.PI * 2,
 				scale: 0.4 + rng() * 0.8,
+			});
+		}
+
+		// Fifth tree (very wide spread, smaller trees)
+		if (rng() < 0.5 * sceneryDensity) {
+			const side = rng() < 0.5 ? -1 : 1;
+			const offset = side === -1 ? s.grassLeft : s.grassRight;
+			const dist = 20 + rng() * 250;
+			const pos = v3Add(offset, v3Scale(s.binormal, side * dist));
+			scenery.push({
+				type: TREE_TYPES[Math.floor(rng() * TREE_TYPES.length)],
+				position: pos,
+				rotation: rng() * Math.PI * 2,
+				scale: 0.3 + rng() * 0.9,
 			});
 		}
 
@@ -630,12 +644,12 @@ export function generateScenery(
 			}
 		}
 
-		// Grass tufts — varied sizes/rotations for fuzzy look
-		for (let g = 0; g < 20; g++) {
-			if (rng() < 0.6 * sceneryDensity) {
+		// Grass tufts — varied sizes/rotations for fuzzy look (near track)
+		for (let g = 0; g < 25; g++) {
+			if (rng() < 0.7 * sceneryDensity) {
 				const side = rng() < 0.5 ? -1 : 1;
 				const offset = side === -1 ? s.grassLeft : s.grassRight;
-				const dist = 1 + rng() * 12;
+				const dist = 1 + rng() * 15;
 				const jitter = (rng() - 0.5) * 5;
 				const pos = v3Add(offset, v3Scale(s.binormal, side * dist));
 				pos.x += jitter;
@@ -649,11 +663,49 @@ export function generateScenery(
 			}
 		}
 
+		// Grass tufts — wider spread (medium distance)
+		for (let g = 0; g < 15; g++) {
+			if (rng() < 0.5 * sceneryDensity) {
+				const side = rng() < 0.5 ? -1 : 1;
+				const offset = side === -1 ? s.grassLeft : s.grassRight;
+				const dist = 8 + rng() * 40;
+				const jitter = (rng() - 0.5) * 8;
+				const pos = v3Add(offset, v3Scale(s.binormal, side * dist));
+				pos.x += jitter;
+				pos.z += jitter;
+				scenery.push({
+					type: GRASS_TYPES[Math.floor(rng() * GRASS_TYPES.length)],
+					position: pos,
+					rotation: rng() * Math.PI * 2,
+					scale: 0.2 + rng() * 1.4,
+				});
+			}
+		}
+
+		// Grass tufts — far spread (sparse)
+		for (let g = 0; g < 8; g++) {
+			if (rng() < 0.3 * sceneryDensity) {
+				const side = rng() < 0.5 ? -1 : 1;
+				const offset = side === -1 ? s.grassLeft : s.grassRight;
+				const dist = 30 + rng() * 100;
+				const jitter = (rng() - 0.5) * 12;
+				const pos = v3Add(offset, v3Scale(s.binormal, side * dist));
+				pos.x += jitter;
+				pos.z += jitter;
+				scenery.push({
+					type: GRASS_TYPES[Math.floor(rng() * GRASS_TYPES.length)],
+					position: pos,
+					rotation: rng() * Math.PI * 2,
+					scale: 0.2 + rng() * 1.6,
+				});
+			}
+		}
+
 		// Extra forest floor plants (mushrooms, stumps, logs) — second pass
-		if (rng() < 0.2 * sceneryDensity) {
+		if (rng() < 0.3 * sceneryDensity) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
-			const pos = v3Add(offset, v3Scale(s.binormal, side * (3 + rng() * 20)));
+			const pos = v3Add(offset, v3Scale(s.binormal, side * (3 + rng() * 30)));
 			scenery.push({
 				type: FOREST_DETAIL[Math.floor(rng() * FOREST_DETAIL.length)],
 				position: pos,
@@ -663,11 +715,11 @@ export function generateScenery(
 		}
 
 		// Mushroom groves — clustered stumps, mushrooms, logs
-		if (rng() < 0.1 * sceneryDensity) {
+		if (rng() < 0.15 * sceneryDensity) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
-			const basePos = v3Add(offset, v3Scale(s.binormal, side * (8 + rng() * 30)));
-			const groveSize = 3 + Math.floor(rng() * 5);
+			const basePos = v3Add(offset, v3Scale(s.binormal, side * (8 + rng() * 40)));
+			const groveSize = 3 + Math.floor(rng() * 6);
 			for (let c = 0; c < groveSize; c++) {
 				scenery.push({
 					type: FOREST_DETAIL[Math.floor(rng() * FOREST_DETAIL.length)],
