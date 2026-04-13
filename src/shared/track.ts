@@ -1,0 +1,678 @@
+/**
+ * Pure-math procedural track generation — no Three.js dependency.
+ *
+ * Works in both Node.js (server) and browsers (client).
+ * Returns plain arrays/objects that the client can convert to Three.js buffers.
+ */
+
+// ── Seeded PRNG (Mulberry32) ─────────────────────────────────────────────
+export function mulberry32(seed: number): () => number {
+	let s = seed | 0;
+	return () => {
+		s = (s + 0x6d2b79f5) | 0;
+		let t = Math.imul(s ^ (s >>> 15), 1 | s);
+		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+		return ((t ^ (s >>> 14)) >>> 0) / 4294967296;
+	};
+}
+
+// ── 1-D value noise ──────────────────────────────────────────────────────
+function createNoise(rng: () => number): (x: number) => number {
+	const perm = new Uint8Array(512);
+	for (let i = 0; i < 256; i++) perm[i] = i;
+	for (let i = 255; i > 0; i--) {
+		const j = (rng() * (i + 1)) | 0;
+		[perm[i], perm[j]] = [perm[j], perm[i]];
+	}
+	for (let i = 0; i < 256; i++) perm[i + 256] = perm[i];
+	const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+	const lerp = (a: number, b: number, t: number) => a + t * (b - a);
+	const grad = (h: number, x: number) => ((h & 1) === 0 ? x : -x);
+	return (x: number) => {
+		const xi = Math.floor(x) & 255;
+		const xf = x - Math.floor(x);
+		const u = fade(xf);
+		return lerp(grad(perm[xi], xf), grad(perm[xi + 1], xf - 1), u);
+	};
+}
+
+// ── Minimal vec3 ops (avoid Three.js dependency) ─────────────────────────
+interface V3 {
+	x: number;
+	y: number;
+	z: number;
+}
+
+function v3(x: number, y: number, z: number): V3 {
+	return { x, y, z };
+}
+function v3Add(a: V3, b: V3): V3 {
+	return v3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+function v3Scale(a: V3, s: number): V3 {
+	return v3(a.x * s, a.y * s, a.z * s);
+}
+function v3Cross(a: V3, b: V3): V3 {
+	return v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+}
+function v3Len(a: V3): number {
+	return Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+}
+function v3Normalize(a: V3): V3 {
+	const len = v3Len(a);
+	return len > 0.0001 ? v3Scale(a, 1 / len) : v3(1, 0, 0);
+}
+function v3Dist(a: V3, b: V3): number {
+	return v3Len(v3Add(a, v3Scale(b, -1)));
+}
+
+// ── CatmullRom spline (pure math) ────────────────────────────────────────
+function catmullRomPoint(p0: V3, p1: V3, p2: V3, p3: V3, t: number): V3 {
+	const t2 = t * t;
+	const t3 = t2 * t;
+	return {
+		x:
+			0.5 *
+			(2 * p1.x +
+				(-p0.x + p2.x) * t +
+				(2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+				(-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+		y:
+			0.5 *
+			(2 * p1.y +
+				(-p0.y + p2.y) * t +
+				(2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+				(-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+		z:
+			0.5 *
+			(2 * p1.z +
+				(-p0.z + p2.z) * t +
+				(2 * p0.z - 5 * p1.z + 4 * p2.z - p3.z) * t2 +
+				(-p0.z + 3 * p1.z - 3 * p2.z + p3.z) * t3),
+	};
+}
+
+function sampleSpline(controlPoints: V3[], closed: boolean, numSamples: number): V3[] {
+	const n = controlPoints.length;
+	const pts: V3[] = [];
+	for (let i = 0; i < numSamples; i++) {
+		const rawT = i / numSamples;
+		const scaledT = rawT * (closed ? n : n - 1);
+		const segIdx = Math.floor(scaledT);
+		const localT = scaledT - segIdx;
+		const p0 = controlPoints[(segIdx - 1 + n) % n];
+		const p1 = controlPoints[segIdx % n];
+		const p2 = controlPoints[(segIdx + 1) % n];
+		const p3 = controlPoints[(segIdx + 2) % n];
+		pts.push(catmullRomPoint(p0, p1, p2, p3, localT));
+	}
+	return pts;
+}
+
+function splineTangent(controlPoints: V3[], closed: boolean, t: number): V3 {
+	const _n = controlPoints.length;
+	const eps = 0.001;
+	const a = sampleSpline(controlPoints, closed, 1000).at(Math.floor(t * 1000)) ?? controlPoints[0];
+	const b =
+		sampleSpline(controlPoints, closed, 1000).at(Math.min(Math.floor((t + eps) * 1000), 999)) ?? a;
+	return v3Normalize(v3Add(b, v3Scale(a, -1)));
+}
+
+// ── Public types ─────────────────────────────────────────────────────────
+
+export interface TrackSample {
+	point: V3;
+	left: V3;
+	right: V3;
+	kerbLeft: V3;
+	kerbRight: V3;
+	grassLeft: V3;
+	grassRight: V3;
+	binormal: V3;
+	tangent: V3;
+}
+
+export type SceneryType =
+	| "tree_pineTallA"
+	| "tree_pineTallB"
+	| "tree_pineTallC"
+	| "tree_pineTallD"
+	| "tree_pineSmallA"
+	| "tree_pineSmallB"
+	| "tree_pineSmallC"
+	| "tree_pineSmallD"
+	| "tree_pineDefaultB"
+	| "rock_tallA"
+	| "rock_tallB"
+	| "rock_tallC"
+	| "rock_tallD"
+	| "rock_tallE"
+	| "rock_tallF"
+	| "rock_tallG"
+	| "rock_tallH"
+	| "rock_tallI"
+	| "rock_tallJ"
+	| "stone_tallC"
+	| "stone_tallD"
+	| "stone_tallE"
+	| "stone_tallF"
+	| "stone_tallG"
+	| "stone_tallH"
+	| "stone_tallI"
+	| "stone_tallJ"
+	| "grass"
+	| "grass_large"
+	| "stump_old"
+	| "stump_round"
+	| "stump_square"
+	| "mushroom_red"
+	| "crop_pumpkin"
+	| "log_large"
+	| "ground_grass"
+	| "ground_riverBend"
+	| "ground_riverBendBank"
+	| "ground_riverRocks"
+	| "ground_riverSplit"
+	| "ground_riverStraight"
+	| "lily_large"
+	| "barrier"
+	| "light"
+	| "gate";
+
+export interface SceneryItem {
+	type: SceneryType;
+	position: V3;
+	rotation: number; // Y-axis rotation in radians
+	scale: number;
+}
+
+export interface TrackOptions {
+	numPoints?: number;
+	width?: number;
+	elevation?: number;
+	tightness?: number;
+	downhillBias?: number;
+	shoulderWidth?: number;
+	kerbWidth?: number;
+	minSamples?: number;
+	sceneryDensity?: number;
+}
+
+export interface TrackData {
+	controlPoints3D: V3[];
+	samples: TrackSample[];
+	splinePoints: V3[];
+	roadVerts: number[];
+	roadUVs: number[];
+	roadIndices: number[];
+	kerbVerts: number[];
+	kerbColors: number[];
+	kerbIndices: number[];
+	grassVerts: number[];
+	grassColors: number[];
+	grassIndices: number[];
+	centerVerts: number[];
+	centerIndices: number[];
+	checkerVerts: number[];
+	checkerIndices: number[];
+	length: number;
+	numControlPoints: number;
+	numSamples: number;
+	elevationRange: { min: number; max: number };
+}
+
+// ── Track Generator ──────────────────────────────────────────────────────
+
+export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData {
+	const rng = mulberry32(seed);
+	const noise = createNoise(rng);
+
+	const numPoints = opts.numPoints ?? 14;
+	const tightness = opts.tightness ?? 5;
+	const elevationAmp = opts.elevation ?? 40;
+	const downhillBias = (opts.downhillBias ?? 60) / 100;
+	const width = opts.width ?? 12;
+	const shoulderWidth = opts.shoulderWidth ?? 2;
+	const kerbWidth = opts.kerbWidth ?? 0.8;
+	const minSamples = opts.minSamples ?? 500;
+
+	// ── 2-D control points ────────────────────────────────────────────────
+	const baseRadius = 350 + (10 - tightness) * 50;
+	const cp2d: V3[] = [];
+	for (let i = 0; i < numPoints; i++) {
+		const baseAngle = (i / numPoints) * Math.PI * 2;
+		const rj = (rng() * 2 - 1) * baseRadius * 0.35;
+		const aj = (rng() * 2 - 1) * ((Math.PI * 2) / numPoints) * 0.4;
+		const r = baseRadius + rj;
+		const a = baseAngle + aj;
+		cp2d.push(v3(Math.cos(a) * r, 0, Math.sin(a) * r));
+	}
+
+	// Chaikin smoothing ×2
+	for (let pass = 0; pass < 2; pass++) {
+		const smoothed: V3[] = [];
+		for (let i = 0; i < numPoints; i++) {
+			const prev = cp2d[(i - 1 + numPoints) % numPoints];
+			const cur = cp2d[i];
+			const next = cp2d[(i + 1) % numPoints];
+			smoothed.push(
+				v3(cur.x * 0.6 + (prev.x + next.x) * 0.2, 0, cur.z * 0.6 + (prev.z + next.z) * 0.2),
+			);
+		}
+		for (let i = 0; i < numPoints; i++) cp2d[i] = smoothed[i];
+	}
+
+	// ── Add Y elevation ────────────────────────────────────────────────────
+	const cp3d = cp2d.map((p, i) => {
+		const t = i / numPoints;
+		let eb: number;
+		if (t < 0.7) {
+			eb = -t * downhillBias;
+		} else {
+			const ct = (t - 0.7) / 0.3;
+			eb = -0.7 * downhillBias + ct * 0.7 * downhillBias;
+		}
+		const n = noise(t * 3 + seed * 0.01) * 2 - 1;
+		const y = eb * elevationAmp + n * elevationAmp * 0.3;
+		return v3(p.x, y, p.z);
+	});
+
+	// ── Spline sampling ───────────────────────────────────────────────────
+	// Estimate length for sample count
+	const coarse = sampleSpline(cp3d, true, 200);
+	let coarseLen = 0;
+	for (let i = 1; i < coarse.length; i++) coarseLen += v3Dist(coarse[i], coarse[i - 1]);
+	const numSamples = Math.max(minSamples, Math.round(coarseLen * 0.5));
+
+	const splinePoints = sampleSpline(cp3d, true, numSamples);
+
+	// ── Cross-section offsets ─────────────────────────────────────────────
+	const up = v3(0, 1, 0);
+	const samples: TrackSample[] = splinePoints.map((point, i) => {
+		const t = i / splinePoints.length;
+		const tangent = splineTangent(cp3d, true, t);
+		let binormal = v3Cross(tangent, up);
+		if (v3Len(binormal) < 0.001) binormal = v3(1, 0, 0);
+		binormal = v3Normalize(binormal);
+		const halfW = width / 2;
+		return {
+			point,
+			left: v3Add(point, v3Scale(binormal, -halfW)),
+			right: v3Add(point, v3Scale(binormal, halfW)),
+			kerbLeft: v3Add(point, v3Scale(binormal, -(halfW + kerbWidth))),
+			kerbRight: v3Add(point, v3Scale(binormal, halfW + kerbWidth)),
+			grassLeft: v3Add(point, v3Scale(binormal, -(halfW + kerbWidth + shoulderWidth))),
+			grassRight: v3Add(point, v3Scale(binormal, halfW + kerbWidth + shoulderWidth)),
+			binormal,
+			tangent,
+		};
+	});
+
+	// ── Geometry buffers ──────────────────────────────────────────────────
+	const roadVerts: number[] = [];
+	const roadUVs: number[] = [];
+	const roadIndices: number[] = [];
+	const kerbVerts: number[] = [];
+	const kerbColors: number[] = [];
+	const kerbIndices: number[] = [];
+	const grassVerts: number[] = [];
+	const grassColors: number[] = [];
+	const grassIndices: number[] = [];
+	let roadDist = 0;
+
+	const KERB_RED = [0.8, 0.2, 0.2];
+	const KERB_WHITE = [0.9, 0.9, 0.9];
+	const kerbStripeLen = 2.0;
+
+	for (let i = 0; i < samples.length; i++) {
+		const s = samples[i];
+		if (i > 0) roadDist += v3Dist(s.point, samples[i - 1].point);
+
+		// Road
+		roadVerts.push(s.left.x, s.left.y + 0.02, s.left.z, s.right.x, s.right.y + 0.02, s.right.z);
+		roadUVs.push(0, roadDist / 4, 1, roadDist / 4);
+
+		// Kerbs
+		kerbVerts.push(
+			s.left.x,
+			s.left.y + 0.03,
+			s.left.z,
+			s.kerbLeft.x,
+			s.kerbLeft.y + 0.03,
+			s.kerbLeft.z,
+			s.right.x,
+			s.right.y + 0.03,
+			s.right.z,
+			s.kerbRight.x,
+			s.kerbRight.y + 0.03,
+			s.kerbRight.z,
+		);
+		const stripe = Math.floor(roadDist / kerbStripeLen) % 2 === 0 ? KERB_RED : KERB_WHITE;
+		kerbColors.push(...stripe, ...stripe, ...stripe, ...stripe);
+
+		// Grass shoulders
+		grassVerts.push(
+			s.kerbLeft.x,
+			s.kerbLeft.y + 0.01,
+			s.kerbLeft.z,
+			s.grassLeft.x,
+			s.grassLeft.y + 0.01,
+			s.grassLeft.z,
+			s.kerbRight.x,
+			s.kerbRight.y + 0.01,
+			s.kerbRight.z,
+			s.grassRight.x,
+			s.grassRight.y + 0.01,
+			s.grassRight.z,
+		);
+		const gv = 0.3 + Math.sin(roadDist * 0.3) * 0.04 + (rng() - 0.5) * 0.03;
+		grassColors.push(0.28, gv + 0.04, 0.2, 0.28, gv, 0.2, 0.28, gv + 0.04, 0.2, 0.28, gv, 0.2);
+
+		// Closed loop: skip last row's quads
+		if (i >= samples.length - 1) break;
+
+		const rb = i * 2;
+		roadIndices.push(rb, rb + 1, rb + 2, rb + 1, rb + 3, rb + 2);
+
+		const kb = i * 4;
+		kerbIndices.push(kb, kb + 1, kb + 4, kb + 1, kb + 5, kb + 4);
+		kerbIndices.push(kb + 2, kb + 6, kb + 3, kb + 3, kb + 6, kb + 7);
+
+		const gb = i * 4;
+		grassIndices.push(gb, gb + 1, gb + 4, gb + 1, gb + 5, gb + 4);
+		grassIndices.push(gb + 2, gb + 6, gb + 3, gb + 3, gb + 6, gb + 7);
+	}
+
+	// ── Center-line dashes ────────────────────────────────────────────────
+	const centerVerts: number[] = [];
+	const centerIndices: number[] = [];
+	const dashLen = 3;
+	const dashGap = 3;
+	const totalDash = dashLen + dashGap;
+	const dashHalfW = 0.15;
+	let dashPhase = 0;
+	let dashVertCount = 0;
+
+	for (let i = 0; i < samples.length; i++) {
+		const s = samples[i];
+		const segLen = i > 0 ? v3Dist(s.point, samples[i - 1].point) : 0;
+		dashPhase += segLen;
+		const dashOn = dashPhase % totalDash < dashLen;
+
+		if (dashOn) {
+			const bn = s.binormal;
+			centerVerts.push(
+				s.point.x + bn.x * dashHalfW,
+				s.point.y + 0.05,
+				s.point.z + bn.z * dashHalfW,
+				s.point.x - bn.x * dashHalfW,
+				s.point.y + 0.05,
+				s.point.z - bn.z * dashHalfW,
+			);
+			dashVertCount++;
+			if (dashVertCount >= 2) {
+				const base = (dashVertCount - 2) * 2;
+				centerIndices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+			}
+		} else {
+			dashVertCount = 0;
+		}
+	}
+
+	// ── Checker start/finish ──────────────────────────────────────────────
+	const checkerVerts: number[] = [];
+	const checkerIndices: number[] = [];
+	const checkerSize = width / 2;
+	const cellSize = 1;
+	const startSample = samples[0];
+	for (let row = 0; row < 2; row++) {
+		for (let col = 0; col < Math.floor(checkerSize / cellSize); col++) {
+			const isBlack = (row + col) % 2 === 0;
+			const c1 = col * cellSize - checkerSize / 2 + checkerSize;
+			const c2 = (col + 1) * cellSize - checkerSize / 2 + checkerSize;
+			const r1 = row * cellSize - 1;
+			const r2 = (row + 1) * cellSize - 1;
+			const base = checkerVerts.length / 3;
+			const bn = startSample.binormal;
+			const tn = startSample.tangent;
+			for (const [cx, cz] of [
+				[c1, r1],
+				[c2, r1],
+				[c1, r2],
+				[c2, r2],
+			]) {
+				checkerVerts.push(
+					startSample.point.x + bn.x * cx + tn.x * cz,
+					startSample.point.y + 0.04,
+					startSample.point.z + bn.z * cx + tn.z * cz,
+				);
+			}
+			if (isBlack) {
+				checkerIndices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+			}
+		}
+	}
+
+	// ── Elevation range ───────────────────────────────────────────────────
+	const ys = samples.map((s) => s.point.y);
+	const minY = Math.min(...ys);
+	const maxY = Math.max(...ys);
+
+	// ── Track length ──────────────────────────────────────────────────────
+	let length = 0;
+	for (let i = 1; i < splinePoints.length; i++)
+		length += v3Dist(splinePoints[i], splinePoints[i - 1]);
+
+	return {
+		controlPoints3D: cp3d,
+		samples,
+		splinePoints,
+		roadVerts,
+		roadUVs,
+		roadIndices,
+		kerbVerts,
+		kerbColors,
+		kerbIndices,
+		grassVerts,
+		grassColors,
+		grassIndices,
+		centerVerts,
+		centerIndices,
+		checkerVerts,
+		checkerIndices,
+		length,
+		numControlPoints: cp3d.length,
+		numSamples: samples.length,
+		elevationRange: { min: minY, max: maxY },
+	};
+}
+
+// ── Scenery generation (client-side, deterministic from seed) ─────────────
+
+export function generateScenery(
+	seed: number,
+	samples: TrackSample[],
+	opts: { sceneryDensity?: number } = {},
+): SceneryItem[] {
+	const rng = mulberry32(seed);
+	const sceneryDensity = opts.sceneryDensity ?? 1;
+	const scenery: SceneryItem[] = [];
+	const spacing = Math.max(3, Math.round(15 / sceneryDensity));
+
+	const TREE_TYPES: SceneryType[] = [
+		"tree_pineTallA",
+		"tree_pineTallB",
+		"tree_pineTallC",
+		"tree_pineTallD",
+		"tree_pineSmallA",
+		"tree_pineSmallB",
+		"tree_pineSmallC",
+		"tree_pineSmallD",
+		"tree_pineDefaultB",
+	];
+	const ROCK_TYPES: SceneryType[] = [
+		"rock_tallA",
+		"rock_tallB",
+		"rock_tallC",
+		"rock_tallD",
+		"rock_tallE",
+		"rock_tallF",
+		"rock_tallG",
+		"rock_tallH",
+		"rock_tallI",
+		"rock_tallJ",
+	];
+	const STONE_TYPES: SceneryType[] = [
+		"stone_tallC",
+		"stone_tallD",
+		"stone_tallE",
+		"stone_tallF",
+		"stone_tallG",
+		"stone_tallH",
+		"stone_tallI",
+		"stone_tallJ",
+	];
+	const GRASS_TYPES: SceneryType[] = ["grass", "grass_large"];
+	const FOREST_DETAIL: SceneryType[] = [
+		"stump_old",
+		"stump_round",
+		"stump_square",
+		"mushroom_red",
+		"log_large",
+	];
+
+	for (let i = 0; i < samples.length; i += spacing) {
+		const s = samples[i];
+		const curvature =
+			i > 0 && i < samples.length - 1
+				? v3Len(v3Add(s.binormal, v3Scale(samples[i + 1].binormal, -1)))
+				: 0;
+
+		const leftCurve = curvature > 0.05;
+		const rightCurve = curvature < -0.05;
+
+		// Trees (avoid tight curve inner side)
+		if (rng() < 0.75 * sceneryDensity) {
+			const side = leftCurve ? 1 : rightCurve ? -1 : rng() < 0.5 ? -1 : 1;
+			const offset = side === -1 ? s.grassLeft : s.grassRight;
+			const dist = 6 + rng() * 25;
+			const pos = v3Add(offset, v3Scale(s.binormal, side * dist));
+			scenery.push({
+				type: TREE_TYPES[Math.floor(rng() * TREE_TYPES.length)],
+				position: pos,
+				rotation: rng() * Math.PI * 2,
+				scale: 0.8 + rng() * 0.5,
+			});
+		}
+
+		// Rocks
+		if (rng() < 0.35 * sceneryDensity) {
+			const side = rng() < 0.5 ? -1 : 1;
+			const offset = side === -1 ? s.grassLeft : s.grassRight;
+			const pos = v3Add(offset, v3Scale(s.binormal, side * (3 + rng() * 10)));
+			scenery.push({
+				type: ROCK_TYPES[Math.floor(rng() * ROCK_TYPES.length)],
+				position: pos,
+				rotation: rng() * Math.PI * 2,
+				scale: 0.5 + rng() * 0.6,
+			});
+		}
+
+		// Stones (smaller, scattered)
+		if (rng() < 0.2 * sceneryDensity) {
+			const side = rng() < 0.5 ? -1 : 1;
+			const offset = side === -1 ? s.grassLeft : s.grassRight;
+			const pos = v3Add(offset, v3Scale(s.binormal, side * (2 + rng() * 6)));
+			scenery.push({
+				type: STONE_TYPES[Math.floor(rng() * STONE_TYPES.length)],
+				position: pos,
+				rotation: rng() * Math.PI * 2,
+				scale: 0.4 + rng() * 0.4,
+			});
+		}
+
+		// Grass tufts (very close to road edge)
+		if (rng() < 0.4 * sceneryDensity) {
+			const side = rng() < 0.5 ? -1 : 1;
+			const offset = side === -1 ? s.grassLeft : s.grassRight;
+			const pos = v3Add(offset, v3Scale(s.binormal, side * (1 + rng() * 4)));
+			scenery.push({
+				type: GRASS_TYPES[Math.floor(rng() * GRASS_TYPES.length)],
+				position: pos,
+				rotation: rng() * Math.PI * 2,
+				scale: 0.8 + rng() * 0.4,
+			});
+		}
+
+		// Forest floor detail (stumps, mushrooms, logs)
+		if (rng() < 0.15 * sceneryDensity) {
+			const side = rng() < 0.5 ? -1 : 1;
+			const offset = side === -1 ? s.grassLeft : s.grassRight;
+			const pos = v3Add(offset, v3Scale(s.binormal, side * (5 + rng() * 15)));
+			scenery.push({
+				type: FOREST_DETAIL[Math.floor(rng() * FOREST_DETAIL.length)],
+				position: pos,
+				rotation: rng() * Math.PI * 2,
+				scale: 0.7 + rng() * 0.6,
+			});
+		}
+
+		// Pumpkin patches (clusters)
+		if (rng() < 0.05 * sceneryDensity) {
+			const side = rng() < 0.5 ? -1 : 1;
+			const offset = side === -1 ? s.grassLeft : s.grassRight;
+			const basePos = v3Add(offset, v3Scale(s.binormal, side * (4 + rng() * 12)));
+			const clusterSize = 2 + Math.floor(rng() * 4);
+			for (let c = 0; c < clusterSize; c++) {
+				scenery.push({
+					type: "crop_pumpkin",
+					position: v3Add(basePos, {
+						x: (rng() - 0.5) * 4,
+						y: 0,
+						z: (rng() - 0.5) * 4,
+					}),
+					rotation: rng() * Math.PI * 2,
+					scale: 0.6 + rng() * 0.8,
+				});
+			}
+		}
+
+		// Lily pads (occasional)
+		if (rng() < 0.03 * sceneryDensity) {
+			const side = rng() < 0.5 ? -1 : 1;
+			const offset = side === -1 ? s.grassLeft : s.grassRight;
+			const pos = v3Add(offset, v3Scale(s.binormal, side * (3 + rng() * 8)));
+			scenery.push({
+				type: "lily_large",
+				position: pos,
+				rotation: rng() * Math.PI * 2,
+				scale: 0.8 + rng() * 0.4,
+			});
+		}
+
+		// Lights every ~80m, both sides
+		if (i % (spacing * 4) === 0) {
+			for (const side of [-1, 1]) {
+				const offset = side === -1 ? s.grassLeft : s.grassRight;
+				scenery.push({
+					type: "light",
+					position: { ...offset },
+					rotation: 0,
+					scale: 1,
+				});
+			}
+		}
+
+		// Gates at wide sections (~200m)
+		if (i % (spacing * 10) === 0 && curvature < 0.05) {
+			scenery.push({
+				type: "gate",
+				position: { ...s.point },
+				rotation: Math.atan2(s.binormal.x, s.binormal.z),
+				scale: 1,
+			});
+		}
+	}
+
+	return scenery;
+}

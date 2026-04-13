@@ -1,10 +1,17 @@
 /**
- * Minimal Express lobby server for party code management.
+ * Express lobby server.
+ *
+ * - Lobby management: /api/lobby
+ * - Track generation: /api/track
+ * - Serves frontend static files from dist/ in production
  */
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { generateTrack } from "@shared/track.ts";
 import express from "express";
+
+// ── Types ─────────────────────────────────────────────────────────────────
 
 interface LobbyRoom {
 	partyCode: string;
@@ -14,26 +21,26 @@ interface LobbyRoom {
 	createdAt: number;
 }
 
+// ── App ───────────────────────────────────────────────────────────────────
+
 const app = express();
 app.use(express.json());
 
 const lobbies = new Map<string, LobbyRoom>();
 
-/** Generate a 6-character alphanumeric party code */
 function generateCode(): string {
 	const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 	return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
-// Create a new lobby
+// ── Lobby routes ─────────────────────────────────────────────────────────
+
 app.post("/api/lobby", (req, res) => {
 	const { hostPeerId, playerName = "Host", selectedMap = "map1" } = req.body;
-
 	if (!hostPeerId) {
 		res.status(400).json({ error: "hostPeerId required" });
 		return;
 	}
-
 	const partyCode = generateCode();
 	const lobby: LobbyRoom = {
 		partyCode,
@@ -42,37 +49,29 @@ app.post("/api/lobby", (req, res) => {
 		selectedMap,
 		createdAt: Date.now(),
 	};
-
 	lobbies.set(partyCode, lobby);
 	res.json({ partyCode, lobby });
 });
 
-// Join an existing lobby
 app.post("/api/lobby/:code/join", (req, res) => {
-	const { code } = req.params;
-	const { peerId, playerName = "Player" } = req.body;
-
-	const lobby = lobbies.get(code.toUpperCase());
+	const lobby = lobbies.get(req.params.code.toUpperCase());
 	if (!lobby) {
 		res.status(404).json({ error: "Lobby not found" });
 		return;
 	}
-
 	if (lobby.players.length >= 8) {
 		res.status(403).json({ error: "Lobby is full" });
 		return;
 	}
-
+	const { peerId, playerName = "Player" } = req.body;
 	if (lobby.players.some((p) => p.peerId === peerId)) {
 		res.status(409).json({ error: "Already in lobby" });
 		return;
 	}
-
 	lobby.players.push({ peerId, name: playerName });
 	res.json({ lobby });
 });
 
-// Get lobby state
 app.get("/api/lobby/:code", (req, res) => {
 	const lobby = lobbies.get(req.params.code.toUpperCase());
 	if (!lobby) {
@@ -82,33 +81,56 @@ app.get("/api/lobby/:code", (req, res) => {
 	res.json({ lobby });
 });
 
-// Leave lobby
 app.post("/api/lobby/:code/leave", (req, res) => {
-	const { code } = req.params;
-	const { peerId } = req.body;
-	const lobby = lobbies.get(code.toUpperCase());
-
+	const lobby = lobbies.get(req.params.code.toUpperCase());
 	if (!lobby) {
 		res.status(404).json({ error: "Lobby not found" });
 		return;
 	}
-
-	lobby.players = lobby.players.filter((p) => p.peerId !== peerId);
-
-	if (lobby.players.length === 0) {
-		lobbies.delete(code.toUpperCase());
-	}
-
+	lobby.players = lobby.players.filter((p) => p.peerId !== req.body.peerId);
+	if (lobby.players.length === 0) lobbies.delete(req.params.code.toUpperCase());
 	res.json({ lobby });
 });
 
-const PORT = Number(process.env.PORT ?? 3001);
+// ── Track route ──────────────────────────────────────────────────────────
 
-// Serve the debug track visualizer
+app.get("/api/track", (req, res) => {
+	const seed = Number(req.query.seed) || 42;
+	const data = generateTrack(seed, {
+		numPoints: Number(req.query.numPoints) || undefined,
+		width: Number(req.query.width) || undefined,
+		elevation: Number(req.query.elevation) || undefined,
+		tightness: Number(req.query.tightness) || undefined,
+		downhillBias: Number(req.query.downhillBias) || undefined,
+	});
+	// Strip heavy arrays that client rebuilds from samples
+	const response = {
+		controlPoints3D: data.controlPoints3D,
+		samples: data.samples,
+		splinePoints: data.splinePoints,
+		length: data.length,
+		numControlPoints: data.numControlPoints,
+		numSamples: data.numSamples,
+		elevationRange: data.elevationRange,
+		seed,
+	};
+	res.json(response);
+});
+
+// ── Serve frontend (production) ──────────────────────────────────────────
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "../..");
-app.use("/debug", express.static(path.join(projectRoot, "public/debug-track-v2")));
+const distPath = path.join(projectRoot, "dist");
+
+// In dev, Vite proxies /api here and serves frontend itself.
+// In production, Express serves both.
+app.use(express.static(distPath));
+app.get("*path", (_req, res) => {
+	res.sendFile(path.join(distPath, "index.html"));
+});
+
+const PORT = Number(process.env.PORT ?? 3001);
 app.listen(PORT, () => {
-	console.log(`Lobby server running on http://localhost:${PORT}`);
-	console.log(`Track debugger at http://localhost:${PORT}/debug`);
+	console.log(`Server running on http://localhost:${PORT}`);
 });
