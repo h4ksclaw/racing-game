@@ -97,7 +97,6 @@ app.post("/api/lobby/:code/leave", (req, res) => {
 app.get("/api/track", (req, res) => {
 	const seed = Number(req.query.seed) || 42;
 	const data = generateTrack(seed, {
-		numPoints: Number(req.query.numPoints) || undefined,
 		width: Number(req.query.width) || undefined,
 		elevation: Number(req.query.elevation) || undefined,
 		tightness: Number(req.query.tightness) || undefined,

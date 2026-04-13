@@ -188,7 +188,6 @@ export interface SceneryItem {
 }
 
 export interface TrackOptions {
-	numPoints?: number;
 	width?: number;
 	elevation?: number;
 	tightness?: number;
@@ -228,44 +227,46 @@ export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData 
 	const rng = mulberry32(seed);
 	const noise = createNoise(rng);
 
-	const numPoints = opts.numPoints ?? 14;
-	const tightness = opts.tightness ?? 5;
-	const elevationAmp = opts.elevation ?? 40;
-	const downhillBias = (opts.downhillBias ?? 60) / 100;
+	const _tightness = opts.tightness ?? 5;
+	const elevationAmp = opts.elevation ?? 80;
+	const downhillBias = (opts.downhillBias ?? 70) / 100;
 	const width = opts.width ?? 12;
 	const shoulderWidth = opts.shoulderWidth ?? 2;
 	const kerbWidth = opts.kerbWidth ?? 0.8;
 	const minSamples = opts.minSamples ?? 500;
 
-	// ── 2-D control points ────────────────────────────────────────────────
-	const baseRadius = 350 + (10 - tightness) * 50;
+	// ── Deformed polygon — safe, varied, no self-intersection ─────────
+	const numBase = 15 + Math.floor(rng() * 10); // 15-24 vertices
+	const baseRadius = 200 + rng() * 200; // 200-400m
+
 	const cp2d: V3[] = [];
-	for (let i = 0; i < numPoints; i++) {
-		const baseAngle = (i / numPoints) * Math.PI * 2;
-		const rj = (rng() * 2 - 1) * baseRadius * 0.35;
-		const aj = (rng() * 2 - 1) * ((Math.PI * 2) / numPoints) * 0.4;
-		const r = baseRadius + rj;
-		const a = baseAngle + aj;
+	for (let i = 0; i < numBase; i++) {
+		const baseAngle = (i / numBase) * Math.PI * 2;
+		const rFactor = 0.2 + rng() * 2.6; // 20%-280% — big variation
+		const angleJitter = (rng() - 0.5) * ((Math.PI * 2) / numBase) * 0.8;
+		const r = baseRadius * rFactor;
+		const a = baseAngle + angleJitter;
 		cp2d.push(v3(Math.cos(a) * r, 0, Math.sin(a) * r));
 	}
 
-	// Chaikin smoothing ×2
-	for (let pass = 0; pass < 2; pass++) {
+	// Light smoothing (1 pass only — preserves shape character)
+	{
+		const n = cp2d.length;
 		const smoothed: V3[] = [];
-		for (let i = 0; i < numPoints; i++) {
-			const prev = cp2d[(i - 1 + numPoints) % numPoints];
+		for (let i = 0; i < n; i++) {
+			const prev = cp2d[(i - 1 + n) % n];
 			const cur = cp2d[i];
-			const next = cp2d[(i + 1) % numPoints];
+			const next = cp2d[(i + 1) % n];
 			smoothed.push(
 				v3(cur.x * 0.6 + (prev.x + next.x) * 0.2, 0, cur.z * 0.6 + (prev.z + next.z) * 0.2),
 			);
 		}
-		for (let i = 0; i < numPoints; i++) cp2d[i] = smoothed[i];
+		for (let i = 0; i < n; i++) cp2d[i] = smoothed[i];
 	}
 
 	// ── Add Y elevation ────────────────────────────────────────────────────
 	const cp3d = cp2d.map((p, i) => {
-		const t = i / numPoints;
+		const t = i / cp2d.length;
 		let eb: number;
 		if (t < 0.7) {
 			eb = -t * downhillBias;

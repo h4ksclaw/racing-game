@@ -685,7 +685,7 @@ async function generate() {
 		buildScene(data);
 	} catch (_err) {
 		// Fallback: generate client-side if API unavailable (dev mode)
-		const data = generateTrack(seed, { elevation: 80, downhillBias: 70 });
+		const data = generateTrack(seed);
 		buildScene({ ...data, seed });
 	}
 }
