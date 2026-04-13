@@ -2,6 +2,7 @@ import { generateScenery, generateTrack, mulberry32 } from "@shared/track.ts";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { getBiomeForSeed } from "./biomes.ts";
+import { initBloom, updateBloomSize } from "./effects.ts";
 import { buildGuardrails, buildMeshes } from "./road.ts";
 import { state } from "./scene.ts";
 import { buildInstancedScenery, loadDecorations } from "./scenery.ts";
@@ -46,6 +47,7 @@ function clearScene() {
 	state.rainSystem = null;
 	state.snowSystem = null;
 	state.terrainMaterial = null;
+	state.composer = null;
 }
 
 async function buildScene(data: TrackResponse) {
@@ -144,6 +146,9 @@ async function buildScene(data: TrackResponse) {
 	controls.dampingFactor = 0.1;
 	controls.target.set(data.samples[0].point.x, data.samples[0].point.y, data.samples[0].point.z);
 	state.controls = controls;
+
+	// Post-processing (bloom)
+	initBloom(renderer, scene, camera);
 
 	dispose = () => {
 		scene.traverse((child) => {
@@ -258,7 +263,13 @@ function animate() {
 	lastTime = now;
 	if (state.controls) state.controls.update();
 	updateWeather(delta);
-	if (state.scene && state.camera) renderer.render(state.scene, state.camera);
+	if (state.scene && state.camera) {
+		if (state.composer) {
+			state.composer.render();
+		} else {
+			renderer.render(state.scene, state.camera);
+		}
+	}
 }
 
 window.addEventListener("resize", () => {
@@ -267,6 +278,7 @@ window.addEventListener("resize", () => {
 		state.camera.updateProjectionMatrix();
 	}
 	renderer.setSize(window.innerWidth, window.innerHeight);
+	updateBloomSize();
 });
 
 generate();

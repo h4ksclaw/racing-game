@@ -278,11 +278,11 @@ export function applyTimeOfDay(hour: number): void {
 
 	const nightFactor = Math.max(0, 1 - st.sunIntensity / 0.3);
 	for (const light of streetLights) {
-		light.intensity = nightFactor * 3;
+		light.intensity = nightFactor * 30;
 	}
 	for (const fixture of lightFixtures) {
 		const mat = fixture.material as THREE.MeshLambertMaterial;
-		mat.emissiveIntensity = 0.15 + nightFactor * 2.5;
+		mat.emissiveIntensity = 0.15 + nightFactor * 25;
 	}
 
 	if (terrainMaterial) {

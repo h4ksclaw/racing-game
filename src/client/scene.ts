@@ -1,5 +1,6 @@
 import type * as THREE from "three";
 import type { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import type { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import type { WeatherType } from "./utils.ts";
 
 /**
@@ -11,6 +12,7 @@ export const state = {
 	camera: null as THREE.PerspectiveCamera | null,
 	controls: null as OrbitControls | null,
 	renderer: null as THREE.WebGLRenderer | null,
+	composer: null as EffectComposer | null,
 	sun: null as THREE.DirectionalLight | null,
 	ambient: null as THREE.HemisphereLight | null,
 	skyUniforms: null as Record<string, THREE.IUniform> | null,

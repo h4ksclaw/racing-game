@@ -174,7 +174,7 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 			fixture.position.y = 5.5;
 			group.add(fixture);
 			state.lightFixtures.push(fixture);
-			const pointLight = new THREE.PointLight(0xffeeaa, 0, 30, 2);
+			const pointLight = new THREE.PointLight(0xffeeaa, 0, 60, 2);
 			pointLight.position.y = 5;
 			group.add(pointLight);
 			state.streetLights.push(pointLight);
