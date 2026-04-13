@@ -480,7 +480,7 @@ class TerrainSampler {
 	private noise2D: (x: number, z: number) => number;
 	private grid: Map<string, TrackSample[]>;
 	private samples: TrackSample[];
-	private avgRoadY: number;
+	avgRoadY: number;
 	private readonly cellSize = 10;
 	private readonly noiseScale = 0.003;
 	private readonly noiseAmp = 60;
@@ -545,9 +545,13 @@ class TerrainSampler {
 
 	getHeight(x: number, z: number): number {
 		const { dist, sample } = this.nearestRoad(x, z);
-		const noiseH = this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp;
+		const centerDist = Math.sqrt(x * x + z * z);
+		// Mountains rise quickly with distance from center
+		const mountainFactor = 1 + smoothstep(300, 900, centerDist) * 3;
+		const noiseH =
+			this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp * mountainFactor;
 		const blend = smoothstep(this.blendStart, this.roadInfluence, dist);
-		// Near road: match road height. Far: noise centered on avg road Y.
+		// Near road: match road height. Far: noise centered on avg road Y with mountain amplification.
 		return sample.point.y * (1 - blend) + (this.avgRoadY + noiseH) * blend - 0.3;
 	}
 }
@@ -571,36 +575,48 @@ function buildTerrain(_data: TrackResponse, terrain: TerrainSampler): THREE.Grou
 		const terrainY = terrain.getHeight(x, z);
 		pos.setY(i, terrainY);
 
-		// Slope-based coloring
+		// Distance-based coloring with more green variation
 		const { dist } = terrain.nearestRoad(x, z);
-		const height = terrainY;
+		const _centerDist = Math.sqrt(x * x + z * z);
+		const _height = terrainY;
 		const blend = smoothstep(15, 40, dist);
-		const slope = blend > 0.5 ? Math.abs(terrainY) / 60 : 0;
+
+		// Slope: use absolute height relative to road, not raw height
+		const slope = blend > 0.5 ? Math.abs(terrainY - terrain.avgRoadY) / 80 : 0;
+
+		// Height above road (for snow/rock at high elevation)
+		const aboveRoad = terrainY - terrain.avgRoadY;
 
 		let r: number, g: number, b: number;
-		if (slope > 0.4) {
-			r = 0.45;
-			g = 0.42;
-			b = 0.38;
-		} else if (height > 50) {
-			r = 0.9;
-			g = 0.92;
-			b = 0.95;
-		} else if (height > 25) {
-			r = 0.15;
+		if (slope > 0.6) {
+			// Rocky outcrops
+			r = 0.42;
+			g = 0.38;
+			b = 0.32;
+		} else if (aboveRoad > 80) {
+			// Snow-capped peaks
+			r = 0.88;
+			g = 0.9;
+			b = 0.93;
+		} else if (aboveRoad > 50) {
+			// High mountain — brownish green
+			r = 0.3;
 			g = 0.35;
-			b = 0.12;
-		} else if (dist < 20) {
-			r = 0.35;
-			g = 0.6;
-			b = 0.25;
+			b = 0.22;
+		} else if (dist < 15) {
+			// Near track — brighter grass
+			r = 0.32;
+			g = 0.58;
+			b = 0.22;
 		} else {
-			r = 0.28;
-			g = 0.52;
-			b = 0.2;
+			// Default — varied greens with noise
+			const greenVar = Math.sin(x * 0.05 + z * 0.07) * 0.5 + 0.5;
+			r = 0.18 + greenVar * 0.1;
+			g = 0.42 + greenVar * 0.15;
+			b = 0.15 + greenVar * 0.05;
 		}
 
-		const colorNoise = Math.sin(x * 0.1) * Math.cos(z * 0.1) * 0.03;
+		const colorNoise = Math.sin(x * 0.1) * Math.cos(z * 0.1) * 0.04;
 		colors[i * 3] = r + colorNoise;
 		colors[i * 3 + 1] = g + colorNoise;
 		colors[i * 3 + 2] = b + colorNoise;
