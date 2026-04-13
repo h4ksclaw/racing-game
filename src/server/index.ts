@@ -2,6 +2,8 @@
  * Minimal Express lobby server for party code management.
  */
 
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 
 interface LobbyRoom {
@@ -101,6 +103,12 @@ app.post("/api/lobby/:code/leave", (req, res) => {
 });
 
 const PORT = Number(process.env.PORT ?? 3001);
+
+// Serve the debug track visualizer
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, "../..");
+app.use("/debug", express.static(path.join(projectRoot, "public/debug-track-v2")));
 app.listen(PORT, () => {
 	console.log(`Lobby server running on http://localhost:${PORT}`);
+	console.log(`Track debugger at http://localhost:${PORT}/debug`);
 });

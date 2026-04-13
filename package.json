@@ -5,6 +5,8 @@
 	"scripts": {
 		"dev": "vite",
 		"dev:server": "tsx src/server/index.ts",
+		"build:debug": "vite build --config vite-debug-v2.config.ts",
+		"dev:debug": "vite --config vite-debug-v2.config.ts",
 		"build": "tsc --noEmit && vite build",
 		"preview": "vite preview",
 		"lint": "biome check src/",
