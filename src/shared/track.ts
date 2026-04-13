@@ -52,6 +52,9 @@ function v3Add(a: V3, b: V3): V3 {
 function v3Scale(a: V3, s: number): V3 {
 	return v3(a.x * s, a.y * s, a.z * s);
 }
+function v3Lerp(a: V3, b: V3, t: number): V3 {
+	return v3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
+}
 function v3Cross(a: V3, b: V3): V3 {
 	return v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 }
@@ -543,11 +546,23 @@ export function generateScenery(
 		"log_large",
 	];
 
-	for (let i = 0; i < samples.length; i += spacing) {
-		const s = samples[i];
+	let i = Math.floor(rng() * spacing); // random start offset
+	while (i < samples.length) {
+		// Interpolate between samples for natural jitter along track
+		const jf = i + (rng() - 0.5) * spacing * 0.6;
+		const j = Math.max(0, Math.min(Math.floor(jf), samples.length - 1));
+		const jNext = Math.min(j + 1, samples.length - 1);
+		const t = jf - Math.floor(jf);
+		const s = {
+			point: v3Lerp(samples[j].point, samples[jNext].point, t),
+			tangent: samples[j].tangent,
+			binormal: samples[j].binormal,
+			grassLeft: v3Lerp(samples[j].grassLeft, samples[jNext].grassLeft, t),
+			grassRight: v3Lerp(samples[j].grassRight, samples[jNext].grassRight, t),
+		};
 		const curvature =
-			i > 0 && i < samples.length - 1
-				? v3Len(v3Add(s.binormal, v3Scale(samples[i + 1].binormal, -1)))
+			j > 0 && j < samples.length - 1
+				? v3Len(v3Add(samples[j].binormal, v3Scale(samples[j + 1].binormal, -1)))
 				: 0;
 
 		const leftCurve = curvature > 0.05;
@@ -746,25 +761,36 @@ export function generateScenery(
 			}
 		}
 
-		// Lights every ~80m, both sides
-		if (i % (spacing * 4) === 0) {
-			for (const side of [-1, 1]) {
-				const offset = side === -1 ? s.grassLeft : s.grassRight;
-				scenery.push({
-					type: "light",
-					position: { ...offset },
-					rotation: 0,
-					scale: 1,
-				});
-			}
-		}
+		// Random stride — prevents grid-like spacing
+		i += Math.max(1, Math.floor(spacing * (0.5 + rng())));
+	}
 
-		// Gates at wide sections (~200m)
-		if (i % (spacing * 10) === 0 && curvature < 0.05) {
+	// Lights every ~80m, both sides
+	for (let li = 0; li < samples.length; li += spacing * 4) {
+		const ls = samples[li];
+		for (const side of [-1, 1]) {
+			const offset = side === -1 ? ls.grassLeft : ls.grassRight;
+			scenery.push({
+				type: "light",
+				position: { ...offset },
+				rotation: 0,
+				scale: 1,
+			});
+		}
+	}
+
+	// Gates at wide sections (~200m)
+	for (let gi = 0; gi < samples.length; gi += spacing * 10) {
+		const gs = samples[gi];
+		const gc =
+			gi > 0 && gi < samples.length - 1
+				? v3Len(v3Add(gs.binormal, v3Scale(samples[gi + 1].binormal, -1)))
+				: 0;
+		if (gc < 0.05) {
 			scenery.push({
 				type: "gate",
-				position: { ...s.point },
-				rotation: Math.atan2(s.binormal.x, s.binormal.z),
+				position: { ...gs.point },
+				rotation: Math.atan2(gs.binormal.x, gs.binormal.z),
 				scale: 1,
 			});
 		}
