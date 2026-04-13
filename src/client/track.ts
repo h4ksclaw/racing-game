@@ -85,12 +85,12 @@ function makeAsphaltTexture(): THREE.CanvasTexture {
 	const centerU = W * 0.5; // center line
 	const lineW = 4; // line thickness in pixels (~0.8m at 512px/12m road width)
 
-	// Edge lines — solid, drawn full height (both halves)
+	// Edge lines - solid, drawn full height (both halves)
 	ctx.fillStyle = "#ffffff";
 	ctx.fillRect(edgeU_L - lineW / 2, 0, lineW, H);
 	ctx.fillRect(edgeU_R - lineW / 2, 0, lineW, H);
 
-	// Center dashes — only in top half (painted zone)
+	// Center dashes - only in top half (painted zone)
 	ctx.fillRect(centerU - lineW / 2, paintY, lineW, H - paintY);
 
 	// Slight glow/feather on markings for realism
@@ -331,6 +331,81 @@ async function loadDecorations(): Promise<void> {
 
 const GLB_SCALE = 8;
 
+function buildInstancedScenery(scenery: SceneryItem[], terrain: TerrainSampler): THREE.Group {
+	const group = new THREE.Group();
+	const dummy = new THREE.Object3D();
+
+	// Group items by type
+	const byType = new Map<string, SceneryItem[]>();
+	for (const item of scenery) {
+		if (item.type === "barrier") continue;
+		let arr = byType.get(item.type);
+		if (!arr) {
+			arr = [];
+			byType.set(item.type, arr);
+		}
+		arr.push(item);
+	}
+
+	// For each type, either instance from GLB cache or create instanced mesh
+	for (const [type, items] of byType) {
+		// Low-count types: just use individual objects (simpler)
+		if (items.length < 3) {
+			for (const item of items) {
+				const obj = createSceneryObject(item, terrain);
+				if (obj) group.add(obj);
+			}
+			continue;
+		}
+
+		const cached = decorationCache.get(type);
+		if (cached) {
+			// Extract geometry from the first mesh child
+			let geo: THREE.BufferGeometry | null = null;
+			let mat: THREE.Material | THREE.Material[] | null = null;
+			cached.traverse((child) => {
+				if (!geo && child instanceof THREE.Mesh) {
+					geo = child.geometry;
+					mat = child.material;
+				}
+			});
+			if (!geo || !mat) {
+				// Fallback to individual objects
+				for (const item of items) {
+					const obj = createSceneryObject(item, terrain);
+					if (obj) group.add(obj);
+				}
+				continue;
+			}
+
+			const instanced = new THREE.InstancedMesh(geo, mat, items.length);
+			instanced.castShadow = true;
+			instanced.receiveShadow = true;
+
+			for (let i = 0; i < items.length; i++) {
+				const item = items[i];
+				const scale = GLB_SCALE * (item.scale ?? 1);
+				const tY = terrain.getHeight(item.position.x, item.position.z);
+				dummy.position.set(item.position.x, tY, item.position.z);
+				dummy.rotation.set(0, item.rotation ?? 0, 0);
+				dummy.scale.setScalar(scale);
+				dummy.updateMatrix();
+				instanced.setMatrixAt(i, dummy.matrix);
+			}
+			instanced.instanceMatrix.needsUpdate = true;
+			group.add(instanced);
+		} else {
+			// Not in GLB (light, barrier, etc.) - use individual objects
+			for (const item of items) {
+				const obj = createSceneryObject(item, terrain);
+				if (obj) group.add(obj);
+			}
+		}
+	}
+
+	return group;
+}
+
 function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.Group | null {
 	const cached = decorationCache.get(item.type);
 	if (cached) {
@@ -429,21 +504,18 @@ async function buildScene(data: TrackResponse) {
 	const terrain = new TerrainSampler(data.seed, data.samples);
 	scene.add(buildTerrain(data, terrain));
 
-	// Track meshes — use same seed so RNG is deterministic
+	// Track meshes - use same seed so RNG is deterministic
 	const rng = mulberry32(data.seed);
 	const trackMeshes = buildMeshes(data, rng);
 	scene.add(trackMeshes);
 
-	// Scenery — generate deterministically from seed, load GLB models and place
+	// Scenery - generate deterministically from seed, load GLB models, place as instanced meshes
 	const scenery = generateScenery(data.seed, data.samples);
 	await loadDecorations();
-	for (const item of scenery) {
-		if (item.type === "barrier") continue; // handled by procedural guardrails
-		const obj = createSceneryObject(item, terrain);
-		if (obj) scene.add(obj);
-	}
+	const instancedGroup = buildInstancedScenery(scenery, terrain);
+	scene.add(instancedGroup);
 
-	// Procedural guardrails — continuous fence along both sides of road
+	// Procedural guardrails - continuous fence along both sides of road
 	scene.add(buildGuardrails(data.samples, terrain));
 
 	camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 2000);
@@ -472,7 +544,7 @@ async function buildScene(data: TrackResponse) {
 	};
 
 	if (infoEl) {
-		infoEl.textContent = `Seed: ${data.seed} | Length: ${data.length.toFixed(0)}m | Samples: ${data.numSamples} | Elev: ${data.elevationRange.min.toFixed(1)}…${data.elevationRange.max.toFixed(1)} | Scenery: ${scenery.length}`;
+		infoEl.textContent = `Seed: ${data.seed} | Length: ${data.length.toFixed(0)}m | Samples: ${data.numSamples} | Elev: ${data.elevationRange.min.toFixed(1)}...${data.elevationRange.max.toFixed(1)} | Scenery: ${scenery.length}`;
 	}
 }
 
@@ -599,17 +671,17 @@ function buildTerrain(_data: TrackResponse, terrain: TerrainSampler): THREE.Grou
 			g = 0.9;
 			b = 0.93;
 		} else if (aboveRoad > 50) {
-			// High mountain — brownish green
+			// High mountain - brownish green
 			r = 0.3;
 			g = 0.35;
 			b = 0.22;
 		} else if (dist < 15) {
-			// Near track — brighter grass
+			// Near track - brighter grass
 			r = 0.32;
 			g = 0.58;
 			b = 0.22;
 		} else {
-			// Default — varied greens with noise
+			// Default - varied greens with noise
 			const greenVar = Math.sin(x * 0.05 + z * 0.07) * 0.5 + 0.5;
 			r = 0.18 + greenVar * 0.1;
 			g = 0.42 + greenVar * 0.15;
