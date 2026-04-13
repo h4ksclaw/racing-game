@@ -266,7 +266,7 @@ function animate() {
 }
 
 function tightenShadowFrustum() {
-	const { sun, camera, terrainMaterial } = state;
+	const { sun, camera, terrainMaterial, streetLights } = state;
 	if (!sun || !camera || !sun.castShadow) return;
 	// Point directional light shadow at the camera so shadows are always near viewer
 	sun.target.position.copy(camera.position);
@@ -275,6 +275,22 @@ function tightenShadowFrustum() {
 	if (terrainMaterial && sun.shadow.map) {
 		terrainMaterial.uniforms.tShadowMap.value = sun.shadow.map.texture;
 		terrainMaterial.uniforms.uShadowMatrix.value.copy(sun.shadow.matrix);
+	}
+	// Pass nearest street lights to terrain shader for illumination
+	if (terrainMaterial && streetLights.length > 0) {
+		const camPos = camera.position;
+		const sorted = streetLights
+			.map((l) => ({
+				pos: l.position.clone(),
+				dist: camPos.distanceTo(l.position),
+			}))
+			.sort((a, b) => a.dist - b.dist)
+			.slice(0, 4);
+		const posArr = terrainMaterial.uniforms.uStreetLightPos.value as THREE.Vector3[];
+		for (let i = 0; i < 4; i++) {
+			posArr[i].copy(i < sorted.length ? sorted[i].pos : new THREE.Vector3(0, -9999, 0));
+		}
+		terrainMaterial.uniforms.uStreetLightCount.value = Math.min(sorted.length, 4);
 	}
 }
 

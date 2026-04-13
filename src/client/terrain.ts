@@ -204,6 +204,11 @@ uniform vec3 uRockTint;
 uniform float uSnowThreshold;
 uniform float uRockThreshold;
 uniform float uShadowBias;
+uniform float uExposure;
+uniform int uStreetLightCount;
+uniform vec3 uStreetLightPos[4];
+uniform vec3 uStreetLightColor[4];
+uniform float uStreetLightIntensity;
 
 varying vec2 vUv;
 varying vec3 vWorldPos;
@@ -256,20 +261,33 @@ void main() {
 
 	// Manual shadow sampling (3x3 PCF)
 	float shadow = 1.0;
-	vec3 sc = vShadowCoord.xyz / vShadowCoord.w;
-	if (sc.x >= 0.0 && sc.x <= 1.0 && sc.y >= 0.0 && sc.y <= 1.0 && sc.z <= 1.0) {
-		float texelSize = 1.0 / 2048.0;
-		float sum = 0.0;
-		for (int x = -1; x <= 1; x++) {
-			for (int y = -1; y <= 1; y++) {
-				float depth = texture2D(tShadowMap, sc.xy + vec2(float(x), float(y)) * texelSize).r;
-				sum += sc.z + uShadowBias >= depth ? 1.0 : 0.0;
+	if (tShadowMap != null) {
+		vec3 sc = vShadowCoord.xyz / vShadowCoord.w;
+		if (sc.x >= 0.0 && sc.x <= 1.0 && sc.y >= 0.0 && sc.y <= 1.0 && sc.z <= 1.0) {
+			float texelSize = 1.0 / 2048.0;
+			float sum = 0.0;
+			for (int x = -1; x <= 1; x++) {
+				for (int y = -1; y <= 1; y++) {
+					float depth = texture2D(tShadowMap, sc.xy + vec2(float(x), float(y)) * texelSize).r;
+					sum += sc.z + uShadowBias >= depth ? 1.0 : 0.0;
+				}
 			}
+			shadow = mix(0.45, 1.0, sum / 9.0); // soft shadows, never pitch black
 		}
-		shadow = sum / 9.0;
 	}
 
-	vec3 litColor = baseColor * (uAmbientColor * uAmbientIntensity + uSunColor * NdotL * uSunIntensity * shadow);
+	// Street light influence (up to 4 lights)
+	vec3 streetLighting = vec3(0.0);
+	for (int i = 0; i < 4; i++) {
+		if (i >= uStreetLightCount) break;
+		float d = distance(vWorldPos, uStreetLightPos[i]);
+		float atten = 1.0 / (1.0 + d * d * 0.008 + d * 0.02);
+		streetLighting += uStreetLightColor[i] * atten;
+	}
+
+	vec3 ambient = uAmbientColor * uAmbientIntensity + streetLighting * uStreetLightIntensity;
+	vec3 diffuse = uSunColor * NdotL * uSunIntensity * shadow;
+	vec3 litColor = baseColor * (ambient + diffuse) * uExposure;
 
 	float fogDist = length(vWorldPos - cameraPosition);
 	float fogFactor = smoothstep(uFogNear, uFogFar, fogDist);
@@ -344,6 +362,13 @@ export async function buildTerrain(
 			tShadowMap: { value: null as THREE.Texture | null },
 			uShadowMatrix: { value: new THREE.Matrix4() },
 			uShadowBias: { value: -0.002 },
+			uExposure: { value: 1.0 },
+			uStreetLightCount: { value: 0 },
+			uStreetLightPos: { value: Array.from({ length: 4 }, () => new THREE.Vector3()) },
+			uStreetLightColor: {
+				value: Array.from({ length: 4 }, () => new THREE.Vector3(1, 0.95, 0.8)),
+			},
+			uStreetLightIntensity: { value: 0.0 },
 			uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
 			uSunIntensity: { value: 1.0 },
 			uSunColor: { value: new THREE.Color(1.0, 0.95, 0.85) },
