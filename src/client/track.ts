@@ -868,11 +868,11 @@ function applyTimeOfDay(hour: number) {
 	// Street lights — glow at night, dim during day
 	const nightFactor = Math.max(0, 1 - state.sunIntensity / 0.3);
 	for (const light of streetLights) {
-		light.intensity = nightFactor * 0.6;
+		light.intensity = nightFactor * 3;
 	}
 	for (const fixture of lightFixtures) {
 		const mat = fixture.material as THREE.MeshLambertMaterial;
-		mat.emissiveIntensity = 0.15 + nightFactor * 0.5;
+		mat.emissiveIntensity = 0.15 + nightFactor * 2.5;
 	}
 
 	// Renderer exposure (darker at night)
