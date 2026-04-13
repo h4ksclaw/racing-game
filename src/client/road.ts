@@ -3,63 +3,42 @@ import * as THREE from "three";
 import type { TerrainSampler } from "./terrain.ts";
 import type { TrackResponse } from "./utils.ts";
 
-// ── Road texture loading ──────────────────────────────────────────────
+// ── Texture helpers ───────────────────────────────────────────────────
+
+function loadTex(path: string, srgb = true): Promise<THREE.Texture> {
+	return new Promise((resolve, reject) =>
+		new THREE.TextureLoader().load(
+			path,
+			(tex) => {
+				tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+				tex.anisotropy = 16;
+				if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
+				resolve(tex);
+			},
+			undefined,
+			reject,
+		),
+	);
+}
 
 let roadTextures: {
 	color: THREE.Texture;
 	normal: THREE.Texture;
 	roughness: THREE.Texture;
+	gravelColor: THREE.Texture;
+	gravelNormal: THREE.Texture;
 } | null = null;
 
-async function loadRoadTextures(): Promise<{
-	color: THREE.Texture;
-	normal: THREE.Texture;
-	roughness: THREE.Texture;
-}> {
+async function loadRoadTextures() {
 	if (roadTextures) return roadTextures;
-
-	const base = "/textures/road_asphalt";
-	const [color, normal, roughness] = await Promise.all([
-		new Promise<THREE.Texture>((resolve, reject) =>
-			new THREE.TextureLoader().load(
-				`${base}/Road007_1K-JPG_Color.jpg`,
-				(tex) => {
-					tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-					tex.colorSpace = THREE.SRGBColorSpace;
-					tex.anisotropy = 16;
-					resolve(tex);
-				},
-				undefined,
-				reject,
-			),
-		),
-		new Promise<THREE.Texture>((resolve, reject) =>
-			new THREE.TextureLoader().load(
-				`${base}/Road007_1K-JPG_NormalGL.jpg`,
-				(tex) => {
-					tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-					tex.anisotropy = 16;
-					resolve(tex);
-				},
-				undefined,
-				reject,
-			),
-		),
-		new Promise<THREE.Texture>((resolve, reject) =>
-			new THREE.TextureLoader().load(
-				`${base}/Road007_1K-JPG_Roughness.jpg`,
-				(tex) => {
-					tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-					tex.anisotropy = 16;
-					resolve(tex);
-				},
-				undefined,
-				reject,
-			),
-		),
+	const [color, normal, roughness, gravelColor, gravelNormal] = await Promise.all([
+		loadTex("/textures/road_asphalt/Road007_1K-JPG_Color.jpg"),
+		loadTex("/textures/road_asphalt/Road007_1K-JPG_NormalGL.jpg", false),
+		loadTex("/textures/road_asphalt/Road007_1K-JPG_Roughness.jpg", false),
+		loadTex("/textures/gravel/Gravel015_1K-JPG_Color.jpg"),
+		loadTex("/textures/gravel/Gravel015_1K-JPG_NormalGL.jpg", false),
 	]);
-
-	roadTextures = { color, normal, roughness };
+	roadTextures = { color, normal, roughness, gravelColor, gravelNormal };
 	return roadTextures;
 }
 
@@ -170,6 +149,49 @@ export async function buildMeshes(data: TrackResponse, rng: () => number): Promi
 		roughness: 0.8,
 		metalness: 0.02,
 	});
+
+	// Inject gravel/wear detail at road edges via onBeforeCompile
+	roadMat.onBeforeCompile = (shader) => {
+		shader.uniforms.tGravelColor = { value: tex.gravelColor };
+		shader.uniforms.tGravelNormal = { value: tex.gravelNormal };
+
+		// Fragment shader: blend gravel at edges based on UV.x
+		shader.fragmentShader = shader.fragmentShader.replace(
+			"#include <map_fragment>",
+			/* glsl */ `
+				#include <map_fragment>
+				// Gravel detail at road edges
+				float edgeDist = abs(vUv.x - 0.5) * 2.0; // 0 at center, 1 at edges
+				float wearMask = smoothstep(0.6, 0.95, edgeDist);
+				// Add some noise-like variation along the road
+				float roadNoise = fract(sin(vUv.y * 127.1 + vUv.x * 311.7) * 43758.5453);
+				wearMask *= 0.5 + 0.5 * step(0.6, roadNoise); // patchy wear
+				// Occasional random patches in the middle (tire tracks, cracks)
+				float centerWear = (1.0 - edgeDist) * step(0.85, roadNoise) * 0.3;
+				wearMask = clamp(wearMask + centerWear, 0.0, 1.0);
+
+				vec4 gravel = texture2D(tGravelColor, vUv * 3.0);
+				diffuseColor.rgb = mix(diffuseColor.rgb, gravel.rgb, wearMask * 0.6);
+			`,
+		);
+
+		// Normal map blending for gravel bumps
+		shader.fragmentShader = shader.fragmentShader.replace(
+			"#include <normal_fragment_maps>",
+			/* glsl */ `
+				#include <normal_fragment_maps>
+				float edgeDist = abs(vUv.x - 0.5) * 2.0;
+				float wearMask = smoothstep(0.6, 0.95, edgeDist);
+				float roadNoise = fract(sin(vUv.y * 127.1 + vUv.x * 311.7) * 43758.5453);
+				wearMask *= 0.5 + 0.5 * step(0.6, roadNoise);
+				float centerWear = (1.0 - edgeDist) * step(0.85, roadNoise) * 0.3;
+				wearMask = clamp(wearMask + centerWear, 0.0, 1.0);
+
+				vec3 gravelN = texture2D(tGravelNormal, vUv * 3.0).rgb * 2.0 - 1.0;
+				normal = mix(normal, gravelN, wearMask * 0.4);
+			`,
+		);
+	};
 	const roadMesh = new THREE.Mesh(makeGeo(roadVerts, roadIndices, roadUVs), roadMat);
 	roadMesh.receiveShadow = true;
 	group.add(roadMesh);
