@@ -76,15 +76,18 @@ async function buildScene(data: TrackResponse) {
 	const sun = new THREE.DirectionalLight(0xffffcc, 1.2);
 	sun.position.set(200, 300, 100);
 	sun.castShadow = true;
-	sun.shadow.mapSize.width = 1024;
-	sun.shadow.mapSize.height = 1024;
-	sun.shadow.camera.near = 10;
+	sun.shadow.mapSize.width = 2048;
+	sun.shadow.mapSize.height = 2048;
+	sun.shadow.camera.near = 1;
 	sun.shadow.camera.far = 500;
-	sun.shadow.camera.left = -200;
-	sun.shadow.camera.right = 200;
-	sun.shadow.camera.top = 200;
-	sun.shadow.camera.bottom = -200;
+	sun.shadow.camera.left = -100;
+	sun.shadow.camera.right = 100;
+	sun.shadow.camera.top = 100;
+	sun.shadow.camera.bottom = -100;
+	sun.shadow.bias = -0.001;
+	// Only shadow the area around the camera
 	scene.add(sun);
+	scene.add(sun.target);
 	state.sun = sun;
 
 	// Stars
@@ -258,7 +261,16 @@ function animate() {
 	lastTime = now;
 	if (state.controls) state.controls.update();
 	updateWeather(delta);
+	tightenShadowFrustum();
 	if (state.scene && state.camera) renderer.render(state.scene, state.camera);
+}
+
+function tightenShadowFrustum() {
+	const { sun, camera } = state;
+	if (!sun || !camera || !sun.castShadow) return;
+	// Point directional light shadow at the camera so shadows are always near viewer
+	sun.target.position.copy(camera.position);
+	sun.target.updateMatrixWorld();
 }
 
 window.addEventListener("resize", () => {
