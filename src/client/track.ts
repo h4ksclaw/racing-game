@@ -4,6 +4,7 @@ import { createNoise2D } from "simplex-noise";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { Sky } from "three/addons/objects/Sky.js";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -482,13 +483,28 @@ async function buildScene(data: TrackResponse) {
 	clearScene();
 
 	scene = new THREE.Scene();
-	scene.background = new THREE.Color(0.55, 0.75, 0.95);
+	scene.background = new THREE.Color(0x87ceeb); // fallback, Sky shader overrides
 	scene.fog = new THREE.Fog(0x88aacc, 500, 1500);
+
+	// Procedural sky
+	const sky = new Sky();
+	sky.scale.setScalar(10000);
+	scene.add(sky);
+	const skyUniforms = sky.material.uniforms;
+	skyUniforms.turbidity.value = 4;
+	skyUniforms.rayleigh.value = 2;
+	skyUniforms.mieCoefficient.value = 0.005;
+	skyUniforms.mieDirectionalG.value = 0.8;
+	const sunPos = new THREE.Vector3();
+	const phi = THREE.MathUtils.degToRad(90 - 45); // 45° elevation
+	const theta = THREE.MathUtils.degToRad(180);
+	sunPos.setFromSphericalCoords(1, phi, theta);
+	skyUniforms.sunPosition.value.copy(sunPos);
 
 	scene.add(new THREE.HemisphereLight(0x88bbff, 0x445511, 0.6));
 
 	const sun = new THREE.DirectionalLight(0xffffcc, 1.2);
-	sun.position.set(200, 300, 100);
+	sun.position.set(200, 300, 100); // roughly matches sky sun at 45° elevation
 	sun.castShadow = true;
 	sun.shadow.mapSize.width = 2048;
 	sun.shadow.mapSize.height = 2048;
