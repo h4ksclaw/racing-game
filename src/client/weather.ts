@@ -215,24 +215,26 @@ export function applyWeather(weather: WeatherType): void {
 			if (skyUniforms) {
 				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 20);
 			}
-			sun.intensity *= 0.2;
-			ambient.intensity *= 0.5;
+			sun.intensity *= 0.15;
+			ambient.intensity *= 0.4;
 			const fogH = sc.fog as THREE.Fog;
-			fogH.far = Math.min(fogH.far, 350);
-			fogH.near = Math.max(fogH.near, 50);
+			fogH.far = 250;
+			fogH.near = 10;
 			const isNight = currentTime > 20 || currentTime < 5;
-			fogH.color.setRGB(isNight ? 0.06 : 0.25, isNight ? 0.06 : 0.25, isNight ? 0.08 : 0.3);
+			fogH.color.setRGB(isNight ? 0.05 : 0.18, isNight ? 0.05 : 0.19, isNight ? 0.07 : 0.22);
 			break;
 		}
 		case "fog": {
 			if (skyUniforms) {
-				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 12);
+				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 15);
 			}
-			sun.intensity *= 0.3;
-			ambient.intensity *= 0.6;
+			sun.intensity *= 0.2;
+			ambient.intensity *= 0.4;
 			const fogF = sc.fog as THREE.Fog;
-			fogF.far = 200;
-			fogF.near = 5;
+			fogF.far = 120;
+			fogF.near = 1;
+			const isNightF = state.currentTime > 20 || state.currentTime < 5;
+			fogF.color.setRGB(isNightF ? 0.12 : 0.65, isNightF ? 0.12 : 0.67, isNightF ? 0.15 : 0.7);
 			break;
 		}
 		case "snow": {
@@ -247,5 +249,41 @@ export function applyWeather(weather: WeatherType): void {
 			fogS.color.setRGB(0.6, 0.62, 0.68);
 			break;
 		}
+	}
+	// Sync terrain shader fog and lighting uniforms with weather
+	if (state.terrainMaterial) {
+		if (sc && sc.fog) {
+			const tf = sc.fog as THREE.Fog;
+			state.terrainMaterial.uniforms.uFogColor.value.copy(tf.color);
+			state.terrainMaterial.uniforms.uFogNear.value = tf.near;
+			state.terrainMaterial.uniforms.uFogFar.value = tf.far;
+		}
+		// Dim terrain sun/ambient to match weather
+		const weatherSunMult =
+			weather === "heavy_rain"
+				? 0.2
+				: weather === "rain"
+					? 0.4
+					: weather === "fog"
+						? 0.3
+						: weather === "cloudy"
+							? 0.6
+							: weather === "snow"
+								? 0.5
+								: 1.0;
+		const weatherAmbMult =
+			weather === "heavy_rain"
+				? 0.5
+				: weather === "rain"
+					? 0.7
+					: weather === "fog"
+						? 0.6
+						: weather === "cloudy"
+							? 0.8
+							: weather === "snow"
+								? 0.8
+								: 1.0;
+		state.terrainMaterial.uniforms.uSunIntensity.value *= weatherSunMult;
+		state.terrainMaterial.uniforms.uAmbientIntensity.value *= weatherAmbMult;
 	}
 }
