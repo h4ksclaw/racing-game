@@ -1,30 +1,57 @@
 {
-	"compilerOptions": {
-		"target": "ES2022",
-		"module": "ESNext",
-		"moduleResolution": "bundler",
-		"lib": ["ES2022", "DOM", "DOM.Iterable"],
-		"strict": true,
-		"noUnusedLocals": false,
-		"noUnusedParameters": false,
-		"noFallthroughCasesInSwitch": true,
-		"forceConsistentCasingInFileNames": true,
-		"resolveJsonModule": true,
-		"isolatedModules": true,
-		"esModuleInterop": true,
-		"skipLibCheck": true,
-		"allowImportingTsExtensions": true,
-		"outDir": "./dist",
-		"rootDir": "./src",
-		"ignoreDeprecations": "6.0",
-		"baseUrl": ".",
-		"paths": {
-			"@shared/*": ["src/shared/*"],
-			"@client/*": ["src/client/*"],
-			"@server/*": ["src/server/*"]
-		},
-		"types": []
-	},
-	"include": ["src/**/*"],
-	"exclude": ["node_modules", "dist"]
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": [
+        "src/shared/*"
+      ],
+      "@client/*": [
+        "src/client/*"
+      ],
+      "@server/*": [
+        "src/server/*"
+      ]
+    },
+    "types": []
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "vite.config.ts",
+    "vite-debug-v2.config.ts",
+    "src/client/game",
+    "src/client/vehicle",
+    "src/client/multiplayer",
+    "src/client/ui",
+    "src/client/audio",
+    "src/client/effects",
+    "src/client/types",
+    "src/client/utils",
+    "src/client/main.ts",
+    "src/client/track"
+  ]
 }

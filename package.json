@@ -1,42 +1,41 @@
 {
-	"name": "racing-game",
-	"version": "0.1.0",
-	"type": "module",
-	"scripts": {
-		"dev": "vite",
-		"dev:server": "tsx src/server/index.ts",
-		"build:debug": "vite build --config vite-debug-v2.config.ts",
-		"dev:debug": "vite --config vite-debug-v2.config.ts",
-		"build": "tsc --noEmit && vite build",
-		"preview": "vite preview",
-		"lint": "biome check src/",
-		"lint:fix": "biome check --write src/",
-		"typecheck": "tsc --noEmit",
-		"check": "tsc --noEmit && biome check src/",
-		"fix": "biome check --write src/ && tsc --noEmit",
-		"prepare": "husky"
-	},
-	"lint-staged": {
-		"src/**/*.{ts,tsx}": [
-			"biome check --write"
-		]
-	},
-	"devDependencies": {
-		"@biomejs/biome": "^2.4.11",
-		"@types/express": "^5.0.6",
-		"@types/node": "^25.6.0",
-		"@types/three": "^0.183.1",
-		"@vitejs/plugin-basic-ssl": "^2.3.0",
-		"husky": "^9.1.7",
-		"lint-staged": "^15.5.2",
-		"tsx": "^4.21.0",
-		"typescript": "^6.0.2",
-		"vite": "^8.0.8"
-	},
-	"dependencies": {
-		"cannon-es": "^0.20.0",
-		"express": "^5.2.1",
-		"peerjs": "^1.5.5",
-		"three": "^0.183.2"
-	}
+  "name": "racing-game",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:server": "tsx src/server/index.ts",
+    "build:debug": "vite build --config vite-debug-v2.config.ts",
+    "dev:debug": "vite --config vite-debug-v2.config.ts",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "lint": "biome check src/",
+    "lint:fix": "biome check --write src/",
+    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit && biome check src/ && bash scripts/knip.sh",
+    "fix": "biome check --write src/ && tsc --noEmit",
+    "prepare": "husky",
+    "knip": "bash scripts/knip.sh"
+  },
+  "lint-staged": {
+    "src/**/*.{ts,tsx}": [
+      "biome check --write"
+    ]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.11",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.6.0",
+    "@types/three": "^0.183.1",
+    "husky": "^9.1.7",
+    "knip": "^5.0.0",
+    "lint-staged": "^15.5.2",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.8"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "three": "^0.183.2"
+  }
 }
