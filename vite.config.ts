@@ -21,18 +21,7 @@ export default defineConfig({
 	server: {
 		port: 3000,
 		watch: {
-			ignored: [
-				"src/client/game/**",
-				"src/client/vehicle/**",
-				"src/client/multiplayer/**",
-				"src/client/ui/**",
-				"src/client/audio/**",
-				"src/client/effects/**",
-				"src/client/types/**",
-				"src/client/utils/**",
-				"src/client/track/**",
-				"src/client/main.ts",
-			],
+			ignored: ["_archive/**"],
 		},
 		proxy: {
 			"/api": {

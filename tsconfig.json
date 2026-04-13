@@ -43,15 +43,6 @@
     "dist",
     "vite.config.ts",
     "vite-debug-v2.config.ts",
-    "src/client/game",
-    "src/client/vehicle",
-    "src/client/multiplayer",
-    "src/client/ui",
-    "src/client/audio",
-    "src/client/effects",
-    "src/client/types",
-    "src/client/utils",
-    "src/client/main.ts",
-    "src/client/track"
+    "_archive"
   ]
 }
