@@ -22,6 +22,7 @@ export const state = {
 	rainSystem: null as THREE.Points | null,
 	snowSystem: null as THREE.Points | null,
 	terrainMaterial: null as THREE.ShaderMaterial | null,
+	roadMaterial: null as THREE.MeshStandardMaterial | null,
 	currentTime: 12,
 	currentWeather: "clear" as WeatherType,
 };

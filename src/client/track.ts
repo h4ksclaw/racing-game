@@ -47,6 +47,7 @@ function clearScene() {
 	state.rainSystem = null;
 	state.snowSystem = null;
 	state.terrainMaterial = null;
+	state.roadMaterial = null;
 	state.composer = null;
 }
 
@@ -256,6 +257,21 @@ if (weatherSelect) {
 
 let lastTime = performance.now();
 
+function updateTerrainStreetLights() {
+	const { camera, terrainMaterial, streetLights } = state;
+	if (!camera || !terrainMaterial || streetLights.length === 0) return;
+	const camPos = camera.position;
+	const sorted = streetLights
+		.map((l) => ({ pos: l.position, dist: camPos.distanceTo(l.position) }))
+		.sort((a, b) => a.dist - b.dist)
+		.slice(0, 4);
+	const posArr = terrainMaterial.uniforms.uStreetLightPos.value as THREE.Vector3[];
+	for (let i = 0; i < 4; i++) {
+		posArr[i].copy(i < sorted.length ? sorted[i].pos : new THREE.Vector3(0, -9999, 0));
+	}
+	terrainMaterial.uniforms.uStreetLightCount.value = Math.min(sorted.length, 4);
+}
+
 function animate() {
 	requestAnimationFrame(animate);
 	const now = performance.now();
@@ -263,6 +279,7 @@ function animate() {
 	lastTime = now;
 	if (state.controls) state.controls.update();
 	updateWeather(delta);
+	updateTerrainStreetLights();
 	if (state.scene && state.camera) {
 		if (state.composer) {
 			state.composer.render();

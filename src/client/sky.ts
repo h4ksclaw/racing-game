@@ -244,6 +244,7 @@ export function applyTimeOfDay(hour: number): void {
 		streetLights,
 		lightFixtures,
 		terrainMaterial,
+		roadMaterial,
 		renderer,
 	} = state;
 	if (!sc || !sun || !ambient) return;
@@ -296,9 +297,13 @@ export function applyTimeOfDay(hour: number): void {
 		terrainMaterial.uniforms.uFogColor.value.setRGB(...st.fogColor);
 		terrainMaterial.uniforms.uFogNear.value = st.fogNear;
 		terrainMaterial.uniforms.uFogFar.value = st.fogFar;
+		terrainMaterial.uniforms.uStreetLightIntensity.value = nightFactor;
 	}
 
 	if (renderer) {
 		renderer.toneMappingExposure = 0.5 + st.sunIntensity * 0.5;
+		if (roadMaterial) {
+			roadMaterial.roughness = 0.3 + st.sunIntensity * 0.5; // 0.3 at night, 0.8 at day
+		}
 	}
 }

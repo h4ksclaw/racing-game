@@ -196,6 +196,10 @@ uniform vec3 uDirtTint;
 uniform vec3 uRockTint;
 uniform float uSnowThreshold;
 uniform float uRockThreshold;
+uniform int uStreetLightCount;
+uniform vec3 uStreetLightPos[4];
+uniform vec3 uStreetLightColor[4];
+uniform float uStreetLightIntensity;
 
 varying vec2 vUv;
 varying vec3 vWorldPos;
@@ -244,7 +248,20 @@ void main() {
 	vec3 N = normalize(vNormal);
 	vec3 sunDir = normalize(uSunDir);
 	float NdotL = max(dot(N, sunDir), 0.0);
-	vec3 diffuse = baseColor * (uAmbientColor * uAmbientIntensity + uSunColor * NdotL * uSunIntensity);
+
+	// Street light point light contribution
+	vec3 pointLighting = vec3(0.0);
+	for (int i = 0; i < 4; i++) {
+		if (i >= uStreetLightCount) break;
+		vec3 toLight = uStreetLightPos[i] - vWorldPos;
+		float d = length(toLight);
+		float atten = 1.0 / (1.0 + d * 0.015 + d * d * 0.003);
+		float NdL2 = max(dot(N, normalize(toLight)), 0.0);
+		pointLighting += uStreetLightColor[i] * NdL2 * atten;
+	}
+	pointLighting *= uStreetLightIntensity;
+
+	vec3 diffuse = baseColor * (uAmbientColor * uAmbientIntensity + uSunColor * NdotL * uSunIntensity + pointLighting);
 
 	float fogDist = length(vWorldPos - cameraPosition);
 	float fogFactor = smoothstep(uFogNear, uFogFar, fogDist);
@@ -330,6 +347,12 @@ export async function buildTerrain(
 			uRockTint: { value: new THREE.Color(...biome.rockTint) },
 			uSnowThreshold: { value: biome.snowThreshold },
 			uRockThreshold: { value: biome.rockThreshold },
+			uStreetLightCount: { value: 0 },
+			uStreetLightPos: { value: Array.from({ length: 4 }, () => new THREE.Vector3()) },
+			uStreetLightColor: {
+				value: Array.from({ length: 4 }, () => new THREE.Vector3(1, 0.95, 0.8)),
+			},
+			uStreetLightIntensity: { value: 0.0 },
 		},
 	});
 

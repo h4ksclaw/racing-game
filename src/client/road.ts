@@ -1,5 +1,6 @@
 import type { TrackSample } from "@shared/track.ts";
 import * as THREE from "three";
+import { state } from "./scene.ts";
 import type { TerrainSampler } from "./terrain.ts";
 import type { TrackResponse } from "./utils.ts";
 
@@ -145,6 +146,7 @@ export async function buildMeshes(data: TrackResponse, rng: () => number): Promi
 		roughness: 0.8,
 		metalness: 0.02,
 	});
+	state.roadMaterial = roadMat;
 
 	// ── Lane markings (thin quads above road surface) ─────────────
 	const ROAD_WIDTH = 12;
