@@ -254,6 +254,175 @@ function buildStars(): THREE.Points {
 	return new THREE.Points(geo, mat);
 }
 
+// ── Weather Systems ─────────────────────────────────────────────────
+
+function buildRainSystem(): { points: THREE.Points; velocities: Float32Array } {
+	const count = 12000;
+	const positions = new Float32Array(count * 3);
+	const velocities = new Float32Array(count);
+	const spread = 500;
+	for (let i = 0; i < count; i++) {
+		positions[i * 3] = (Math.random() - 0.5) * spread;
+		positions[i * 3 + 1] = Math.random() * 150;
+		positions[i * 3 + 2] = (Math.random() - 0.5) * spread;
+		velocities[i] = 1.5 + Math.random() * 2.5; // fall speed
+	}
+	const geo = new THREE.BufferGeometry();
+	geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+	const mat = new THREE.PointsMaterial({
+		color: 0xaaccff,
+		size: 0.8,
+		sizeAttenuation: true,
+		transparent: true,
+		opacity: 0.6,
+	});
+	return { points: new THREE.Points(geo, mat), velocities };
+}
+
+function buildSnowSystem(): { points: THREE.Points; drifts: Float32Array } {
+	const count = 8000;
+	const positions = new Float32Array(count * 3);
+	const drifts = new Float32Array(count * 2); // phase + speed for sinusoidal drift
+	const spread = 500;
+	for (let i = 0; i < count; i++) {
+		positions[i * 3] = (Math.random() - 0.5) * spread;
+		positions[i * 3 + 1] = Math.random() * 150;
+		positions[i * 3 + 2] = (Math.random() - 0.5) * spread;
+		drifts[i * 2] = Math.random() * Math.PI * 2; // phase
+		drifts[i * 2 + 1] = 0.5 + Math.random() * 1.5; // drift speed
+	}
+	const geo = new THREE.BufferGeometry();
+	geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+	const mat = new THREE.PointsMaterial({
+		color: 0xffffff,
+		size: 2.5,
+		sizeAttenuation: true,
+		transparent: true,
+		opacity: 0.8,
+	});
+	return { points: new THREE.Points(geo, mat), drifts };
+}
+
+function updateWeather(delta: number) {
+	if (!scene || !camera) return;
+
+	// Center particle systems around camera
+	const camX = camera.position.x;
+	const camZ = camera.position.z;
+
+	// Rain
+	if (rainSystem && rainVelocities) {
+		const isHeavyRain = currentWeather === "heavy_rain";
+		const pos = rainSystem.geometry.attributes.position;
+		const speedMult = isHeavyRain ? 1.5 : 1.0;
+		for (let i = 0; i < pos.count; i++) {
+			pos.array[i * 3 + 1] -= rainVelocities[i] * delta * 60 * speedMult;
+			// Reset when below ground
+			if (pos.array[i * 3 + 1] < -5) {
+				pos.array[i * 3] = camX + (Math.random() - 0.5) * 500;
+				pos.array[i * 3 + 1] = 120 + Math.random() * 30;
+				pos.array[i * 3 + 2] = camZ + (Math.random() - 0.5) * 500;
+			}
+		}
+		pos.needsUpdate = true;
+		(rainSystem.material as THREE.PointsMaterial).opacity = isHeavyRain ? 0.8 : 0.5;
+	}
+
+	// Snow
+	if (snowSystem && snowDrifts) {
+		const pos = snowSystem.geometry.attributes.position;
+		const time = performance.now() * 0.001;
+		for (let i = 0; i < pos.count; i++) {
+			pos.array[i * 3 + 1] -= (0.3 + snowDrifts[i * 2 + 1] * 0.2) * delta * 60;
+			// Sinusoidal horizontal drift
+			pos.array[i * 3] +=
+				Math.sin(time * snowDrifts[i * 2 + 1] + snowDrifts[i * 2]) * 0.3 * delta * 60;
+			pos.array[i * 3 + 2] +=
+				Math.cos(time * snowDrifts[i * 2 + 1] * 0.7 + snowDrifts[i * 2]) * 0.2 * delta * 60;
+			if (pos.array[i * 3 + 1] < -5) {
+				pos.array[i * 3] = camX + (Math.random() - 0.5) * 500;
+				pos.array[i * 3 + 1] = 120 + Math.random() * 30;
+				pos.array[i * 3 + 2] = camZ + (Math.random() - 0.5) * 500;
+			}
+		}
+		pos.needsUpdate = true;
+	}
+}
+
+function applyWeather(weather: WeatherType) {
+	if (!rainSystem || !snowSystem) return;
+	currentWeather = weather;
+
+	// Visibility
+	const rainVisible = weather === "rain" || weather === "heavy_rain";
+	const snowVisible = weather === "snow";
+	rainSystem.visible = rainVisible;
+	snowSystem.visible = snowVisible;
+
+	if (!sun || !ambient || !scene) return;
+
+	// Weather modifiers on top of time-of-day
+	switch (weather) {
+		case "clear":
+			break;
+		case "cloudy":
+			// Increase sky turbidity, reduce sun
+			if (skyUniforms) {
+				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 10);
+			}
+			sun.intensity *= 0.6;
+			break;
+		case "rain": {
+			if (skyUniforms) {
+				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 15);
+			}
+			sun.intensity *= 0.4;
+			ambient.intensity *= 0.7;
+			// Darken and increase fog
+			const fogR = scene.fog as THREE.Fog;
+			fogR.far = Math.min(fogR.far, 600);
+			fogR.near = Math.max(fogR.near, 100);
+			break;
+		}
+		case "heavy_rain": {
+			if (skyUniforms) {
+				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 20);
+			}
+			sun.intensity *= 0.2;
+			ambient.intensity *= 0.5;
+			const fogH = scene.fog as THREE.Fog;
+			fogH.far = Math.min(fogH.far, 350);
+			fogH.near = Math.max(fogH.near, 50);
+			fogH.color.setRGB(0.15, 0.15, 0.18);
+			break;
+		}
+		case "fog": {
+			if (skyUniforms) {
+				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 12);
+			}
+			sun.intensity *= 0.3;
+			ambient.intensity *= 0.6;
+			const fogF = scene.fog as THREE.Fog;
+			fogF.far = 200;
+			fogF.near = 5;
+			break;
+		}
+		case "snow": {
+			if (skyUniforms) {
+				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 8);
+			}
+			sun.intensity *= 0.5;
+			ambient.intensity *= 0.8;
+			const fogS = scene.fog as THREE.Fog;
+			fogS.far = Math.min(fogS.far, 500);
+			fogS.near = Math.max(fogS.near, 30);
+			// Slightly desaturated cool fog
+			fogS.color.setRGB(0.6, 0.62, 0.68);
+			break;
+		}
+	}
+}
+
 // ── Procedural textures ──────────────────────────────────────────────────
 
 function makeAsphaltTexture(): THREE.CanvasTexture {
@@ -724,6 +893,11 @@ let stars: THREE.Points | null = null;
 let streetLights: THREE.PointLight[] = [];
 let lightFixtures: THREE.Mesh[] = []; // for emissive glow control
 let currentTime = 12; // default noon
+let currentWeather: WeatherType = "clear";
+let rainSystem: THREE.Points | null = null;
+let rainVelocities: Float32Array | null = null;
+let snowSystem: THREE.Points | null = null;
+let snowDrifts: Float32Array | null = null;
 
 function clearScene() {
 	dispose();
@@ -734,6 +908,10 @@ function clearScene() {
 	stars = null;
 	streetLights = [];
 	lightFixtures = [];
+	rainSystem = null;
+	rainVelocities = null;
+	snowSystem = null;
+	snowDrifts = null;
 }
 
 async function buildScene(data: TrackResponse) {
@@ -777,6 +955,19 @@ async function buildScene(data: TrackResponse) {
 	// Stars (visible at night, hidden during day)
 	stars = buildStars();
 	scene.add(stars);
+
+	// Weather particle systems
+	const rain = buildRainSystem();
+	rainSystem = rain.points;
+	rainVelocities = rain.velocities;
+	rainSystem.visible = false;
+	scene.add(rainSystem);
+
+	const snow = buildSnowSystem();
+	snowSystem = snow.points;
+	snowDrifts = snow.drifts;
+	snowSystem.visible = false;
+	scene.add(snowSystem);
 
 	// Terrain sampler (shared for terrain mesh + scenery placement)
 	const terrain = new TerrainSampler(data.seed, data.samples);
@@ -825,8 +1016,9 @@ async function buildScene(data: TrackResponse) {
 		infoEl.textContent = `Seed: ${data.seed} | Length: ${data.length.toFixed(0)}m | Samples: ${data.numSamples} | Elev: ${data.elevationRange.min.toFixed(1)}...${data.elevationRange.max.toFixed(1)} | Scenery: ${scenery.length}`;
 	}
 
-	// Apply initial time
+	// Apply initial time + weather
 	applyTimeOfDay(currentTime);
+	applyWeather(currentWeather);
 }
 
 function applyTimeOfDay(hour: number) {
@@ -1112,6 +1304,7 @@ async function generate() {
 	if (weatherEl) weatherEl.value = weather;
 
 	currentTime = hour;
+	currentWeather = weather;
 
 	const params = new URLSearchParams({ seed: String(seed) });
 
@@ -1169,15 +1362,25 @@ if (timeSlider) {
 const weatherSelect = document.getElementById("weatherSelect") as HTMLSelectElement | null;
 if (weatherSelect) {
 	weatherSelect.addEventListener("change", () => {
+		currentWeather = weatherSelect.value as WeatherType;
 		setURLParam("weather", weatherSelect.value);
+		// Re-apply time then weather on top
+		applyTimeOfDay(currentTime);
+		applyWeather(currentWeather);
 	});
 }
 
 // ── Render loop ──────────────────────────────────────────────────────────
 
+let lastTime = performance.now();
+
 function animate() {
 	requestAnimationFrame(animate);
+	const now = performance.now();
+	const delta = Math.min((now - lastTime) / 1000, 0.1); // cap at 100ms
+	lastTime = now;
 	if (controls) controls.update();
+	updateWeather(delta);
 	if (scene && camera) renderer.render(scene, camera);
 }
 
