@@ -35,6 +35,7 @@ export class TerrainSampler {
 	private readonly noiseScale = 0.003;
 	private noiseAmp: number;
 	private mountainAmp: number;
+	private worldRadius: number;
 	private heightCache = new Map<string, number>();
 	private readonly roadInfluence = 50;
 	private readonly blendStart = 20;
@@ -42,13 +43,14 @@ export class TerrainSampler {
 	constructor(
 		seed: number,
 		samples: TrackSample[],
-		opts: { noiseAmp?: number; mountainAmp?: number } = {},
+		opts: { noiseAmp?: number; mountainAmp?: number; worldRadius?: number } = {},
 	) {
 		const rng = mulberry32(seed + 99999);
 		this.noise2D = createNoise2D(rng);
 		this.samples = samples;
 		this.noiseAmp = opts.noiseAmp ?? 60;
 		this.mountainAmp = opts.mountainAmp ?? 3;
+		this.worldRadius = opts.worldRadius ?? 800;
 
 		let sumY = 0;
 		for (const s of samples) sumY += s.point.y;
@@ -110,7 +112,8 @@ export class TerrainSampler {
 
 		const { dist, sample } = this.nearestRoad(x, z);
 		const centerDist = Math.sqrt(x * x + z * z);
-		const mountainFactor = 1 + smoothstep(600, 900, centerDist) * this.mountainAmp;
+		const mountainFactor =
+			1 + smoothstep(this.worldRadius * 0.75, this.worldRadius, centerDist) * this.mountainAmp;
 		const noiseH =
 			this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp * mountainFactor;
 		const blend = smoothstep(this.blendStart, this.roadInfluence, dist);
@@ -277,12 +280,14 @@ export async function buildTerrain(
 	_data: TrackResponse,
 	terrain: TerrainSampler,
 	biome: BiomeConfig,
+	worldSize: number,
 ): Promise<THREE.Group> {
 	const group = new THREE.Group();
 	const tex = await loadTerrainTextures(biome);
 
-	const worldSize = 1600;
-	const segments = 256;
+	// World size passed in, always big enough for track + padding
+	// Scale segments to maintain ~6.25m per quad
+	const segments = Math.min(512, Math.max(256, Math.round(worldSize / 6.25)));
 
 	const geometry = new THREE.PlaneGeometry(worldSize, worldSize, segments, segments);
 	geometry.rotateX(-Math.PI / 2);

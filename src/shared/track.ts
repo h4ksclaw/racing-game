@@ -222,6 +222,7 @@ export interface TrackData {
 	numControlPoints: number;
 	numSamples: number;
 	elevationRange: { min: number; max: number };
+	maxExtent: number;
 }
 
 // ── Track Generator ──────────────────────────────────────────────────────
@@ -489,6 +490,9 @@ export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData 
 		numControlPoints: cp3d.length,
 		numSamples: samples.length,
 		elevationRange: { min: minY, max: maxY },
+		maxExtent: Math.max(
+			...samples.map((s) => Math.sqrt(s.point.x * s.point.x + s.point.z * s.point.z)),
+		),
 	};
 }
 

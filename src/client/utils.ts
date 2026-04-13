@@ -15,6 +15,7 @@ export interface TrackResponse {
 	numSamples: number;
 	elevationRange: { min: number; max: number };
 	seed: number;
+	maxExtent: number;
 }
 
 export interface TimeKeyframe {

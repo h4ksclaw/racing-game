@@ -108,11 +108,15 @@ async function buildScene(data: TrackResponse) {
 	scene.add(snow.points);
 
 	// Terrain
+	const trackMax = data.maxExtent ?? 800;
+	// World must contain the full track (±trackMax) + padding
+	const worldSize = Math.max(1600, Math.ceil((trackMax * 2 + 200) / 200) * 200);
 	const terrain = new TerrainSampler(data.seed, data.samples, {
 		noiseAmp: biome.noiseAmp,
 		mountainAmp: biome.mountainAmplifier,
+		worldRadius: worldSize / 2,
 	});
-	scene.add(await buildTerrain(data, terrain, biome));
+	scene.add(await buildTerrain(data, terrain, biome, worldSize));
 
 	// Track meshes
 	const rng = mulberry32(data.seed);
