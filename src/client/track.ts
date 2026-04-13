@@ -435,9 +435,14 @@ function buildMeshes(data: TrackResponse, rng: () => number): THREE.Group {
 		grassIndices.push(gb + 2, gb + 6, gb + 3, gb + 3, gb + 6, gb + 7);
 	}
 
-	// Road
+	// Road — PBR material so PointLights create visible reflections
 	const asphaltTex = makeAsphaltTexture();
-	const roadMat = new THREE.MeshLambertMaterial({ map: asphaltTex });
+	asphaltTex.anisotropy = 16;
+	const roadMat = new THREE.MeshStandardMaterial({
+		map: asphaltTex,
+		roughness: 0.7,
+		metalness: 0.05,
+	});
 	const roadMesh = new THREE.Mesh(makeGeo(roadVerts, roadIndices, roadUVs), roadMat);
 	roadMesh.receiveShadow = true;
 	group.add(roadMesh);
@@ -684,8 +689,8 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 			group.add(fixture);
 			// Track for day/night glow control
 			lightFixtures.push(fixture);
-			// Add point light (off during day, on at night)
-			const pointLight = new THREE.PointLight(0xffeeaa, 0, 40, 2);
+			// Add point light (off during day, on at night) — no shadows for performance
+			const pointLight = new THREE.PointLight(0xffeeaa, 0, 30, 2);
 			pointLight.position.y = 5;
 			group.add(pointLight);
 			streetLights.push(pointLight);
@@ -703,7 +708,7 @@ const infoEl = document.getElementById("info");
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
@@ -719,6 +724,7 @@ let stars: THREE.Points | null = null;
 let streetLights: THREE.PointLight[] = [];
 let lightFixtures: THREE.Mesh[] = []; // for emissive glow control
 let currentTime = 12; // default noon
+let pmremGenerator: THREE.PMREMGenerator | null = null;
 
 function clearScene() {
 	dispose();
@@ -729,6 +735,10 @@ function clearScene() {
 	stars = null;
 	streetLights = [];
 	lightFixtures = [];
+	if (pmremGenerator) {
+		pmremGenerator.dispose();
+		pmremGenerator = null;
+	}
 }
 
 async function buildScene(data: TrackResponse) {
@@ -753,20 +763,31 @@ async function buildScene(data: TrackResponse) {
 	sunPos.setFromSphericalCoords(1, phi, theta);
 	skyUniforms.sunPosition.value.copy(sunPos);
 
+	// Generate environment map from sky for PBR reflections
+	pmremGenerator = new THREE.PMREMGenerator(renderer);
+	pmremGenerator.compileEquirectangularShader();
+	const skyScene = new THREE.Scene();
+	const skyClone = sky.clone();
+	skyClone.material = sky.material.clone();
+	skyScene.add(skyClone);
+	const envMap = pmremGenerator.fromScene(skyScene, 0, 0.1, 100).texture;
+	scene.environment = envMap;
+	skyScene.clear();
+
 	scene.add(new THREE.HemisphereLight(0x88bbff, 0x445511, 0.6));
 	ambient = scene.children[scene.children.length - 1] as THREE.HemisphereLight;
 
 	sun = new THREE.DirectionalLight(0xffffcc, 1.2);
 	sun.position.set(200, 300, 100); // roughly matches sky sun at 45° elevation
 	sun.castShadow = true;
-	sun.shadow.mapSize.width = 2048;
-	sun.shadow.mapSize.height = 2048;
+	sun.shadow.mapSize.width = 1024;
+	sun.shadow.mapSize.height = 1024;
 	sun.shadow.camera.near = 10;
-	sun.shadow.camera.far = 800;
-	sun.shadow.camera.left = -400;
-	sun.shadow.camera.right = 400;
-	sun.shadow.camera.top = 400;
-	sun.shadow.camera.bottom = -400;
+	sun.shadow.camera.far = 500;
+	sun.shadow.camera.left = -200;
+	sun.shadow.camera.right = 200;
+	sun.shadow.camera.top = 200;
+	sun.shadow.camera.bottom = -200;
 	scene.add(sun);
 
 	// Stars (visible at night, hidden during day)
@@ -791,7 +812,7 @@ async function buildScene(data: TrackResponse) {
 	// Procedural guardrails - continuous fence along both sides of road
 	scene.add(buildGuardrails(data.samples, terrain));
 
-	camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 2000);
+	camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1200);
 	camera.position.set(
 		data.samples[0].point.x + 50,
 		data.samples[0].point.y + 80,
@@ -863,7 +884,7 @@ function applyTimeOfDay(hour: number) {
 	// Street lights — glow at night, dim during day
 	const nightFactor = Math.max(0, 1 - state.sunIntensity / 0.5);
 	for (const light of streetLights) {
-		light.intensity = nightFactor * 2;
+		light.intensity = nightFactor * 1.5;
 	}
 	for (const fixture of lightFixtures) {
 		const mat = fixture.material as THREE.MeshLambertMaterial;
@@ -959,8 +980,8 @@ function buildTerrain(_data: TrackResponse, terrain: TerrainSampler): THREE.Grou
 	const group = new THREE.Group();
 
 	// ── Generate terrain mesh ────────────────────────────────────────
-	const worldSize = 2000;
-	const segments = 200;
+	const worldSize = 1600;
+	const segments = 128;
 
 	const geometry = new THREE.PlaneGeometry(worldSize, worldSize, segments, segments);
 	geometry.rotateX(-Math.PI / 2);
