@@ -118,7 +118,7 @@ export class TerrainSampler {
 
 // ── Terrain textures ────────────────────────────────────────────────────
 
-const TERRAIN_TEX_REPEAT = 80;
+const TERRAIN_TEX_REPEAT = 400; // 4m per texture tile (1600/400)
 let terrainTextures: Record<string, THREE.Texture> | null = null;
 
 async function loadTerrainTextures(): Promise<Record<string, THREE.Texture>> {
