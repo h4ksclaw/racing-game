@@ -177,7 +177,8 @@ export type SceneryType =
 	| "lily_large"
 	| "barrier"
 	| "light"
-	| "gate";
+	| "gate"
+	| "gate-finish";
 
 export interface SceneryItem {
 	type: SceneryType;
@@ -590,92 +591,106 @@ export function generateScenery(
 				scale: 0.5 + rng() * 0.7,
 			});
 		}
-
-		// Rocks
-		if (rng() < 0.35 * sceneryDensity) {
+		// Fourth tree (wider spread)
+		if (rng() < 0.5 * sceneryDensity) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
-			const pos = v3Add(offset, v3Scale(s.binormal, side * (3 + rng() * 10)));
+			const dist = 15 + rng() * 200;
+			const pos = v3Add(offset, v3Scale(s.binormal, side * dist));
 			scenery.push({
-				type: ROCK_TYPES[Math.floor(rng() * ROCK_TYPES.length)],
+				type: TREE_TYPES[Math.floor(rng() * TREE_TYPES.length)],
 				position: pos,
 				rotation: rng() * Math.PI * 2,
-				scale: 0.5 + rng() * 0.6,
+				scale: 0.4 + rng() * 0.8,
 			});
 		}
 
-		// Stones (smaller, scattered)
-		if (rng() < 0.2 * sceneryDensity) {
+		// Rocky outcrops — dense clusters of rocks and stones
+		if (rng() < 0.12 * sceneryDensity) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
-			const pos = v3Add(offset, v3Scale(s.binormal, side * (2 + rng() * 6)));
-			scenery.push({
-				type: STONE_TYPES[Math.floor(rng() * STONE_TYPES.length)],
-				position: pos,
-				rotation: rng() * Math.PI * 2,
-				scale: 0.4 + rng() * 0.4,
-			});
+			const basePos = v3Add(offset, v3Scale(s.binormal, side * (5 + rng() * 20)));
+			const clusterSize = 3 + Math.floor(rng() * 5);
+			for (let c = 0; c < clusterSize; c++) {
+				scenery.push({
+					type: ROCK_TYPES[Math.floor(rng() * ROCK_TYPES.length)],
+					position: v3Add(basePos, { x: (rng() - 0.5) * 6, y: 0, z: (rng() - 0.5) * 6 }),
+					rotation: rng() * Math.PI * 2,
+					scale: 0.4 + rng() * 1.0,
+				});
+			}
+			for (let c = 0; c < 4; c++) {
+				scenery.push({
+					type: STONE_TYPES[Math.floor(rng() * STONE_TYPES.length)],
+					position: v3Add(basePos, { x: (rng() - 0.5) * 8, y: 0, z: (rng() - 0.5) * 8 }),
+					rotation: rng() * Math.PI * 2,
+					scale: 0.3 + rng() * 0.5,
+				});
+			}
 		}
 
-		// Grass tufts — multiple passes for dense roadside vegetation
-		for (let g = 0; g < 10; g++) {
-			if (rng() < 0.5 * sceneryDensity) {
+		// Grass tufts — varied sizes/rotations for fuzzy look
+		for (let g = 0; g < 20; g++) {
+			if (rng() < 0.6 * sceneryDensity) {
 				const side = rng() < 0.5 ? -1 : 1;
 				const offset = side === -1 ? s.grassLeft : s.grassRight;
-				const pos = v3Add(offset, v3Scale(s.binormal, side * (1 + rng() * 9)));
+				const dist = 1 + rng() * 12;
+				const jitter = (rng() - 0.5) * 5;
+				const pos = v3Add(offset, v3Scale(s.binormal, side * dist));
+				pos.x += jitter;
+				pos.z += jitter;
 				scenery.push({
 					type: GRASS_TYPES[Math.floor(rng() * GRASS_TYPES.length)],
 					position: pos,
 					rotation: rng() * Math.PI * 2,
-					scale: 0.6 + rng() * 0.6,
+					scale: 0.2 + rng() * 1.2,
 				});
 			}
 		}
 
-		// Forest floor detail (stumps, mushrooms, logs)
-		if (rng() < 0.15 * sceneryDensity) {
+		// Extra forest floor plants (mushrooms, stumps, logs) — second pass
+		if (rng() < 0.2 * sceneryDensity) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
-			const pos = v3Add(offset, v3Scale(s.binormal, side * (5 + rng() * 15)));
+			const pos = v3Add(offset, v3Scale(s.binormal, side * (3 + rng() * 20)));
 			scenery.push({
 				type: FOREST_DETAIL[Math.floor(rng() * FOREST_DETAIL.length)],
 				position: pos,
 				rotation: rng() * Math.PI * 2,
-				scale: 0.7 + rng() * 0.6,
+				scale: 0.4 + rng() * 1.0,
 			});
 		}
 
-		// Pumpkin patches (clusters)
-		if (rng() < 0.05 * sceneryDensity) {
+		// Mushroom groves — clustered stumps, mushrooms, logs
+		if (rng() < 0.1 * sceneryDensity) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
-			const basePos = v3Add(offset, v3Scale(s.binormal, side * (4 + rng() * 12)));
-			const clusterSize = 2 + Math.floor(rng() * 4);
-			for (let c = 0; c < clusterSize; c++) {
+			const basePos = v3Add(offset, v3Scale(s.binormal, side * (8 + rng() * 30)));
+			const groveSize = 3 + Math.floor(rng() * 5);
+			for (let c = 0; c < groveSize; c++) {
 				scenery.push({
-					type: "crop_pumpkin",
-					position: v3Add(basePos, {
-						x: (rng() - 0.5) * 4,
-						y: 0,
-						z: (rng() - 0.5) * 4,
-					}),
+					type: FOREST_DETAIL[Math.floor(rng() * FOREST_DETAIL.length)],
+					position: v3Add(basePos, { x: (rng() - 0.5) * 8, y: 0, z: (rng() - 0.5) * 8 }),
 					rotation: rng() * Math.PI * 2,
-					scale: 0.6 + rng() * 0.8,
+					scale: 0.5 + rng() * 0.9,
 				});
 			}
 		}
 
-		// Lily pads (occasional)
-		if (rng() < 0.03 * sceneryDensity) {
+		// Pumpkin clusters (3D objects only)
+		if (rng() < 0.06 * sceneryDensity) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
-			const pos = v3Add(offset, v3Scale(s.binormal, side * (3 + rng() * 8)));
-			scenery.push({
-				type: "lily_large",
-				position: pos,
-				rotation: rng() * Math.PI * 2,
-				scale: 0.8 + rng() * 0.4,
-			});
+			const basePos = v3Add(offset, v3Scale(s.binormal, side * (4 + rng() * 15)));
+			const clusterSize = 3 + Math.floor(rng() * 5);
+			for (let c = 0; c < clusterSize; c++) {
+				scenery.push({
+					type: "crop_pumpkin",
+					position: v3Add(basePos, { x: (rng() - 0.5) * 5, y: 0, z: (rng() - 0.5) * 5 }),
+					rotation: rng() * Math.PI * 2,
+					scale: 0.5 + rng() * 1.0,
+				});
+			}
 		}
 
 		// Lights every ~80m, both sides

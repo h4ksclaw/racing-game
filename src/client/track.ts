@@ -287,14 +287,25 @@ async function loadDecorations(): Promise<void> {
 	if (decorationsLoaded) return;
 	decorationsLoaded = true;
 
-	return new Promise((resolve, _reject) => {
-		const loader = new GLTFLoader();
+	const loader = new GLTFLoader();
+	let pending = 2;
+	const done = () => {
+		if (--pending === 0) {
+			console.log(`Loaded ${decorationCache.size} decoration models`);
+			resolveAll();
+		}
+	};
+	let resolveAll: () => void;
+	const promise = new Promise<void>((r) => {
+		resolveAll = r;
+	});
+
+	function loadGLB(url: string) {
 		loader.load(
-			"/models/maps/map1/decorations.glb",
+			url,
 			(gltf) => {
 				gltf.scene.traverse((node) => {
 					if (!node.name || !(node instanceof THREE.Object3D)) return;
-					// Strip numeric suffixes: "rock_tallH.002" → "rock_tallH"
 					const baseName = node.name.replace(/\.\d+$/, "");
 					if (!decorationCache.has(baseName)) {
 						const clone = node.clone() as THREE.Group;
@@ -302,16 +313,20 @@ async function loadDecorations(): Promise<void> {
 						decorationCache.set(baseName, clone);
 					}
 				});
-				console.log(`Loaded ${decorationCache.size} decoration models`);
-				resolve();
+				done();
 			},
 			undefined,
 			(error) => {
-				console.error("Failed to load decorations.glb:", error);
-				resolve(); // Don't block, fall back to procedural
+				console.error(`Failed to load ${url}:`, error);
+				done();
 			},
 		);
-	});
+	}
+
+	loadGLB("/models/maps/map1/decorations.glb");
+	loadGLB("/models/maps/map1/gates.glb");
+
+	return promise;
 }
 
 const GLB_SCALE = 8;
@@ -465,6 +480,7 @@ class TerrainSampler {
 	private noise2D: (x: number, z: number) => number;
 	private grid: Map<string, TrackSample[]>;
 	private samples: TrackSample[];
+	private avgRoadY: number;
 	private readonly cellSize = 10;
 	private readonly noiseScale = 0.003;
 	private readonly noiseAmp = 60;
@@ -475,6 +491,11 @@ class TerrainSampler {
 		const rng = mulberry32(seed + 99999);
 		this.noise2D = createNoise2D(rng);
 		this.samples = samples;
+
+		// Compute average road Y so far-from-road terrain centers around it
+		let sumY = 0;
+		for (const s of samples) sumY += s.point.y;
+		this.avgRoadY = sumY / samples.length;
 		this.grid = new Map();
 		for (const s of samples) {
 			const cx = Math.floor(s.point.x / this.cellSize);
@@ -526,7 +547,8 @@ class TerrainSampler {
 		const { dist, sample } = this.nearestRoad(x, z);
 		const noiseH = this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp;
 		const blend = smoothstep(this.blendStart, this.roadInfluence, dist);
-		return sample.point.y * (1 - blend) + noiseH * blend - 0.3;
+		// Near road: match road height. Far: noise centered on avg road Y.
+		return sample.point.y * (1 - blend) + (this.avgRoadY + noiseH) * blend - 0.3;
 	}
 }
 
