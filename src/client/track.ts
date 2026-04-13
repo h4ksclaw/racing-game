@@ -1,952 +1,22 @@
-import type { SceneryItem, TrackSample } from "@shared/track.ts";
 import { generateScenery, generateTrack, mulberry32 } from "@shared/track.ts";
-import { createNoise2D } from "simplex-noise";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { Sky } from "three/addons/objects/Sky.js";
-
-// ── Types ────────────────────────────────────────────────────────────────
-
-interface V3 {
-	x: number;
-	y: number;
-	z: number;
-}
-
-interface TrackResponse {
-	controlPoints3D: V3[];
-	samples: TrackSample[];
-	splinePoints: V3[];
-	length: number;
-	numControlPoints: number;
-	numSamples: number;
-	elevationRange: { min: number; max: number };
-	seed: number;
-}
-
-// ── Day/Night Cycle ──────────────────────────────────────────────────
-
-interface TimeKeyframe {
-	hour: number;
-	sunColor: [number, number, number];
-	sunIntensity: number;
-	sunElevation: number; // degrees
-	ambientColor: [number, number, number];
-	ambientIntensity: number;
-	fogColor: [number, number, number];
-	fogNear: number;
-	fogFar: number;
-	turbidity: number;
-	rayleigh: number;
-	starsOpacity: number;
-}
-
-const timeKeyframes: TimeKeyframe[] = [
-	{
-		hour: 0,
-		sunColor: [0.15, 0.15, 0.3],
-		sunIntensity: 0.02,
-		sunElevation: -30,
-		ambientColor: [0.04, 0.04, 0.08],
-		ambientIntensity: 0.08,
-		fogColor: [0.02, 0.02, 0.06],
-		fogNear: 50,
-		fogFar: 400,
-		turbidity: 0.5,
-		rayleigh: 0.5,
-		starsOpacity: 1.0,
-	},
-	{
-		hour: 5,
-		sunColor: [0.2, 0.15, 0.3],
-		sunIntensity: 0.05,
-		sunElevation: -10,
-		ambientColor: [0.08, 0.06, 0.12],
-		ambientIntensity: 0.1,
-		fogColor: [0.05, 0.04, 0.08],
-		fogNear: 100,
-		fogFar: 500,
-		turbidity: 1,
-		rayleigh: 0.8,
-		starsOpacity: 0.6,
-	},
-	{
-		hour: 6,
-		sunColor: [1.0, 0.5, 0.2],
-		sunIntensity: 0.3,
-		sunElevation: 2,
-		ambientColor: [0.4, 0.25, 0.2],
-		ambientIntensity: 0.25,
-		fogColor: [0.5, 0.3, 0.2],
-		fogNear: 200,
-		fogFar: 800,
-		turbidity: 8,
-		rayleigh: 2,
-		starsOpacity: 0.1,
-	},
-	{
-		hour: 8,
-		sunColor: [1.0, 0.9, 0.7],
-		sunIntensity: 1.0,
-		sunElevation: 25,
-		ambientColor: [0.5, 0.55, 0.6],
-		ambientIntensity: 0.5,
-		fogColor: [0.7, 0.75, 0.8],
-		fogNear: 400,
-		fogFar: 1400,
-		turbidity: 4,
-		rayleigh: 2,
-		starsOpacity: 0,
-	},
-	{
-		hour: 12,
-		sunColor: [1.0, 1.0, 0.95],
-		sunIntensity: 1.5,
-		sunElevation: 65,
-		ambientColor: [0.6, 0.65, 0.7],
-		ambientIntensity: 0.6,
-		fogColor: [0.75, 0.8, 0.85],
-		fogNear: 500,
-		fogFar: 1500,
-		turbidity: 3,
-		rayleigh: 2,
-		starsOpacity: 0,
-	},
-	{
-		hour: 16,
-		sunColor: [1.0, 0.9, 0.7],
-		sunIntensity: 1.1,
-		sunElevation: 30,
-		ambientColor: [0.5, 0.5, 0.55],
-		ambientIntensity: 0.5,
-		fogColor: [0.7, 0.72, 0.78],
-		fogNear: 400,
-		fogFar: 1300,
-		turbidity: 4,
-		rayleigh: 2,
-		starsOpacity: 0,
-	},
-	{
-		hour: 18,
-		sunColor: [1.0, 0.5, 0.15],
-		sunIntensity: 0.6,
-		sunElevation: 8,
-		ambientColor: [0.45, 0.3, 0.25],
-		ambientIntensity: 0.35,
-		fogColor: [0.6, 0.35, 0.2],
-		fogNear: 300,
-		fogFar: 900,
-		turbidity: 10,
-		rayleigh: 3,
-		starsOpacity: 0,
-	},
-	{
-		hour: 19.5,
-		sunColor: [0.6, 0.2, 0.15],
-		sunIntensity: 0.15,
-		sunElevation: -2,
-		ambientColor: [0.15, 0.1, 0.15],
-		ambientIntensity: 0.15,
-		fogColor: [0.15, 0.08, 0.12],
-		fogNear: 150,
-		fogFar: 600,
-		turbidity: 6,
-		rayleigh: 1.5,
-		starsOpacity: 0.3,
-	},
-	{
-		hour: 21,
-		sunColor: [0.2, 0.2, 0.35],
-		sunIntensity: 0.03,
-		sunElevation: -20,
-		ambientColor: [0.05, 0.05, 0.1],
-		ambientIntensity: 0.08,
-		fogColor: [0.03, 0.03, 0.07],
-		fogNear: 80,
-		fogFar: 450,
-		turbidity: 1,
-		rayleigh: 0.5,
-		starsOpacity: 0.8,
-	},
-	{
-		hour: 24,
-		sunColor: [0.15, 0.15, 0.3],
-		sunIntensity: 0.02,
-		sunElevation: -30,
-		ambientColor: [0.04, 0.04, 0.08],
-		ambientIntensity: 0.08,
-		fogColor: [0.02, 0.02, 0.06],
-		fogNear: 50,
-		fogFar: 400,
-		turbidity: 0.5,
-		rayleigh: 0.5,
-		starsOpacity: 1.0,
-	},
-];
-
-function lerp(a: number, b: number, t: number): number {
-	return a + (b - a) * t;
-}
-
-function lerpColor(
-	a: [number, number, number],
-	b: [number, number, number],
-	t: number,
-): [number, number, number] {
-	return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
-}
-
-function getTimeState(hour: number): TimeKeyframe {
-	// Wrap to 0-24
-	hour = ((hour % 24) + 24) % 24;
-	let a = timeKeyframes[0];
-	let b = timeKeyframes[1];
-	for (let i = 0; i < timeKeyframes.length - 1; i++) {
-		if (hour >= timeKeyframes[i].hour && hour <= timeKeyframes[i + 1].hour) {
-			a = timeKeyframes[i];
-			b = timeKeyframes[i + 1];
-			break;
-		}
-	}
-	const range = b.hour - a.hour;
-	const t = range > 0 ? (hour - a.hour) / range : 0;
-	return {
-		hour,
-		sunColor: lerpColor(a.sunColor, b.sunColor, t),
-		sunIntensity: lerp(a.sunIntensity, b.sunIntensity, t),
-		sunElevation: lerp(a.sunElevation, b.sunElevation, t),
-		ambientColor: lerpColor(a.ambientColor, b.ambientColor, t),
-		ambientIntensity: lerp(a.ambientIntensity, b.ambientIntensity, t),
-		fogColor: lerpColor(a.fogColor, b.fogColor, t),
-		fogNear: lerp(a.fogNear, b.fogNear, t),
-		fogFar: lerp(a.fogFar, b.fogFar, t),
-		turbidity: lerp(a.turbidity, b.turbidity, t),
-		rayleigh: lerp(a.rayleigh, b.rayleigh, t),
-		starsOpacity: lerp(a.starsOpacity, b.starsOpacity, t),
-	};
-}
-
-function buildStars(): THREE.Points {
-	const count = 3000;
-	const positions = new Float32Array(count * 3);
-	const sizes = new Float32Array(count);
-	for (let i = 0; i < count; i++) {
-		// Random positions on a sphere
-		const theta = Math.random() * Math.PI * 2;
-		const phi = Math.acos(2 * Math.random() - 1);
-		const r = 4000;
-		positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-		positions[i * 3 + 1] = Math.abs(r * Math.cos(phi)); // only upper hemisphere
-		positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-		sizes[i] = 1 + Math.random() * 3;
-	}
-	const geo = new THREE.BufferGeometry();
-	geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-	geo.setAttribute("size", new THREE.BufferAttribute(sizes, 1));
-	const mat = new THREE.PointsMaterial({
-		color: 0xffffff,
-		size: 3,
-		sizeAttenuation: false,
-		transparent: true,
-		opacity: 0,
-	});
-	return new THREE.Points(geo, mat);
-}
-
-// ── Weather Systems ─────────────────────────────────────────────────
-
-function makeRainTexture(): THREE.Texture {
-	const size = 32;
-	const canvas = document.createElement("canvas");
-	canvas.width = size;
-	canvas.height = size;
-	const ctx = canvas.getContext("2d")!;
-	// Vertical streak — elongated soft dot
-	const grad = ctx.createLinearGradient(size / 2, 2, size / 2, size - 2);
-	grad.addColorStop(0, "rgba(170,200,255,0)");
-	grad.addColorStop(0.3, "rgba(170,200,255,0.6)");
-	grad.addColorStop(0.7, "rgba(170,200,255,0.6)");
-	grad.addColorStop(1, "rgba(170,200,255,0)");
-	ctx.fillStyle = grad;
-	ctx.fillRect(size / 2 - 1, 2, 2, size - 4);
-	// Add a soft glow
-	const glow = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-	glow.addColorStop(0, "rgba(170,200,255,0.15)");
-	glow.addColorStop(1, "rgba(170,200,255,0)");
-	ctx.fillStyle = glow;
-	ctx.fillRect(0, 0, size, size);
-	const tex = new THREE.CanvasTexture(canvas);
-	tex.needsUpdate = true;
-	return tex;
-}
-
-function makeSnowTexture(): THREE.Texture {
-	const size = 64;
-	const canvas = document.createElement("canvas");
-	canvas.width = size;
-	canvas.height = size;
-	const ctx = canvas.getContext("2d")!;
-	// Soft circular snowflake with subtle crystal arms
-	const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-	grad.addColorStop(0, "rgba(255,255,255,1)");
-	grad.addColorStop(0.3, "rgba(255,255,255,0.8)");
-	grad.addColorStop(0.7, "rgba(230,235,255,0.3)");
-	grad.addColorStop(1, "rgba(230,235,255,0)");
-	ctx.fillStyle = grad;
-	ctx.beginPath();
-	ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2);
-	ctx.fill();
-	// Six crystal arms
-	ctx.strokeStyle = "rgba(255,255,255,0.4)";
-	ctx.lineWidth = 1;
-	for (let a = 0; a < 6; a++) {
-		const angle = (a * Math.PI) / 3;
-		ctx.beginPath();
-		ctx.moveTo(size / 2, size / 2);
-		ctx.lineTo(size / 2 + Math.cos(angle) * size * 0.35, size / 2 + Math.sin(angle) * size * 0.35);
-		ctx.stroke();
-	}
-	const tex = new THREE.CanvasTexture(canvas);
-	tex.needsUpdate = true;
-	return tex;
-}
-
-function buildRainSystem(): { points: THREE.Points; velocities: Float32Array } {
-	const count = 15000;
-	const positions = new Float32Array(count * 3);
-	const velocities = new Float32Array(count);
-	const spread = 250;
-	const height = 120;
-	for (let i = 0; i < count; i++) {
-		positions[i * 3] = (Math.random() - 0.5) * spread;
-		positions[i * 3 + 1] = Math.random() * height;
-		positions[i * 3 + 2] = (Math.random() - 0.5) * spread;
-		velocities[i] = 2.0 + Math.random() * 3.0;
-	}
-	const geo = new THREE.BufferGeometry();
-	geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-	const mat = new THREE.PointsMaterial({
-		map: makeRainTexture(),
-		color: 0xaaccff,
-		size: 1.5,
-		sizeAttenuation: true,
-		transparent: true,
-		blending: THREE.AdditiveBlending,
-		depthWrite: false,
-		opacity: 0.7,
-	});
-	return { points: new THREE.Points(geo, mat), velocities };
-}
-
-function buildSnowSystem(): { points: THREE.Points; drifts: Float32Array } {
-	const count = 8000;
-	const positions = new Float32Array(count * 3);
-	const drifts = new Float32Array(count * 2);
-	const spread = 300;
-	const height = 100;
-	for (let i = 0; i < count; i++) {
-		positions[i * 3] = (Math.random() - 0.5) * spread;
-		positions[i * 3 + 1] = Math.random() * height;
-		positions[i * 3 + 2] = (Math.random() - 0.5) * spread;
-		drifts[i * 2] = Math.random() * Math.PI * 2;
-		drifts[i * 2 + 1] = 0.3 + Math.random() * 0.8;
-	}
-	const geo = new THREE.BufferGeometry();
-	geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-	const mat = new THREE.PointsMaterial({
-		map: makeSnowTexture(),
-		color: 0xffffff,
-		size: 3.0,
-		sizeAttenuation: true,
-		transparent: true,
-		blending: THREE.NormalBlending,
-		depthWrite: false,
-		opacity: 0.9,
-	});
-	return { points: new THREE.Points(geo, mat), drifts };
-}
-
-function updateWeather(delta: number) {
-	if (!scene || !camera) return;
-
-	const camX = camera.position.x;
-	const camY = camera.position.y;
-	const camZ = camera.position.z;
-
-	// Rain
-	if (rainSystem && rainVelocities) {
-		const isHeavyRain = currentWeather === "heavy_rain";
-		const pos = rainSystem.geometry.attributes.position;
-		const speedMult = isHeavyRain ? 1.5 : 1.0;
-		for (let i = 0; i < pos.count; i++) {
-			pos.array[i * 3 + 1] -= rainVelocities[i] * delta * 60 * speedMult;
-			if (pos.array[i * 3 + 1] < camY - 20) {
-				pos.array[i * 3] = camX + (Math.random() - 0.5) * 250;
-				pos.array[i * 3 + 1] = camY + 40 + Math.random() * 80;
-				pos.array[i * 3 + 2] = camZ + (Math.random() - 0.5) * 250;
-			}
-		}
-		pos.needsUpdate = true;
-		(rainSystem.material as THREE.PointsMaterial).opacity = isHeavyRain ? 0.8 : 0.5;
-	}
-
-	// Snow
-	if (snowSystem && snowDrifts) {
-		const pos = snowSystem.geometry.attributes.position;
-		const time = performance.now() * 0.001;
-		for (let i = 0; i < pos.count; i++) {
-			pos.array[i * 3 + 1] -= (0.3 + snowDrifts[i * 2 + 1] * 0.2) * delta * 60;
-			pos.array[i * 3] +=
-				Math.sin(time * snowDrifts[i * 2 + 1] + snowDrifts[i * 2]) * 0.3 * delta * 60;
-			pos.array[i * 3 + 2] +=
-				Math.cos(time * snowDrifts[i * 2 + 1] * 0.7 + snowDrifts[i * 2]) * 0.2 * delta * 60;
-			if (pos.array[i * 3 + 1] < camY - 20) {
-				pos.array[i * 3] = camX + (Math.random() - 0.5) * 300;
-				pos.array[i * 3 + 1] = camY + 30 + Math.random() * 70;
-				pos.array[i * 3 + 2] = camZ + (Math.random() - 0.5) * 300;
-			}
-		}
-		pos.needsUpdate = true;
-	}
-}
-
-function applyWeather(weather: WeatherType) {
-	if (!rainSystem || !snowSystem) return;
-	currentWeather = weather;
-
-	// Visibility
-	const rainVisible = weather === "rain" || weather === "heavy_rain";
-	const snowVisible = weather === "snow";
-	rainSystem.visible = rainVisible;
-	snowSystem.visible = snowVisible;
-
-	// Dim particles at night
-	const nightDim = currentTime > 20 || currentTime < 5 ? 0.3 : currentTime > 18 ? 0.6 : 1.0;
-	(rainSystem.material as THREE.PointsMaterial).color.setRGB(
-		0.67 * nightDim,
-		0.8 * nightDim,
-		1.0 * nightDim,
-	);
-	(rainSystem.material as THREE.PointsMaterial).opacity =
-		(weather === "heavy_rain" ? 0.8 : 0.5) * nightDim;
-	(snowSystem.material as THREE.PointsMaterial).opacity = 0.9 * Math.max(0.4, nightDim);
-
-	if (!sun || !ambient || !scene) return;
-
-	// Weather modifiers on top of time-of-day
-	switch (weather) {
-		case "clear":
-			break;
-		case "cloudy":
-			// Increase sky turbidity, reduce sun
-			if (skyUniforms) {
-				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 10);
-			}
-			sun.intensity *= 0.6;
-			break;
-		case "rain": {
-			if (skyUniforms) {
-				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 15);
-			}
-			sun.intensity *= 0.4;
-			ambient.intensity *= 0.7;
-			// Darken and increase fog
-			const fogR = scene.fog as THREE.Fog;
-			fogR.far = Math.min(fogR.far, 600);
-			fogR.near = Math.max(fogR.near, 100);
-			break;
-		}
-		case "heavy_rain": {
-			if (skyUniforms) {
-				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 20);
-			}
-			sun.intensity *= 0.2;
-			ambient.intensity *= 0.5;
-			const fogH = scene.fog as THREE.Fog;
-			fogH.far = Math.min(fogH.far, 350);
-			fogH.near = Math.max(fogH.near, 50);
-			// Dark gray fog — not white
-			const isNight = currentTime > 20 || currentTime < 5;
-			fogH.color.setRGB(isNight ? 0.06 : 0.25, isNight ? 0.06 : 0.25, isNight ? 0.08 : 0.3);
-			break;
-		}
-		case "fog": {
-			if (skyUniforms) {
-				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 12);
-			}
-			sun.intensity *= 0.3;
-			ambient.intensity *= 0.6;
-			const fogF = scene.fog as THREE.Fog;
-			fogF.far = 200;
-			fogF.near = 5;
-			break;
-		}
-		case "snow": {
-			if (skyUniforms) {
-				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 8);
-			}
-			sun.intensity *= 0.5;
-			ambient.intensity *= 0.8;
-			const fogS = scene.fog as THREE.Fog;
-			fogS.far = Math.min(fogS.far, 500);
-			fogS.near = Math.max(fogS.near, 30);
-			// Slightly desaturated cool fog
-			fogS.color.setRGB(0.6, 0.62, 0.68);
-			break;
-		}
-	}
-}
-
-// ── Procedural textures ──────────────────────────────────────────────────
-
-function makeAsphaltTexture(): THREE.CanvasTexture {
-	const W = 512;
-	const H = 1024;
-	const canvas = document.createElement("canvas");
-	canvas.width = W;
-	canvas.height = H;
-	const ctx = canvas.getContext("2d");
-	if (!ctx) throw new Error("Canvas 2D not available");
-
-	// Asphalt base for full texture
-	ctx.fillStyle = "#3a3a3a";
-	ctx.fillRect(0, 0, W, H);
-
-	// Grain noise
-	const imgData = ctx.getImageData(0, 0, W, H);
-	for (let i = 0; i < imgData.data.length; i += 4) {
-		const n = (Math.random() - 0.5) * 35;
-		imgData.data[i] = Math.max(0, Math.min(255, imgData.data[i] + n));
-		imgData.data[i + 1] = Math.max(0, Math.min(255, imgData.data[i + 1] + n));
-		imgData.data[i + 2] = Math.max(0, Math.min(255, imgData.data[i + 2] + n));
-	}
-	ctx.putImageData(imgData, 0, 0);
-
-	// Aggregate stones
-	ctx.fillStyle = "rgba(90,90,90,0.3)";
-	for (let i = 0; i < 600; i++) {
-		ctx.beginPath();
-		ctx.arc(Math.random() * W, Math.random() * H, 1 + Math.random() * 2.5, 0, Math.PI * 2);
-		ctx.fill();
-	}
-
-	// Tar patches
-	ctx.fillStyle = "rgba(20,20,20,0.4)";
-	for (let i = 0; i < 120; i++) {
-		ctx.beginPath();
-		ctx.arc(Math.random() * W, Math.random() * H, 2 + Math.random() * 5, 0, Math.PI * 2);
-		ctx.fill();
-	}
-
-	// Subtle streaks
-	ctx.strokeStyle = "rgba(255,255,255,0.04)";
-	for (let y = 0; y < H; y += 1 + Math.random() * 2) {
-		ctx.lineWidth = 0.5 + Math.random();
-		ctx.beginPath();
-		ctx.moveTo(0, y);
-		ctx.lineTo(W, y);
-		ctx.stroke();
-	}
-
-	// ── Painted lane markings (top half of texture = painted section) ──────
-	// UV tiles every 4m. Top half (V 0.5-1.0) = 2m paint, bottom half (V 0.0-0.5) = 2m gap
-	// This creates dashed center line. Edge lines are continuous since they're in both halves.
-
-	const paintY = H * 0.5; // markings start at halfway (top half = painted zone)
-	const edgeU_L = W * 0.06; // left edge line position (6% from left)
-	const edgeU_R = W * 0.94; // right edge line position
-	const centerU = W * 0.5; // center line
-	const lineW = 4; // line thickness in pixels (~0.8m at 512px/12m road width)
-
-	// Edge lines - solid, drawn full height (both halves)
-	ctx.fillStyle = "#ffffff";
-	ctx.fillRect(edgeU_L - lineW / 2, 0, lineW, H);
-	ctx.fillRect(edgeU_R - lineW / 2, 0, lineW, H);
-
-	// Center dashes - only in top half (painted zone)
-	ctx.fillRect(centerU - lineW / 2, paintY, lineW, H - paintY);
-
-	// Slight glow/feather on markings for realism
-	ctx.filter = "blur(1px)";
-	ctx.fillStyle = "rgba(255,255,255,0.15)";
-	ctx.fillRect(edgeU_L - lineW / 2 - 1, 0, lineW + 2, H);
-	ctx.fillRect(edgeU_R - lineW / 2 - 1, 0, lineW + 2, H);
-	ctx.fillRect(centerU - lineW / 2 - 1, paintY, lineW + 2, H - paintY);
-	ctx.filter = "none";
-
-	const tex = new THREE.CanvasTexture(canvas);
-	tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-	tex.anisotropy = 16;
-	return tex;
-}
-
-// ── Geometry helper ──────────────────────────────────────────────────────
-
-function makeGeo(
-	verts: number[],
-	indices: number[],
-	uvs?: number[],
-	colors?: number[],
-): THREE.BufferGeometry {
-	const geo = new THREE.BufferGeometry();
-	geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(verts), 3));
-	if (uvs) geo.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(uvs), 2));
-	if (colors) geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colors), 3));
-	geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
-	geo.computeVertexNormals();
-	return geo;
-}
-
-// ── Build meshes from samples ────────────────────────────────────────────
-
-function buildMeshes(data: TrackResponse, rng: () => number): THREE.Group {
-	const group = new THREE.Group();
-	const samples = data.samples;
-
-	const roadVerts: number[] = [];
-	const roadUVs: number[] = [];
-	const roadIndices: number[] = [];
-	const kerbVerts: number[] = [];
-	const kerbColors: number[] = [];
-	const kerbIndices: number[] = [];
-	const grassVerts: number[] = [];
-	const grassColors: number[] = [];
-	const grassIndices: number[] = [];
-	let roadDist = 0;
-
-	const KERB_RED = [0.8, 0.2, 0.2];
-	const KERB_WHITE = [0.9, 0.9, 0.9];
-	const kerbStripeLen = 2.0;
-
-	for (let i = 0; i < samples.length; i++) {
-		const s = samples[i];
-		if (i > 0) {
-			const dx = s.point.x - samples[i - 1].point.x;
-			const dy = s.point.y - samples[i - 1].point.y;
-			const dz = s.point.z - samples[i - 1].point.z;
-			roadDist += Math.sqrt(dx * dx + dy * dy + dz * dz);
-		}
-
-		roadVerts.push(s.left.x, s.left.y + 0.02, s.left.z, s.right.x, s.right.y + 0.02, s.right.z);
-		roadUVs.push(0, roadDist / 4, 1, roadDist / 4);
-
-		kerbVerts.push(
-			s.left.x,
-			s.left.y + 0.03,
-			s.left.z,
-			s.kerbLeft.x,
-			s.kerbLeft.y + 0.03,
-			s.kerbLeft.z,
-			s.right.x,
-			s.right.y + 0.03,
-			s.right.z,
-			s.kerbRight.x,
-			s.kerbRight.y + 0.03,
-			s.kerbRight.z,
-		);
-		const stripe = Math.floor(roadDist / kerbStripeLen) % 2 === 0 ? KERB_RED : KERB_WHITE;
-		kerbColors.push(...stripe, ...stripe, ...stripe, ...stripe);
-
-		grassVerts.push(
-			s.kerbLeft.x,
-			s.kerbLeft.y + 0.01,
-			s.kerbLeft.z,
-			s.grassLeft.x,
-			s.grassLeft.y + 0.01,
-			s.grassLeft.z,
-			s.kerbRight.x,
-			s.kerbRight.y + 0.01,
-			s.kerbRight.z,
-			s.grassRight.x,
-			s.grassRight.y + 0.01,
-			s.grassRight.z,
-		);
-		const gv = 0.3 + Math.sin(roadDist * 0.3) * 0.04 + (rng() - 0.5) * 0.03;
-		grassColors.push(0.28, gv + 0.04, 0.2, 0.28, gv, 0.2, 0.28, gv + 0.04, 0.2, 0.28, gv, 0.2);
-
-		if (i >= samples.length - 1) break;
-
-		const rb = i * 2;
-		roadIndices.push(rb, rb + 1, rb + 2, rb + 1, rb + 3, rb + 2);
-
-		const kb = i * 4;
-		kerbIndices.push(kb, kb + 1, kb + 4, kb + 1, kb + 5, kb + 4);
-		kerbIndices.push(kb + 2, kb + 6, kb + 3, kb + 3, kb + 6, kb + 7);
-
-		const gb = i * 4;
-		grassIndices.push(gb, gb + 1, gb + 4, gb + 1, gb + 5, gb + 4);
-		grassIndices.push(gb + 2, gb + 6, gb + 3, gb + 3, gb + 6, gb + 7);
-	}
-
-	// Road — PBR material so PointLights create visible reflections
-	const asphaltTex = makeAsphaltTexture();
-	asphaltTex.anisotropy = 16;
-	const roadMat = new THREE.MeshStandardMaterial({
-		map: asphaltTex,
-		roughness: 0.7,
-		metalness: 0.05,
-	});
-	const roadMesh = new THREE.Mesh(makeGeo(roadVerts, roadIndices, roadUVs), roadMat);
-	roadMesh.receiveShadow = true;
-	group.add(roadMesh);
-
-	// Kerbs
-	if (kerbVerts.length > 0) {
-		const kerbMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-		group.add(new THREE.Mesh(makeGeo(kerbVerts, kerbIndices, undefined, kerbColors), kerbMat));
-	}
-
-	// Grass
-	if (grassVerts.length > 0) {
-		const grassMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-		const gm = new THREE.Mesh(makeGeo(grassVerts, grassIndices, undefined, grassColors), grassMat);
-		gm.receiveShadow = true;
-		group.add(gm);
-	}
-
-	// Checkers
-	const width = 12;
-	const checkerVerts: number[] = [];
-	const checkerIndices: number[] = [];
-	const checkerSize = width / 2;
-	const cellSize = 1;
-	const start = samples[0];
-	for (let row = 0; row < 2; row++) {
-		for (let col = 0; col < Math.floor(checkerSize / cellSize); col++) {
-			if ((row + col) % 2 === 0) {
-				const c1 = col * cellSize - checkerSize / 2 + checkerSize;
-				const c2 = (col + 1) * cellSize - checkerSize / 2 + checkerSize;
-				const r1 = row * cellSize - 1;
-				const r2 = (row + 1) * cellSize - 1;
-				const base = checkerVerts.length / 3;
-				for (const [cx, cz] of [
-					[c1, r1],
-					[c2, r1],
-					[c1, r2],
-					[c2, r2],
-				]) {
-					checkerVerts.push(
-						start.point.x + start.binormal.x * cx + start.tangent.x * cz,
-						start.point.y + 0.04,
-						start.point.z + start.binormal.z * cx + start.tangent.z * cz,
-					);
-				}
-				checkerIndices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
-			}
-		}
-	}
-	if (checkerVerts.length > 0) {
-		const checkerMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-		group.add(new THREE.Mesh(makeGeo(checkerVerts, checkerIndices), checkerMat));
-	}
-
-	// Spline visualization
-	const splinePoints = data.splinePoints.map((p) => new THREE.Vector3(p.x, p.y, p.z));
-	const splineGeo = new THREE.BufferGeometry().setFromPoints(splinePoints);
-	group.add(new THREE.Line(splineGeo, new THREE.LineBasicMaterial({ color: 0x00ff88 })));
-
-	// Control points
-	const cpMat = new THREE.MeshLambertMaterial({ color: 0xff6600 });
-	for (const cp of data.controlPoints3D) {
-		const marker = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), cpMat);
-		marker.position.set(cp.x, cp.y + 2, cp.z);
-		group.add(marker);
-	}
-
-	return group;
-}
-
-// ── Decoration model cache ─────────────────────────────────────────────
-
-const decorationCache = new Map<string, THREE.Group>();
-let decorationsLoaded = false;
-
-async function loadDecorations(): Promise<void> {
-	if (decorationsLoaded) return;
-	decorationsLoaded = true;
-
-	const loader = new GLTFLoader();
-	let pending = 2;
-	const done = () => {
-		if (--pending === 0) {
-			console.log(`Loaded ${decorationCache.size} decoration models`);
-			resolveAll();
-		}
-	};
-	let resolveAll: () => void;
-	const promise = new Promise<void>((r) => {
-		resolveAll = r;
-	});
-
-	function loadGLB(url: string) {
-		loader.load(
-			url,
-			(gltf) => {
-				gltf.scene.traverse((node) => {
-					if (!node.name || !(node instanceof THREE.Object3D)) return;
-					const baseName = node.name.replace(/\.\d+$/, "");
-					if (!decorationCache.has(baseName)) {
-						const clone = node.clone() as THREE.Group;
-						clone.name = baseName;
-						decorationCache.set(baseName, clone);
-					}
-				});
-				done();
-			},
-			undefined,
-			(error) => {
-				console.error(`Failed to load ${url}:`, error);
-				done();
-			},
-		);
-	}
-
-	loadGLB("/models/maps/map1/decorations.glb");
-	loadGLB("/models/maps/map1/gates.glb");
-
-	return promise;
-}
-
-const GLB_SCALE = 8;
-
-function buildInstancedScenery(scenery: SceneryItem[], terrain: TerrainSampler): THREE.Group {
-	const group = new THREE.Group();
-	const dummy = new THREE.Object3D();
-
-	// Group items by type
-	const byType = new Map<string, SceneryItem[]>();
-	for (const item of scenery) {
-		if (item.type === "barrier") continue;
-		let arr = byType.get(item.type);
-		if (!arr) {
-			arr = [];
-			byType.set(item.type, arr);
-		}
-		arr.push(item);
-	}
-
-	// For each type, either instance from GLB cache or create instanced mesh
-	for (const [type, items] of byType) {
-		// Low-count types: just use individual objects (simpler)
-		if (items.length < 3) {
-			for (const item of items) {
-				const obj = createSceneryObject(item, terrain);
-				if (obj) group.add(obj);
-			}
-			continue;
-		}
-
-		const cached = decorationCache.get(type);
-		if (cached) {
-			// Extract ALL mesh children (trees have trunk + foliage as separate sub-meshes)
-			const meshEntries: { geo: THREE.BufferGeometry; mat: THREE.Material | THREE.Material[] }[] =
-				[];
-			cached.traverse((child) => {
-				if (child instanceof THREE.Mesh) {
-					meshEntries.push({ geo: child.geometry, mat: child.material });
-				}
-			});
-
-			if (meshEntries.length === 0) {
-				// Fallback to individual objects
-				for (const item of items) {
-					const obj = createSceneryObject(item, terrain);
-					if (obj) group.add(obj);
-				}
-				continue;
-			}
-
-			// Create one InstancedMesh per sub-mesh (e.g., trunk + foliage)
-			for (const entry of meshEntries) {
-				const instanced = new THREE.InstancedMesh(entry.geo, entry.mat, items.length);
-				instanced.castShadow = true;
-				instanced.receiveShadow = true;
-
-				for (let i = 0; i < items.length; i++) {
-					const item = items[i];
-					const scale = GLB_SCALE * (item.scale ?? 1);
-					const tY = terrain.getHeight(item.position.x, item.position.z);
-					dummy.position.set(item.position.x, tY, item.position.z);
-					dummy.rotation.set(0, item.rotation ?? 0, 0);
-					dummy.scale.setScalar(scale);
-					dummy.updateMatrix();
-					instanced.setMatrixAt(i, dummy.matrix);
-				}
-				instanced.instanceMatrix.needsUpdate = true;
-				group.add(instanced);
-			}
-		} else {
-			// Not in GLB (light, barrier, etc.) - use individual objects
-			for (const item of items) {
-				const obj = createSceneryObject(item, terrain);
-				if (obj) group.add(obj);
-			}
-		}
-	}
-
-	return group;
-}
-
-function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.Group | null {
-	const cached = decorationCache.get(item.type);
-	if (cached) {
-		const obj = cached.clone();
-		obj.scale.setScalar(GLB_SCALE * (item.scale ?? 1));
-		const tY = terrain.getHeight(item.position.x, item.position.z);
-		obj.position.set(item.position.x, tY, item.position.z);
-		obj.rotation.y = item.rotation ?? 0;
-		return obj;
-	}
-
-	// Fallback for types not in GLB (barrier, light)
-	const group = new THREE.Group();
-	const tY = terrain.getHeight(item.position.x, item.position.z);
-	group.position.set(item.position.x, tY, item.position.z);
-
-	switch (item.type) {
-		case "barrier": {
-			const barrier = new THREE.Mesh(
-				new THREE.BoxGeometry(0.5, 1.5, 3),
-				new THREE.MeshLambertMaterial({ color: 0xcc3333 }),
-			);
-			barrier.position.y = 0.75;
-			group.add(barrier);
-			break;
-		}
-		case "light": {
-			const post = new THREE.Mesh(
-				new THREE.CylinderGeometry(0.15, 0.15, 5),
-				new THREE.MeshLambertMaterial({ color: 0x888888 }),
-			);
-			post.position.y = 2.5;
-			group.add(post);
-			const fixture = new THREE.Mesh(
-				new THREE.BoxGeometry(1, 0.3, 0.5),
-				new THREE.MeshLambertMaterial({
-					color: 0xffffcc,
-					emissive: 0xffffaa,
-					emissiveIntensity: 0.5,
-				}),
-			);
-			fixture.position.y = 5.5;
-			group.add(fixture);
-			// Track for day/night glow control
-			lightFixtures.push(fixture);
-			// Add point light (off during day, on at night) — no shadows for performance
-			const pointLight = new THREE.PointLight(0xffeeaa, 0, 30, 2);
-			pointLight.position.y = 5;
-			group.add(pointLight);
-			streetLights.push(pointLight);
-			break;
-		}
-		default:
-			return null;
-	}
-	return group;
-}
-
-// ── Scene setup ──────────────────────────────────────────────────────────
+import { buildGuardrails, buildMeshes } from "./road.ts";
+import { state } from "./scene.ts";
+import { buildInstancedScenery, loadDecorations } from "./scenery.ts";
+import { applyTimeOfDay, buildStars, setupSky } from "./sky.ts";
+import { buildTerrain, TerrainSampler } from "./terrain.ts";
+import type { TrackResponse, WeatherType } from "./utils.ts";
+import {
+	applyWeather,
+	buildRainSystem,
+	buildSnowSystem,
+	setRainVelocities,
+	setSnowDrifts,
+	updateWeather,
+} from "./weather.ts";
+
+// ── Renderer setup ──────────────────────────────────────────────────────
 
 const infoEl = document.getElementById("info");
 
@@ -956,67 +26,44 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
+state.renderer = renderer;
 
-let scene: THREE.Scene;
-let camera: THREE.PerspectiveCamera;
-let controls: OrbitControls;
 let dispose: () => void = () => {};
-let sun: THREE.DirectionalLight | null = null;
-let ambient: THREE.HemisphereLight | null = null;
-let skyUniforms: Record<string, THREE.IUniform> | null = null;
-let stars: THREE.Points | null = null;
-let streetLights: THREE.PointLight[] = [];
-let lightFixtures: THREE.Mesh[] = []; // for emissive glow control
-let currentTime = 12; // default noon
-let currentWeather: WeatherType = "clear";
-let rainSystem: THREE.Points | null = null;
-let rainVelocities: Float32Array | null = null;
-let snowSystem: THREE.Points | null = null;
-let snowDrifts: Float32Array | null = null;
 
 function clearScene() {
 	dispose();
-	if (controls) controls.dispose();
-	sun = null;
-	ambient = null;
-	skyUniforms = null;
-	stars = null;
-	streetLights = [];
-	lightFixtures = [];
-	rainSystem = null;
-	rainVelocities = null;
-	snowSystem = null;
-	snowDrifts = null;
-	terrainMaterial = null;
+	if (state.controls) state.controls.dispose();
+	state.scene = null;
+	state.camera = null;
+	state.controls = null;
+	state.sun = null;
+	state.ambient = null;
+	state.skyUniforms = null;
+	state.stars = null;
+	state.streetLights = [];
+	state.lightFixtures = [];
+	state.rainSystem = null;
+	state.snowSystem = null;
+	state.terrainMaterial = null;
 }
 
 async function buildScene(data: TrackResponse) {
 	clearScene();
 
-	scene = new THREE.Scene();
-	scene.background = new THREE.Color(0x87ceeb); // fallback, Sky shader overrides
+	const scene = new THREE.Scene();
+	scene.background = new THREE.Color(0x87ceeb);
 	scene.fog = new THREE.Fog(0x88aacc, 500, 1500);
+	state.scene = scene;
 
-	// Procedural sky
-	const sky = new Sky();
-	sky.scale.setScalar(10000);
-	scene.add(sky);
-	skyUniforms = sky.material.uniforms;
-	skyUniforms.turbidity.value = 4;
-	skyUniforms.rayleigh.value = 2;
-	skyUniforms.mieCoefficient.value = 0.005;
-	skyUniforms.mieDirectionalG.value = 0.8;
-	const sunPos = new THREE.Vector3();
-	const phi = THREE.MathUtils.degToRad(90 - 45); // 45° elevation
-	const theta = THREE.MathUtils.degToRad(180);
-	sunPos.setFromSphericalCoords(1, phi, theta);
-	skyUniforms.sunPosition.value.copy(sunPos);
+	// Sky
+	state.skyUniforms = setupSky(scene);
 
+	// Lights
 	scene.add(new THREE.HemisphereLight(0x88bbff, 0x445511, 0.6));
-	ambient = scene.children[scene.children.length - 1] as THREE.HemisphereLight;
+	state.ambient = scene.children[scene.children.length - 1] as THREE.HemisphereLight;
 
-	sun = new THREE.DirectionalLight(0xffffcc, 1.2);
-	sun.position.set(200, 300, 100); // roughly matches sky sun at 45° elevation
+	const sun = new THREE.DirectionalLight(0xffffcc, 1.2);
+	sun.position.set(200, 300, 100);
 	sun.castShadow = true;
 	sun.shadow.mapSize.width = 1024;
 	sun.shadow.mapSize.height = 1024;
@@ -1027,53 +74,56 @@ async function buildScene(data: TrackResponse) {
 	sun.shadow.camera.top = 200;
 	sun.shadow.camera.bottom = -200;
 	scene.add(sun);
+	state.sun = sun;
 
-	// Stars (visible at night, hidden during day)
-	stars = buildStars();
-	scene.add(stars);
+	// Stars
+	state.stars = buildStars();
+	scene.add(state.stars);
 
-	// Weather particle systems
+	// Weather particles
 	const rain = buildRainSystem();
-	rainSystem = rain.points;
-	rainVelocities = rain.velocities;
-	rainSystem.visible = false;
-	scene.add(rainSystem);
+	state.rainSystem = rain.points;
+	setRainVelocities(rain.velocities);
+	rain.points.visible = false;
+	scene.add(rain.points);
 
 	const snow = buildSnowSystem();
-	snowSystem = snow.points;
-	snowDrifts = snow.drifts;
-	snowSystem.visible = false;
-	scene.add(snowSystem);
+	state.snowSystem = snow.points;
+	setSnowDrifts(snow.drifts);
+	snow.points.visible = false;
+	scene.add(snow.points);
 
-	// Terrain sampler (shared for terrain mesh + scenery placement)
+	// Terrain
 	const terrain = new TerrainSampler(data.seed, data.samples);
 	scene.add(await buildTerrain(data, terrain));
 
-	// Track meshes - use same seed so RNG is deterministic
+	// Track meshes
 	const rng = mulberry32(data.seed);
-	const trackMeshes = buildMeshes(data, rng);
-	scene.add(trackMeshes);
+	scene.add(buildMeshes(data, rng));
 
-	// Scenery - generate deterministically from seed, load GLB models, place as instanced meshes
+	// Scenery
 	const scenery = generateScenery(data.seed, data.samples);
 	await loadDecorations();
-	const instancedGroup = buildInstancedScenery(scenery, terrain);
-	scene.add(instancedGroup);
+	scene.add(buildInstancedScenery(scenery, terrain));
 
-	// Procedural guardrails - continuous fence along both sides of road
+	// Guardrails
 	scene.add(buildGuardrails(data.samples, terrain));
 
-	camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1200);
+	// Camera
+	const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1200);
 	camera.position.set(
 		data.samples[0].point.x + 50,
 		data.samples[0].point.y + 80,
 		data.samples[0].point.z + 50,
 	);
+	state.camera = camera;
 
-	controls = new OrbitControls(camera, renderer.domElement);
+	// Controls
+	const controls = new OrbitControls(camera, renderer.domElement);
 	controls.enableDamping = true;
 	controls.dampingFactor = 0.1;
 	controls.target.set(data.samples[0].point.x, data.samples[0].point.y, data.samples[0].point.z);
+	state.controls = controls;
 
 	dispose = () => {
 		scene.traverse((child) => {
@@ -1092,471 +142,18 @@ async function buildScene(data: TrackResponse) {
 		infoEl.textContent = `Seed: ${data.seed} | Length: ${data.length.toFixed(0)}m | Samples: ${data.numSamples} | Elev: ${data.elevationRange.min.toFixed(1)}...${data.elevationRange.max.toFixed(1)} | Scenery: ${scenery.length}`;
 	}
 
-	// Apply initial time + weather
-	applyTimeOfDay(currentTime);
-	applyWeather(currentWeather);
+	applyTimeOfDay(state.currentTime);
+	applyWeather(state.currentWeather);
 }
 
-function applyTimeOfDay(hour: number) {
-	if (!scene || !sun || !ambient) return;
-	const state = getTimeState(hour);
-
-	// Sun
-	sun.color.setRGB(...state.sunColor);
-	sun.intensity = state.sunIntensity;
-	const sunElev = THREE.MathUtils.degToRad(state.sunElevation);
-	sun.position.set(Math.cos(sunElev) * 300, Math.sin(sunElev) * 300, 100);
-
-	// Ambient
-	ambient.color.setRGB(...state.ambientColor);
-	ambient.intensity = state.ambientIntensity;
-
-	// Fog
-	const fog = scene.fog as THREE.Fog;
-	fog.color.setRGB(...state.fogColor);
-	fog.near = state.fogNear;
-	fog.far = state.fogFar;
-
-	// Sky
-	if (skyUniforms) {
-		skyUniforms.turbidity.value = state.turbidity;
-		skyUniforms.rayleigh.value = state.rayleigh;
-		const phi = THREE.MathUtils.degToRad(90 - state.sunElevation);
-		const theta = THREE.MathUtils.degToRad(180);
-		const sunPos = new THREE.Vector3();
-		sunPos.setFromSphericalCoords(1, phi, theta);
-		skyUniforms.sunPosition.value.copy(sunPos);
-	}
-
-	// Stars
-	if (stars) {
-		(stars.material as THREE.PointsMaterial).opacity = state.starsOpacity;
-	}
-
-	// Street lights — glow at night, dim during day
-	const nightFactor = Math.max(0, 1 - state.sunIntensity / 0.3);
-	for (const light of streetLights) {
-		light.intensity = nightFactor * 3;
-	}
-	for (const fixture of lightFixtures) {
-		const mat = fixture.material as THREE.MeshLambertMaterial;
-		mat.emissiveIntensity = 0.15 + nightFactor * 2.5;
-	}
-
-	// Terrain shader uniforms
-	if (terrainMaterial) {
-		terrainMaterial.uniforms.uSunDir.value
-			.set(Math.cos(sunElev) * 300, Math.sin(sunElev) * 300, 100)
-			.normalize();
-		terrainMaterial.uniforms.uFogColor.value.setRGB(...state.fogColor);
-		terrainMaterial.uniforms.uFogNear.value = state.fogNear;
-		terrainMaterial.uniforms.uFogFar.value = state.fogFar;
-	}
-
-	// Renderer exposure (darker at night)
-	renderer.toneMappingExposure = 0.5 + state.sunIntensity * 0.5;
-}
-
-class TerrainSampler {
-	private noise2D: (x: number, z: number) => number;
-	private grid: Map<string, TrackSample[]>;
-	private samples: TrackSample[];
-	avgRoadY: number;
-	private readonly cellSize = 10;
-	private readonly noiseScale = 0.003;
-	private readonly noiseAmp = 60;
-	private readonly roadInfluence = 40;
-	private readonly blendStart = 15;
-
-	constructor(seed: number, samples: TrackSample[]) {
-		const rng = mulberry32(seed + 99999);
-		this.noise2D = createNoise2D(rng);
-		this.samples = samples;
-
-		// Compute average road Y so far-from-road terrain centers around it
-		let sumY = 0;
-		for (const s of samples) sumY += s.point.y;
-		this.avgRoadY = sumY / samples.length;
-		this.grid = new Map();
-		for (const s of samples) {
-			const cx = Math.floor(s.point.x / this.cellSize);
-			const cz = Math.floor(s.point.z / this.cellSize);
-			const key = `${cx},${cz}`;
-			let arr = this.grid.get(key);
-			if (!arr) {
-				arr = [];
-				this.grid.set(key, arr);
-			}
-			arr.push(s);
-		}
-	}
-
-	private fbm(x: number, z: number): number {
-		let value = 0;
-		let amplitude = 1;
-		let frequency = 1;
-		let maxVal = 0;
-		for (let i = 0; i < 6; i++) {
-			value += amplitude * this.noise2D(x * frequency, z * frequency);
-			maxVal += amplitude;
-			amplitude *= 0.5;
-			frequency *= 2.03;
-		}
-		return value / maxVal;
-	}
-
-	nearestRoad(x: number, z: number): { dist: number; sample: TrackSample } {
-		const cx = Math.floor(x / this.cellSize);
-		const cz = Math.floor(z / this.cellSize);
-		let best = { dist: Infinity, sample: this.samples[0] };
-		for (let dx = -2; dx <= 2; dx++) {
-			for (let dz = -2; dz <= 2; dz++) {
-				const arr = this.grid.get(`${cx + dx},${cz + dz}`);
-				if (!arr) continue;
-				for (const s of arr) {
-					const ddx = x - s.point.x;
-					const ddz = z - s.point.z;
-					const d = Math.sqrt(ddx * ddx + ddz * ddz);
-					if (d < best.dist) best = { dist: d, sample: s };
-				}
-			}
-		}
-		return best;
-	}
-
-	getHeight(x: number, z: number): number {
-		const { dist, sample } = this.nearestRoad(x, z);
-		const centerDist = Math.sqrt(x * x + z * z);
-		// Mountains rise quickly with distance from center
-		const mountainFactor = 1 + smoothstep(600, 900, centerDist) * 3;
-		const noiseH =
-			this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp * mountainFactor;
-		const blend = smoothstep(this.blendStart, this.roadInfluence, dist);
-		// Near road: match road height. Far: noise centered on avg road Y with mountain amplification.
-		return sample.point.y * (1 - blend) + (this.avgRoadY + noiseH) * blend - 0.3;
-	}
-}
-
-// ── Texture loading helpers ──────────────────────────────────────────
-
-function loadTex(path: string): Promise<THREE.Texture> {
-	return new Promise((resolve, reject) => {
-		new THREE.TextureLoader().load(
-			path,
-			(tex) => {
-				tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-				tex.colorSpace = THREE.SRGBColorSpace;
-				resolve(tex);
-			},
-			undefined,
-			reject,
-		);
-	});
-}
-
-function loadTexLinear(path: string): Promise<THREE.Texture> {
-	return new Promise((resolve, reject) => {
-		new THREE.TextureLoader().load(
-			path,
-			(tex) => {
-				tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-				resolve(tex);
-			},
-			undefined,
-			reject,
-		);
-	});
-}
-
-const TERRAIN_TEX_REPEAT = 80;
-let terrainTextures: Record<string, THREE.Texture> | null = null;
-let terrainMaterial: THREE.ShaderMaterial | null = null;
-
-async function loadTerrainTextures(): Promise<Record<string, THREE.Texture>> {
-	if (terrainTextures) return terrainTextures;
-	const base = "/textures";
-	const [grassC, grassN, dirtC, dirtN, rockC, rockN, snowC, snowN, mossC, mossN] =
-		await Promise.all([
-			loadTex(`${base}/grass/Grass004_1K-JPG_Color.jpg`),
-			loadTexLinear(`${base}/grass/Grass004_1K-JPG_NormalGL.jpg`),
-			loadTex(`${base}/dirt/Ground015_1K-JPG_Color.jpg`),
-			loadTexLinear(`${base}/dirt/Ground015_1K-JPG_NormalGL.jpg`),
-			loadTex(`${base}/rock_mossy/Rock011_1K-JPG_Color.jpg`),
-			loadTexLinear(`${base}/rock_mossy/Rock011_1K-JPG_NormalGL.jpg`),
-			loadTex(`${base}/snow/Ground061_1K-JPG_Color.jpg`),
-			loadTexLinear(`${base}/snow/Ground061_1K-JPG_NormalGL.jpg`),
-			loadTex(`${base}/moss/Moss002_1K-JPG_Color.jpg`),
-			loadTexLinear(`${base}/moss/Moss002_1K-JPG_NormalGL.jpg`),
-		]);
-	for (const t of [grassC, dirtC, rockC, snowC, mossC, grassN, dirtN, rockN, snowN, mossN]) {
-		t.repeat.set(TERRAIN_TEX_REPEAT, TERRAIN_TEX_REPEAT);
-	}
-	terrainTextures = { grassC, grassN, dirtC, dirtN, rockC, rockN, snowC, snowN, mossC, mossN };
-	return terrainTextures;
-}
-
-const terrainVertexShader = /* glsl */ `
-attribute vec3 aBlend0; // aboveRoad, slope, dist
-attribute vec3 aBlend1; // noise1, noise2, nearRoad
-
-varying vec2 vUv;
-varying vec3 vWorldPos;
-varying vec3 vNormal;
-varying vec3 vBlend0;
-varying vec3 vBlend1;
-
-void main() {
-	vUv = uv;
-	vBlend0 = aBlend0;
-	vBlend1 = aBlend1;
-	vNormal = normalize(normalMatrix * normal);
-	vec4 worldPos = modelMatrix * vec4(position, 1.0);
-	vWorldPos = worldPos.xyz;
-	gl_Position = projectionMatrix * viewMatrix * worldPos;
-}
-`;
-
-const terrainFragmentShader = /* glsl */ `
-precision highp float;
-
-uniform sampler2D tGrassC;
-uniform sampler2D tGrassN;
-uniform sampler2D tDirtC;
-uniform sampler2D tDirtN;
-uniform sampler2D tRockC;
-uniform sampler2D tRockN;
-uniform sampler2D tSnowC;
-uniform sampler2D tSnowN;
-uniform sampler2D tMossC;
-uniform sampler2D tMossN;
-uniform vec3 uSunDir;
-uniform vec3 uFogColor;
-uniform float uFogNear;
-uniform float uFogFar;
-
-varying vec2 vUv;
-varying vec3 vWorldPos;
-varying vec3 vNormal;
-varying vec3 vBlend0;
-varying vec3 vBlend1;
-
-vec3 perturbNormal(vec3 N, vec2 uv, sampler2D normalMap) {
-	vec3 nm = texture2D(normalMap, uv).rgb * 2.0 - 1.0;
-	nm.xy *= 1.5;
-	return normalize(N + nm * 0.3);
-}
-
-void main() {
-	float aboveRoad = vBlend0.x;
-	float slope = vBlend0.y;
-	float dist = vBlend0.z;
-	float noise1 = vBlend1.x;
-	float noise2 = vBlend1.y;
-	float nearRoad = vBlend1.z;
-
-	// Blend weights
-	float wRock = smoothstep(0.3, 0.7, slope);
-	float wSnow = smoothstep(60.0, 90.0, aboveRoad);
-	float wNearMoss = smoothstep(0.0, 1.0, nearRoad) * (0.5 + 0.5 * noise1);
-	float wBelowDirt = smoothstep(0.0, -10.0, aboveRoad);
-	float wFarDirt = smoothstep(40.0, 80.0, dist) * (0.3 + 0.7 * noise2);
-
-	// Base grass
-	float wGrass = 1.0;
-	wGrass -= wRock;
-	wGrass -= wSnow;
-	wGrass -= wNearMoss;
-	wGrass -= wBelowDirt;
-	wGrass -= wFarDirt;
-	wGrass = max(wGrass, 0.0);
-
-	float total = wGrass + wRock + wSnow + wNearMoss + wBelowDirt + wFarDirt;
-	wGrass /= total;
-	wRock /= total;
-	wSnow /= total;
-	wNearMoss /= total;
-	wBelowDirt /= total;
-	wFarDirt /= total;
-
-	// Sample color textures
-	vec3 grass = texture2D(tGrassC, vUv).rgb;
-	vec3 dirt = texture2D(tDirtC, vUv).rgb;
-	vec3 rock = texture2D(tRockC, vUv).rgb;
-	vec3 snow = texture2D(tSnowC, vUv).rgb;
-	vec3 moss = texture2D(tMossC, vUv).rgb;
-
-	vec3 baseColor = grass * wGrass + dirt * (wBelowDirt + wFarDirt) + rock * wRock + snow * wSnow + moss * wNearMoss;
-
-	// Blend normal maps
-	vec3 N = normalize(vNormal);
-	vec3 nGrass = perturbNormal(N, vUv, tGrassN);
-	vec3 nDirt = perturbNormal(N, vUv, tDirtN);
-	vec3 nRock = perturbNormal(N, vUv, tRockN);
-	vec3 nSnow = perturbNormal(N, vUv, tSnowN);
-	vec3 nMoss = perturbNormal(N, vUv, tMossN);
-	vec3 blendedNormal = nGrass * wGrass + nDirt * (wBelowDirt + wFarDirt) + nRock * wRock + nSnow * wSnow + nMoss * wNearMoss;
-	blendedNormal = normalize(blendedNormal);
-
-	// Diffuse lighting
-	vec3 sunDir = normalize(uSunDir);
-	float NdotL = max(dot(blendedNormal, sunDir), 0.0);
-	vec3 ambient = vec3(0.25, 0.27, 0.3);
-	vec3 diffuse = baseColor * (ambient + vec3(1.0, 0.95, 0.85) * NdotL * 0.8);
-
-	// Distance fog
-	float fogDist = length(vWorldPos - cameraPosition);
-	float fogFactor = smoothstep(uFogNear, uFogFar, fogDist);
-	vec3 color = mix(diffuse, uFogColor, fogFactor);
-
-	gl_FragColor = vec4(color, 1.0);
-}
-`;
-
-async function buildTerrain(_data: TrackResponse, terrain: TerrainSampler): Promise<THREE.Group> {
-	const group = new THREE.Group();
-	const tex = await loadTerrainTextures();
-
-	// ── Generate terrain mesh ────────────────────────────────────────
-	const worldSize = 1600;
-	const segments = 128;
-
-	const geometry = new THREE.PlaneGeometry(worldSize, worldSize, segments, segments);
-	geometry.rotateX(-Math.PI / 2);
-	const pos = geometry.attributes.position;
-	const blend0Data = new Float32Array(pos.count * 3);
-	const blend1Data = new Float32Array(pos.count * 3);
-
-	for (let i = 0; i < pos.count; i++) {
-		const x = pos.getX(i);
-		const z = pos.getZ(i);
-
-		const terrainY = terrain.getHeight(x, z);
-		pos.setY(i, terrainY);
-
-		const { dist } = terrain.nearestRoad(x, z);
-		const aboveRoad = terrainY - terrain.avgRoadY;
-		const blend = smoothstep(15, 40, dist);
-		const slope = blend > 0.5 ? Math.abs(terrainY - terrain.avgRoadY) / 80 : 0;
-		const noise1 = Math.sin(x * 0.05 + z * 0.07) * 0.5 + 0.5;
-		const noise2 = Math.cos(x * 0.03 + z * 0.09) * 0.5 + 0.5;
-		const nearRoad = smoothstep(25.0, 0.0, dist);
-
-		blend0Data[i * 3] = aboveRoad;
-		blend0Data[i * 3 + 1] = slope;
-		blend0Data[i * 3 + 2] = dist;
-		blend1Data[i * 3] = noise1;
-		blend1Data[i * 3 + 1] = noise2;
-		blend1Data[i * 3 + 2] = nearRoad;
-	}
-
-	// Override UVs to tile textures across terrain
-	const uvs = geometry.attributes.uv;
-	for (let i = 0; i < pos.count; i++) {
-		const x = pos.getX(i);
-		const z = pos.getZ(i);
-		uvs.setXY(i, x / worldSize, z / worldSize);
-	}
-
-	geometry.setAttribute("aBlend0", new THREE.BufferAttribute(blend0Data, 3));
-	geometry.setAttribute("aBlend1", new THREE.BufferAttribute(blend1Data, 3));
-	geometry.computeVertexNormals();
-
-	const material = new THREE.ShaderMaterial({
-		vertexShader: terrainVertexShader,
-		fragmentShader: terrainFragmentShader,
-		uniforms: {
-			tGrassC: { value: tex.grassC },
-			tGrassN: { value: tex.grassN },
-			tDirtC: { value: tex.dirtC },
-			tDirtN: { value: tex.dirtN },
-			tRockC: { value: tex.rockC },
-			tRockN: { value: tex.rockN },
-			tSnowC: { value: tex.snowC },
-			tSnowN: { value: tex.snowN },
-			tMossC: { value: tex.mossC },
-			tMossN: { value: tex.mossN },
-			uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3) },
-			uFogColor: { value: new THREE.Color(0.75, 0.8, 0.85) },
-			uFogNear: { value: 500.0 },
-			uFogFar: { value: 1500.0 },
-		},
-	});
-	terrainMaterial = material;
-
-	const mesh = new THREE.Mesh(geometry, material);
-	mesh.receiveShadow = true;
-	group.add(mesh);
-
-	return group;
-}
-
-function smoothstep(edge0: number, edge1: number, x: number): number {
-	const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
-	return t * t * (3 - 2 * t);
-}
-
-function buildGuardrails(samples: TrackSample[], terrain: TerrainSampler): THREE.Group {
-	const group = new THREE.Group();
-	const postMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-	const railMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
-
-	// Place posts every ~10 samples
-	const postSpacing = 10;
-	const postGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.2, 6);
-	const railGeo = new THREE.BoxGeometry(0.06, 0.06, 1); // length set per segment
-
-	// Collect post positions for each side
-	const leftPosts: THREE.Vector3[] = [];
-	const rightPosts: THREE.Vector3[] = [];
-
-	for (let i = 0; i < samples.length; i += postSpacing) {
-		const s = samples[i];
-		const left = new THREE.Vector3(s.grassLeft.x, s.grassLeft.y, s.grassLeft.z);
-		const right = new THREE.Vector3(s.grassRight.x, s.grassRight.y, s.grassRight.z);
-		leftPosts.push(left);
-		rightPosts.push(right);
-	}
-
-	// Build rails for each side
-	for (const posts of [leftPosts, rightPosts]) {
-		for (let i = 0; i < posts.length; i++) {
-			const post = posts[i];
-			const next = posts[(i + 1) % posts.length];
-
-			// Post
-			const postMesh = new THREE.Mesh(postGeo, postMat);
-			postMesh.position.set(post.x, terrain.getHeight(post.x, post.z) + 0.6, post.z);
-			group.add(postMesh);
-
-			// Two horizontal rails connecting to next post
-			for (const railY of [0.4, 0.9]) {
-				const dir = new THREE.Vector3().subVectors(next, post);
-				const len = dir.length();
-				dir.normalize();
-
-				const rail = new THREE.Mesh(railGeo, railMat);
-				rail.scale.z = len;
-				rail.position.set(post.x, terrain.getHeight(post.x, post.z) + railY, post.z);
-				// Orient rail to point toward next post
-				rail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
-				group.add(rail);
-			}
-		}
-	}
-
-	return group;
-}
-
-type WeatherType = "clear" | "cloudy" | "rain" | "heavy_rain" | "fog" | "snow";
+// ── Generate ────────────────────────────────────────────────────────────
 
 async function generate() {
-	// Read params from URL
 	const urlParams = new URLSearchParams(window.location.search);
 	const seed = Number(urlParams.get("seed")) || 42;
 	const hour = Number(urlParams.get("hour")) || 12;
 	const weather = (urlParams.get("weather") as WeatherType) || "clear";
 
-	// Sync UI elements from URL params
 	const seedDisplay = document.getElementById("seedDisplay") as HTMLElement | null;
 	if (seedDisplay) seedDisplay.textContent = String(seed);
 	const timeSliderEl = document.getElementById("timeSlider") as HTMLInputElement | null;
@@ -1565,8 +162,8 @@ async function generate() {
 	const weatherEl = document.getElementById("weatherSelect") as HTMLSelectElement | null;
 	if (weatherEl) weatherEl.value = weather;
 
-	currentTime = hour;
-	currentWeather = weather;
+	state.currentTime = hour;
+	state.currentWeather = weather;
 
 	const params = new URLSearchParams({ seed: String(seed) });
 
@@ -1576,7 +173,6 @@ async function generate() {
 		const data: TrackResponse = await resp.json();
 		await buildScene(data);
 	} catch (_err) {
-		// Fallback: generate client-side if API unavailable (dev mode)
 		const data = generateTrack(seed);
 		await buildScene({ ...data, seed });
 	}
@@ -1614,7 +210,7 @@ const timeSlider = document.getElementById("timeSlider") as HTMLInputElement | n
 if (timeSlider) {
 	timeSlider.addEventListener("input", () => {
 		const hour = Number.parseFloat(timeSlider.value);
-		currentTime = hour;
+		state.currentTime = hour;
 		setURLParam("hour", String(hour));
 		applyTimeOfDay(hour);
 		updateTimeLabel(hour);
@@ -1624,11 +220,10 @@ if (timeSlider) {
 const weatherSelect = document.getElementById("weatherSelect") as HTMLSelectElement | null;
 if (weatherSelect) {
 	weatherSelect.addEventListener("change", () => {
-		currentWeather = weatherSelect.value as WeatherType;
+		state.currentWeather = weatherSelect.value as WeatherType;
 		setURLParam("weather", weatherSelect.value);
-		// Re-apply time then weather on top
-		applyTimeOfDay(currentTime);
-		applyWeather(currentWeather);
+		applyTimeOfDay(state.currentTime);
+		applyWeather(state.currentWeather);
 	});
 }
 
@@ -1639,17 +234,17 @@ let lastTime = performance.now();
 function animate() {
 	requestAnimationFrame(animate);
 	const now = performance.now();
-	const delta = Math.min((now - lastTime) / 1000, 0.1); // cap at 100ms
+	const delta = Math.min((now - lastTime) / 1000, 0.1);
 	lastTime = now;
-	if (controls) controls.update();
+	if (state.controls) state.controls.update();
 	updateWeather(delta);
-	if (scene && camera) renderer.render(scene, camera);
+	if (state.scene && state.camera) renderer.render(state.scene, state.camera);
 }
 
 window.addEventListener("resize", () => {
-	if (camera) {
-		camera.aspect = window.innerWidth / window.innerHeight;
-		camera.updateProjectionMatrix();
+	if (state.camera) {
+		state.camera.aspect = window.innerWidth / window.innerHeight;
+		state.camera.updateProjectionMatrix();
 	}
 	renderer.setSize(window.innerWidth, window.innerHeight);
 });
