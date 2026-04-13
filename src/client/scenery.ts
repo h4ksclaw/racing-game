@@ -104,7 +104,7 @@ export function buildInstancedScenery(
 
 			for (const entry of meshEntries) {
 				const instanced = new THREE.InstancedMesh(entry.geo, entry.mat, items.length);
-				instanced.castShadow = false;
+				instanced.castShadow = true;
 				instanced.receiveShadow = false;
 
 				for (let i = 0; i < items.length; i++) {

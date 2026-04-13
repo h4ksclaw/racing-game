@@ -152,7 +152,9 @@ async function loadTerrainTextures(biome: {
 
 // ── Shaders ─────────────────────────────────────────────────────────────
 
-const terrainVertexShader = /* glsl */ `
+const terrainVertexShader = /* glsl */ `#include <common>
+#include <shadowmap_pars_vertex>
+
 attribute vec3 aBlend0;
 attribute vec3 aBlend1;
 uniform float uTexRepeat;
@@ -162,19 +164,28 @@ varying vec3 vWorldPos;
 varying vec3 vNormal;
 varying vec3 vBlend0;
 varying vec3 vBlend1;
+varying vec4 vShadowCoord;
 
 void main() {
+	#include <begin_vertex>
+	#include <beginnormal_vertex>
+	#include <worldpos_vertex>
+	#include <shadowmap_vertex>
+
+	vShadowCoord = shadowCoord;
 	vUv = uv * uTexRepeat;
 	vBlend0 = aBlend0;
 	vBlend1 = aBlend1;
 	vNormal = normalize(normalMatrix * normal);
-	vec4 worldPos = modelMatrix * vec4(position, 1.0);
-	vWorldPos = worldPos.xyz;
-	gl_Position = projectionMatrix * viewMatrix * worldPos;
+	vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+	gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
 }
 `;
 
-const terrainFragmentShader = /* glsl */ `
+const terrainFragmentShader = /* glsl */ `#include <common>
+#include <packing>
+#include <shadowmap_pars_fragment>
+
 precision highp float;
 
 uniform sampler2D tGrassC;
@@ -244,11 +255,30 @@ void main() {
 	vec3 N = normalize(vNormal);
 	vec3 sunDir = normalize(uSunDir);
 	float NdotL = max(dot(N, sunDir), 0.0);
-	vec3 diffuse = baseColor * (uAmbientColor * uAmbientIntensity + uSunColor * NdotL * uSunIntensity);
+
+	// Sample shadow map
+	float shadow = 0.0;
+	#ifdef USE_SHADOWMAP
+		vec4 shadowCoord = vShadowCoord;
+		shadowCoord.xyz /= shadowCoord.w;
+		shadowCoord.z = clamp(shadowCoord.z, 0.0, 1.0);
+		// PCF 3x3
+		float texelSize = 1.0 / 2048.0;
+		for (int x = -1; x <= 1; x++) {
+			for (int y = -1; y <= 1; y++) {
+				float depth = texture2D(shadowMap, shadowCoord.xy + vec2(x, y) * texelSize).r;
+				shadow += shadowCoord.z >= depth ? 1.0 : 0.0;
+			}
+		}
+		shadow /= 9.0;
+		shadow = mix(1.0, shadow, 0.6); // soften
+	#endif
+
+	vec3 litColor = baseColor * (uAmbientColor * uAmbientIntensity + uSunColor * NdotL * uSunIntensity * shadow);
 
 	float fogDist = length(vWorldPos - cameraPosition);
 	float fogFactor = smoothstep(uFogNear, uFogFar, fogDist);
-	vec3 color = mix(diffuse, uFogColor, fogFactor);
+	vec3 color = mix(litColor, uFogColor, fogFactor);
 
 	gl_FragColor = vec4(color, 1.0);
 }
@@ -308,6 +338,7 @@ export async function buildTerrain(
 	geometry.computeVertexNormals();
 
 	const material = new THREE.ShaderMaterial({
+		lights: true,
 		vertexShader: terrainVertexShader,
 		fragmentShader: terrainFragmentShader,
 		uniforms: {
