@@ -289,6 +289,10 @@ export function applyTimeOfDay(hour: number): void {
 		terrainMaterial.uniforms.uSunDir.value
 			.set(Math.cos(sunElev) * 300, Math.sin(sunElev) * 300, 100)
 			.normalize();
+		terrainMaterial.uniforms.uSunIntensity.value = st.sunIntensity;
+		terrainMaterial.uniforms.uSunColor.value.setRGB(...st.sunColor);
+		terrainMaterial.uniforms.uAmbientColor.value.setRGB(...st.ambientColor);
+		terrainMaterial.uniforms.uAmbientIntensity.value = st.ambientIntensity;
 		terrainMaterial.uniforms.uFogColor.value.setRGB(...st.fogColor);
 		terrainMaterial.uniforms.uFogNear.value = st.fogNear;
 		terrainMaterial.uniforms.uFogFar.value = st.fogFar;

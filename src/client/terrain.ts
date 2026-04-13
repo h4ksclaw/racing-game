@@ -180,6 +180,10 @@ uniform sampler2D tSnowN;
 uniform sampler2D tMossC;
 uniform sampler2D tMossN;
 uniform vec3 uSunDir;
+uniform float uSunIntensity;
+uniform vec3 uSunColor;
+uniform vec3 uAmbientColor;
+uniform float uAmbientIntensity;
 uniform vec3 uFogColor;
 uniform float uTexRepeat;
 uniform float uFogNear;
@@ -246,8 +250,7 @@ void main() {
 
 	vec3 sunDir = normalize(uSunDir);
 	float NdotL = max(dot(blendedNormal, sunDir), 0.0);
-	vec3 ambient = vec3(0.25, 0.27, 0.3);
-	vec3 diffuse = baseColor * (ambient + vec3(1.0, 0.95, 0.85) * NdotL * 0.8);
+	vec3 diffuse = baseColor * (uAmbientColor * uAmbientIntensity + uSunColor * NdotL * uSunIntensity);
 
 	float fogDist = length(vWorldPos - cameraPosition);
 	float fogFactor = smoothstep(uFogNear, uFogFar, fogDist);
@@ -323,7 +326,11 @@ export async function buildTerrain(
 			tSnowN: { value: tex.snowN },
 			tMossC: { value: tex.mossC },
 			tMossN: { value: tex.mossN },
-			uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3) },
+			uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
+			uSunIntensity: { value: 1.0 },
+			uSunColor: { value: new THREE.Color(1.0, 0.95, 0.85) },
+			uAmbientColor: { value: new THREE.Color(0.4, 0.45, 0.5) },
+			uAmbientIntensity: { value: 0.8 },
 			uTexRepeat: { value: TERRAIN_TEX_REPEAT },
 			uFogColor: { value: new THREE.Color(0.75, 0.8, 0.85) },
 			uFogNear: { value: 500.0 },
