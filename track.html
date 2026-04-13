@@ -34,13 +34,23 @@
 <body>
 	<div id="controls">
 		<h2>Track Generator</h2>
-		<label>Seed: <input type="number" id="seed" value="42" /></label>
+		<label style="opacity:0.6;font-size:11px">Seed: <span id="seedDisplay">42</span></label>
 		<br />
-		<button id="generateBtn">Generate</button>
+		<button id="generateBtn">New Track</button>
 		<button id="randomBtn" class="secondary">Random Seed</button>
 		<label style="margin-top:12px">Time of Day:
 			<input type="range" id="timeSlider" min="0" max="24" step="0.1" value="12" style="width:100%;margin-top:4px" />
 			<span id="timeLabel" style="float:right">12:00</span>
+		</label>
+		<label style="margin-top:8px">Weather:
+			<select id="weatherSelect" style="width:100%;margin-top:4px;padding:3px 6px;background:#222;color:#eee;border:1px solid #555;border-radius:3px">
+				<option value="clear">Clear</option>
+				<option value="cloudy">Cloudy</option>
+				<option value="rain">Rain</option>
+				<option value="heavy_rain">Heavy Rain</option>
+				<option value="fog">Fog</option>
+				<option value="snow">Snow</option>
+			</select>
 		</label>
 	</div>
 	<div id="info">Loading…</div>

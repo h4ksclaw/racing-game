@@ -1089,42 +1089,83 @@ function buildGuardrails(samples: TrackSample[], terrain: TerrainSampler): THREE
 	return group;
 }
 
+type WeatherType = "clear" | "cloudy" | "rain" | "heavy_rain" | "fog" | "snow";
+
 async function generate() {
-	const seed = Number((document.getElementById("seed") as HTMLInputElement)?.value) || 42;
+	// Read params from URL
+	const urlParams = new URLSearchParams(window.location.search);
+	const seed = Number(urlParams.get("seed")) || 42;
+	const hour = Number(urlParams.get("hour")) || 12;
+	const weather = (urlParams.get("weather") as WeatherType) || "clear";
+
+	// Sync UI elements from URL params
+	const seedDisplay = document.getElementById("seedDisplay") as HTMLElement | null;
+	if (seedDisplay) seedDisplay.textContent = String(seed);
+	const timeSliderEl = document.getElementById("timeSlider") as HTMLInputElement | null;
+	if (timeSliderEl) timeSliderEl.value = String(hour);
+	updateTimeLabel(hour);
+	const weatherEl = document.getElementById("weatherSelect") as HTMLSelectElement | null;
+	if (weatherEl) weatherEl.value = weather;
+
+	currentTime = hour;
+
 	const params = new URLSearchParams({ seed: String(seed) });
 
 	try {
 		const resp = await fetch(`/api/track?${params}`);
 		if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 		const data: TrackResponse = await resp.json();
-		buildScene(data);
+		await buildScene(data);
 	} catch (_err) {
 		// Fallback: generate client-side if API unavailable (dev mode)
 		const data = generateTrack(seed);
-		buildScene({ ...data, seed });
+		await buildScene({ ...data, seed });
+	}
+}
+
+function setURLParam(key: string, value: string) {
+	const url = new URL(window.location.href);
+	url.searchParams.set(key, value);
+	history.replaceState(null, "", url);
+}
+
+function updateTimeLabel(hour: number) {
+	const timeLabel = document.getElementById("timeLabel") as HTMLElement | null;
+	if (timeLabel) {
+		const h = Math.floor(hour);
+		const m = Math.floor((hour % 1) * 60);
+		timeLabel.textContent = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 	}
 }
 
 // ── UI ───────────────────────────────────────────────────────────────────
 
-document.getElementById("generateBtn")?.addEventListener("click", generate);
+document.getElementById("generateBtn")?.addEventListener("click", () => {
+	const seed = Math.floor(Math.random() * 100000);
+	setURLParam("seed", String(seed));
+	generate();
+});
 document.getElementById("randomBtn")?.addEventListener("click", () => {
-	const el = document.getElementById("seed") as HTMLInputElement | null;
-	if (el) el.value = String(Math.floor(Math.random() * 100000));
+	const seed = Math.floor(Math.random() * 100000);
+	setURLParam("seed", String(seed));
 	generate();
 });
 
 const timeSlider = document.getElementById("timeSlider") as HTMLInputElement | null;
-const timeLabel = document.getElementById("timeLabel") as HTMLElement | null;
 if (timeSlider) {
 	timeSlider.addEventListener("input", () => {
-		currentTime = Number.parseFloat(timeSlider.value);
-		applyTimeOfDay(currentTime);
-		if (timeLabel) {
-			const h = Math.floor(currentTime);
-			const m = Math.floor((currentTime % 1) * 60);
-			timeLabel.textContent = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-		}
+		const hour = Number.parseFloat(timeSlider.value);
+		currentTime = hour;
+		setURLParam("hour", String(hour));
+		applyTimeOfDay(hour);
+		updateTimeLabel(hour);
+	});
+}
+
+const weatherSelect = document.getElementById("weatherSelect") as HTMLSelectElement | null;
+if (weatherSelect) {
+	weatherSelect.addEventListener("change", () => {
+		setURLParam("weather", weatherSelect.value);
 	});
 }
 

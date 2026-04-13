@@ -10,8 +10,9 @@
 
 ### Phase 2: Sky & Lighting
 - [x] **Procedural sky** — Three.js Sky addon (turbidity, rayleigh, sun position)
-- [ ] **Day/night cycle** — Time keyframes interpolating sun/ambient/fog/sky
-- [ ] **Night mode** — Headlights, street lights, stars, moon
+- [x] **Day/night cycle** — Time keyframes interpolating sun/ambient/fog/sky
+- [x] **Night mode** — Headlights, street lights, stars, moon
+- [ ] **Weather: Rain** — Particle system + wet road + fog
 
 ### Phase 3: Textures & Materials
 - [ ] **Download ambientCG textures** — 1K JPG packs (color + normal + roughness + AO)
