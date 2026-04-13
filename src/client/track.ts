@@ -99,7 +99,7 @@ async function buildScene(data: TrackResponse) {
 
 	// Track meshes
 	const rng = mulberry32(data.seed);
-	scene.add(buildMeshes(data, rng));
+	scene.add(await buildMeshes(data, rng));
 
 	// Scenery
 	const scenery = generateScenery(data.seed, data.samples);

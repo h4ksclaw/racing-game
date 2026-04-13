@@ -16,11 +16,11 @@
 - [x] **Weather: Rain/Snow/Fog/Cloudy** — All particle systems + fog/light/turbidity modifiers
 
 ### Phase 3: Textures & Materials
-- [ ] **Download ambientCG textures** — 1K JPG packs (color + normal + roughness + AO)
+- [x] **Download ambientCG textures** — 1K JPG packs (color + normal + roughness + AO)
   - Grass, dirt, rock, snow, sand, road, moss, forest floor
-- [ ] **Texture manager** — Load textures per biome, apply to terrain
-- [ ] **Terrain shader** — Blend textures by slope/height/distance instead of vertex colors
-- [ ] **Normal maps on terrain** — Surface detail without more geometry
+- [x] **Texture manager** — Load textures per biome, apply to terrain
+- [x] **Terrain shader** — Blend textures by slope/height/distance instead of vertex colors
+- [x] **Normal maps on terrain** — Surface detail without more geometry
 - [ ] **Road texture upgrade** — Use ambientCG road textures with baked markings
 
 ### Phase 4: Biome System

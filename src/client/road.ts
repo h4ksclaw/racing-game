@@ -3,74 +3,64 @@ import * as THREE from "three";
 import type { TerrainSampler } from "./terrain.ts";
 import type { TrackResponse } from "./utils.ts";
 
-// ── Procedural textures ─────────────────────────────────────────────────
+// ── Road texture loading ──────────────────────────────────────────────
 
-function makeAsphaltTexture(): THREE.CanvasTexture {
-	const W = 512;
-	const H = 1024;
-	const canvas = document.createElement("canvas");
-	canvas.width = W;
-	canvas.height = H;
-	const ctx = canvas.getContext("2d");
-	if (!ctx) throw new Error("Canvas 2D not available");
+let roadTextures: {
+	color: THREE.Texture;
+	normal: THREE.Texture;
+	roughness: THREE.Texture;
+} | null = null;
 
-	ctx.fillStyle = "#3a3a3a";
-	ctx.fillRect(0, 0, W, H);
+async function loadRoadTextures(): Promise<{
+	color: THREE.Texture;
+	normal: THREE.Texture;
+	roughness: THREE.Texture;
+}> {
+	if (roadTextures) return roadTextures;
 
-	const imgData = ctx.getImageData(0, 0, W, H);
-	for (let i = 0; i < imgData.data.length; i += 4) {
-		const n = (Math.random() - 0.5) * 35;
-		imgData.data[i] = Math.max(0, Math.min(255, imgData.data[i] + n));
-		imgData.data[i + 1] = Math.max(0, Math.min(255, imgData.data[i + 1] + n));
-		imgData.data[i + 2] = Math.max(0, Math.min(255, imgData.data[i + 2] + n));
-	}
-	ctx.putImageData(imgData, 0, 0);
+	const base = "/textures/road_asphalt";
+	const [color, normal, roughness] = await Promise.all([
+		new Promise<THREE.Texture>((resolve, reject) =>
+			new THREE.TextureLoader().load(
+				`${base}/Road007_1K-JPG_Color.jpg`,
+				(tex) => {
+					tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+					tex.colorSpace = THREE.SRGBColorSpace;
+					tex.anisotropy = 16;
+					resolve(tex);
+				},
+				undefined,
+				reject,
+			),
+		),
+		new Promise<THREE.Texture>((resolve, reject) =>
+			new THREE.TextureLoader().load(
+				`${base}/Road007_1K-JPG_NormalGL.jpg`,
+				(tex) => {
+					tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+					tex.anisotropy = 16;
+					resolve(tex);
+				},
+				undefined,
+				reject,
+			),
+		),
+		new Promise<THREE.Texture>((resolve, reject) =>
+			new THREE.TextureLoader().load(
+				`${base}/Road007_1K-JPG_Roughness.jpg`,
+				(tex) => {
+					tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+					tex.anisotropy = 16;
+					resolve(tex);
+				},
+				undefined,
+				reject,
+			),
+		),
+	]);
 
-	ctx.fillStyle = "rgba(90,90,90,0.3)";
-	for (let i = 0; i < 600; i++) {
-		ctx.beginPath();
-		ctx.arc(Math.random() * W, Math.random() * H, 1 + Math.random() * 2.5, 0, Math.PI * 2);
-		ctx.fill();
-	}
-
-	ctx.fillStyle = "rgba(20,20,20,0.4)";
-	for (let i = 0; i < 120; i++) {
-		ctx.beginPath();
-		ctx.arc(Math.random() * W, Math.random() * H, 2 + Math.random() * 5, 0, Math.PI * 2);
-		ctx.fill();
-	}
-
-	ctx.strokeStyle = "rgba(255,255,255,0.04)";
-	for (let y = 0; y < H; y += 1 + Math.random() * 2) {
-		ctx.lineWidth = 0.5 + Math.random();
-		ctx.beginPath();
-		ctx.moveTo(0, y);
-		ctx.lineTo(W, y);
-		ctx.stroke();
-	}
-
-	const paintY = H * 0.5;
-	const edgeU_L = W * 0.06;
-	const edgeU_R = W * 0.94;
-	const centerU = W * 0.5;
-	const lineW = 4;
-
-	ctx.fillStyle = "#ffffff";
-	ctx.fillRect(edgeU_L - lineW / 2, 0, lineW, H);
-	ctx.fillRect(edgeU_R - lineW / 2, 0, lineW, H);
-	ctx.fillRect(centerU - lineW / 2, paintY, lineW, H - paintY);
-
-	ctx.filter = "blur(1px)";
-	ctx.fillStyle = "rgba(255,255,255,0.15)";
-	ctx.fillRect(edgeU_L - lineW / 2 - 1, 0, lineW + 2, H);
-	ctx.fillRect(edgeU_R - lineW / 2 - 1, 0, lineW + 2, H);
-	ctx.fillRect(centerU - lineW / 2 - 1, paintY, lineW + 2, H - paintY);
-	ctx.filter = "none";
-
-	const tex = new THREE.CanvasTexture(canvas);
-	tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-	tex.anisotropy = 16;
-	return tex;
+	roadTextures = { color, normal, roughness };
+	return roadTextures;
 }
 
 // ── Geometry helper ─────────────────────────────────────────────────────
@@ -92,7 +82,7 @@ function makeGeo(
 
 // ── Build track meshes ──────────────────────────────────────────────────
 
-export function buildMeshes(data: TrackResponse, rng: () => number): THREE.Group {
+export async function buildMeshes(data: TrackResponse, rng: () => number): Promise<THREE.Group> {
 	const group = new THREE.Group();
 	const samples = data.samples;
 
@@ -171,12 +161,14 @@ export function buildMeshes(data: TrackResponse, rng: () => number): THREE.Group
 		grassIndices.push(gb + 2, gb + 6, gb + 3, gb + 3, gb + 6, gb + 7);
 	}
 
-	const asphaltTex = makeAsphaltTexture();
-	asphaltTex.anisotropy = 16;
+	const tex = await loadRoadTextures();
 	const roadMat = new THREE.MeshStandardMaterial({
-		map: asphaltTex,
-		roughness: 0.7,
-		metalness: 0.05,
+		map: tex.color,
+		normalMap: tex.normal,
+		normalScale: new THREE.Vector2(1, 1),
+		roughnessMap: tex.roughness,
+		roughness: 0.8,
+		metalness: 0.02,
 	});
 	const roadMesh = new THREE.Mesh(makeGeo(roadVerts, roadIndices, roadUVs), roadMat);
 	roadMesh.receiveShadow = true;
