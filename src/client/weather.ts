@@ -59,7 +59,7 @@ function makeSnowTexture(): THREE.Texture {
 // ── Particle systems ────────────────────────────────────────────────────
 
 export function buildRainSystem(): { points: THREE.Points; velocities: Float32Array } {
-	const count = 15000;
+	const count = 6000;
 	const positions = new Float32Array(count * 3);
 	const velocities = new Float32Array(count);
 	const spread = 250;
@@ -86,7 +86,7 @@ export function buildRainSystem(): { points: THREE.Points; velocities: Float32Ar
 }
 
 export function buildSnowSystem(): { points: THREE.Points; drifts: Float32Array } {
-	const count = 8000;
+	const count = 4000;
 	const positions = new Float32Array(count * 3);
 	const drifts = new Float32Array(count * 2);
 	const spread = 300;

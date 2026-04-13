@@ -49,8 +49,8 @@ export class TerrainSampler {
 	private readonly noiseScale = 0.003;
 	private noiseAmp: number;
 	private mountainAmp: number;
-	private readonly roadInfluence = 40;
-	private readonly blendStart = 15;
+	private readonly roadInfluence = 50;
+	private readonly blendStart = 20;
 
 	constructor(
 		seed: number,
@@ -120,7 +120,10 @@ export class TerrainSampler {
 		const noiseH =
 			this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp * mountainFactor;
 		const blend = smoothstep(this.blendStart, this.roadInfluence, dist);
-		return sample.point.y * (1 - blend) + (this.avgRoadY + noiseH) * blend - 0.3;
+		// Ramp noise amplitude gradually — prevents steep cliffs near road
+		const noiseRamp = smoothstep(this.blendStart, this.roadInfluence + 60, dist);
+		const rampedNoise = noiseH * noiseRamp;
+		return sample.point.y * (1 - blend) + (this.avgRoadY + rampedNoise) * blend - 0.3;
 	}
 }
 
@@ -290,7 +293,7 @@ export async function buildTerrain(
 	const tex = await loadTerrainTextures(biome);
 
 	const worldSize = 1600;
-	const segments = 256;
+	const segments = 400;
 
 	const geometry = new THREE.PlaneGeometry(worldSize, worldSize, segments, segments);
 	geometry.rotateX(-Math.PI / 2);

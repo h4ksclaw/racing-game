@@ -25,20 +25,16 @@ let roadTextures: {
 	color: THREE.Texture;
 	normal: THREE.Texture;
 	roughness: THREE.Texture;
-	gravelColor: THREE.Texture;
-	gravelNormal: THREE.Texture;
 } | null = null;
 
 async function loadRoadTextures() {
 	if (roadTextures) return roadTextures;
-	const [color, normal, roughness, gravelColor, gravelNormal] = await Promise.all([
+	const [color, normal, roughness] = await Promise.all([
 		loadTex("/textures/road_asphalt/Road007_1K-JPG_Color.jpg"),
 		loadTex("/textures/road_asphalt/Road007_1K-JPG_NormalGL.jpg", false),
 		loadTex("/textures/road_asphalt/Road007_1K-JPG_Roughness.jpg", false),
-		loadTex("/textures/gravel/Gravel015_1K-JPG_Color.jpg"),
-		loadTex("/textures/gravel/Gravel015_1K-JPG_NormalGL.jpg", false),
 	]);
-	roadTextures = { color, normal, roughness, gravelColor, gravelNormal };
+	roadTextures = { color, normal, roughness };
 	return roadTextures;
 }
 
