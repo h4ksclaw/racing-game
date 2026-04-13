@@ -76,18 +76,15 @@ async function buildScene(data: TrackResponse) {
 	const sun = new THREE.DirectionalLight(0xffffcc, 1.2);
 	sun.position.set(200, 300, 100);
 	sun.castShadow = true;
-	sun.shadow.mapSize.width = 2048;
-	sun.shadow.mapSize.height = 2048;
-	sun.shadow.camera.near = 1;
+	sun.shadow.mapSize.width = 1024;
+	sun.shadow.mapSize.height = 1024;
+	sun.shadow.camera.near = 10;
 	sun.shadow.camera.far = 500;
-	sun.shadow.camera.left = -100;
-	sun.shadow.camera.right = 100;
-	sun.shadow.camera.top = 100;
-	sun.shadow.camera.bottom = -100;
-	sun.shadow.bias = -0.001;
-	// Only shadow the area around the camera
+	sun.shadow.camera.left = -200;
+	sun.shadow.camera.right = 200;
+	sun.shadow.camera.top = 200;
+	sun.shadow.camera.bottom = -200;
 	scene.add(sun);
-	scene.add(sun.target);
 	state.sun = sun;
 
 	// Stars
@@ -261,37 +258,7 @@ function animate() {
 	lastTime = now;
 	if (state.controls) state.controls.update();
 	updateWeather(delta);
-	tightenShadowFrustum();
 	if (state.scene && state.camera) renderer.render(state.scene, state.camera);
-}
-
-function tightenShadowFrustum() {
-	const { sun, camera, terrainMaterial, streetLights } = state;
-	if (!sun || !camera || !sun.castShadow) return;
-	// Point directional light shadow at the camera so shadows are always near viewer
-	sun.target.position.copy(camera.position);
-	sun.target.updateMatrixWorld();
-	// Pass shadow map and matrix to terrain shader
-	if (terrainMaterial && sun.shadow.map) {
-		terrainMaterial.uniforms.tShadowMap.value = sun.shadow.map.texture;
-		terrainMaterial.uniforms.uShadowMatrix.value.copy(sun.shadow.matrix);
-	}
-	// Pass nearest street lights to terrain shader for illumination
-	if (terrainMaterial && streetLights.length > 0) {
-		const camPos = camera.position;
-		const sorted = streetLights
-			.map((l) => ({
-				pos: l.position.clone(),
-				dist: camPos.distanceTo(l.position),
-			}))
-			.sort((a, b) => a.dist - b.dist)
-			.slice(0, 4);
-		const posArr = terrainMaterial.uniforms.uStreetLightPos.value as THREE.Vector3[];
-		for (let i = 0; i < 4; i++) {
-			posArr[i].copy(i < sorted.length ? sorted[i].pos : new THREE.Vector3(0, -9999, 0));
-		}
-		terrainMaterial.uniforms.uStreetLightCount.value = Math.min(sorted.length, 4);
-	}
 }
 
 window.addEventListener("resize", () => {

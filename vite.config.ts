@@ -21,7 +21,7 @@ export default defineConfig({
 	server: {
 		port: 3000,
 		watch: {
-			ignored: ["_archive/**"],
+			ignored: ["_archive/**", "**/node_modules/**", "**/.venv/**", "**/__pycache__/**"],
 		},
 		proxy: {
 			"/api": {

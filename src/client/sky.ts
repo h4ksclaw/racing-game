@@ -296,12 +296,9 @@ export function applyTimeOfDay(hour: number): void {
 		terrainMaterial.uniforms.uFogColor.value.setRGB(...st.fogColor);
 		terrainMaterial.uniforms.uFogNear.value = st.fogNear;
 		terrainMaterial.uniforms.uFogFar.value = st.fogFar;
-		terrainMaterial.uniforms.uStreetLightIntensity.value = nightFactor;
 	}
 
 	if (renderer) {
-		const exposure = 0.6 + st.sunIntensity * 0.4;
-		renderer.toneMappingExposure = exposure;
-		if (terrainMaterial) terrainMaterial.uniforms.uExposure.value = exposure;
+		renderer.toneMappingExposure = 0.5 + st.sunIntensity * 0.5;
 	}
 }
