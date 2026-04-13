@@ -547,7 +547,7 @@ class TerrainSampler {
 		const { dist, sample } = this.nearestRoad(x, z);
 		const centerDist = Math.sqrt(x * x + z * z);
 		// Mountains rise quickly with distance from center
-		const mountainFactor = 1 + smoothstep(300, 900, centerDist) * 3;
+		const mountainFactor = 1 + smoothstep(600, 900, centerDist) * 3;
 		const noiseH =
 			this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp * mountainFactor;
 		const blend = smoothstep(this.blendStart, this.roadInfluence, dist);
