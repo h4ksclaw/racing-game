@@ -220,6 +220,13 @@ export function buildStars(): THREE.Points {
 export function setupSky(scene: THREE.Scene): Record<string, THREE.IUniform> {
 	const sky = new Sky();
 	sky.scale.setScalar(10000);
+	// Exclude sky from bloom — clamp output below bloom threshold
+	(sky.material as THREE.ShaderMaterial).onBeforeCompile = (shader) => {
+		shader.fragmentShader = shader.fragmentShader.replace(
+			"gl_FragColor = vec4( texColor, 1.0 );",
+			"gl_FragColor = vec4( min(texColor, vec3(0.84)), 1.0 );",
+		);
+	};
 	scene.add(sky);
 	const uniforms = sky.material.uniforms;
 	uniforms.turbidity.value = 4;
