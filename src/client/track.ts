@@ -266,11 +266,16 @@ function animate() {
 }
 
 function tightenShadowFrustum() {
-	const { sun, camera } = state;
+	const { sun, camera, terrainMaterial } = state;
 	if (!sun || !camera || !sun.castShadow) return;
 	// Point directional light shadow at the camera so shadows are always near viewer
 	sun.target.position.copy(camera.position);
 	sun.target.updateMatrixWorld();
+	// Pass shadow map and matrix to terrain shader
+	if (terrainMaterial && sun.shadow.map) {
+		terrainMaterial.uniforms.tShadowMap.value = sun.shadow.map.texture;
+		terrainMaterial.uniforms.uShadowMatrix.value.copy(sun.shadow.matrix);
+	}
 }
 
 window.addEventListener("resize", () => {

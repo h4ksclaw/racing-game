@@ -152,9 +152,7 @@ async function loadTerrainTextures(biome: {
 
 // ── Shaders ─────────────────────────────────────────────────────────────
 
-const terrainVertexShader = /* glsl */ `#include <common>
-#include <shadowmap_pars_vertex>
-
+const terrainVertexShader = /* glsl */ `
 attribute vec3 aBlend0;
 attribute vec3 aBlend1;
 uniform float uTexRepeat;
@@ -164,28 +162,25 @@ varying vec3 vWorldPos;
 varying vec3 vNormal;
 varying vec3 vBlend0;
 varying vec3 vBlend1;
+
+// Shadow - single directional light
+uniform mat4 uShadowMatrix;
 varying vec4 vShadowCoord;
 
 void main() {
-	#include <begin_vertex>
-	#include <beginnormal_vertex>
-	#include <worldpos_vertex>
-	#include <shadowmap_vertex>
-
-	vShadowCoord = shadowCoord;
 	vUv = uv * uTexRepeat;
 	vBlend0 = aBlend0;
 	vBlend1 = aBlend1;
 	vNormal = normalize(normalMatrix * normal);
-	vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
-	gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
+	vec4 worldPos = modelMatrix * vec4(position, 1.0);
+	vWorldPos = worldPos.xyz;
+	gl_Position = projectionMatrix * viewMatrix * worldPos;
+
+	vShadowCoord = uShadowMatrix * worldPos;
 }
 `;
 
-const terrainFragmentShader = /* glsl */ `#include <common>
-#include <packing>
-#include <shadowmap_pars_fragment>
-
+const terrainFragmentShader = /* glsl */ `
 precision highp float;
 
 uniform sampler2D tGrassC;
@@ -193,6 +188,7 @@ uniform sampler2D tDirtC;
 uniform sampler2D tRockC;
 uniform sampler2D tSnowC;
 uniform sampler2D tMossC;
+uniform sampler2D tShadowMap;
 uniform vec3 uSunDir;
 uniform float uSunIntensity;
 uniform vec3 uSunColor;
@@ -207,12 +203,14 @@ uniform vec3 uDirtTint;
 uniform vec3 uRockTint;
 uniform float uSnowThreshold;
 uniform float uRockThreshold;
+uniform float uShadowBias;
 
 varying vec2 vUv;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
 varying vec3 vBlend0;
 varying vec3 vBlend1;
+varying vec4 vShadowCoord;
 
 void main() {
 	float aboveRoad = vBlend0.x;
@@ -256,23 +254,20 @@ void main() {
 	vec3 sunDir = normalize(uSunDir);
 	float NdotL = max(dot(N, sunDir), 0.0);
 
-	// Sample shadow map
-	float shadow = 0.0;
-	#ifdef USE_SHADOWMAP
-		vec4 shadowCoord = vShadowCoord;
-		shadowCoord.xyz /= shadowCoord.w;
-		shadowCoord.z = clamp(shadowCoord.z, 0.0, 1.0);
-		// PCF 3x3
+	// Manual shadow sampling (3x3 PCF)
+	float shadow = 1.0;
+	vec3 sc = vShadowCoord.xyz / vShadowCoord.w;
+	if (sc.x >= 0.0 && sc.x <= 1.0 && sc.y >= 0.0 && sc.y <= 1.0 && sc.z <= 1.0) {
 		float texelSize = 1.0 / 2048.0;
+		float sum = 0.0;
 		for (int x = -1; x <= 1; x++) {
 			for (int y = -1; y <= 1; y++) {
-				float depth = texture2D(shadowMap, shadowCoord.xy + vec2(x, y) * texelSize).r;
-				shadow += shadowCoord.z >= depth ? 1.0 : 0.0;
+				float depth = texture2D(tShadowMap, sc.xy + vec2(float(x), float(y)) * texelSize).r;
+				sum += sc.z + uShadowBias >= depth ? 1.0 : 0.0;
 			}
 		}
-		shadow /= 9.0;
-		shadow = mix(1.0, shadow, 0.6); // soften
-	#endif
+		shadow = sum / 9.0;
+	}
 
 	vec3 litColor = baseColor * (uAmbientColor * uAmbientIntensity + uSunColor * NdotL * uSunIntensity * shadow);
 
@@ -338,7 +333,6 @@ export async function buildTerrain(
 	geometry.computeVertexNormals();
 
 	const material = new THREE.ShaderMaterial({
-		lights: true,
 		vertexShader: terrainVertexShader,
 		fragmentShader: terrainFragmentShader,
 		uniforms: {
@@ -347,6 +341,9 @@ export async function buildTerrain(
 			tRockC: { value: tex.rockC },
 			tSnowC: { value: tex.snowC },
 			tMossC: { value: tex.mossC },
+			tShadowMap: { value: null as THREE.Texture | null },
+			uShadowMatrix: { value: new THREE.Matrix4() },
+			uShadowBias: { value: -0.002 },
 			uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
 			uSunIntensity: { value: 1.0 },
 			uSunColor: { value: new THREE.Color(1.0, 0.95, 0.85) },
