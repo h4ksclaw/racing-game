@@ -118,7 +118,7 @@ export class TerrainSampler {
 
 // ── Terrain textures ────────────────────────────────────────────────────
 
-const TERRAIN_TEX_REPEAT = 400; // 4m per texture tile (1600/400)
+const TERRAIN_TEX_REPEAT = 800; // 2m per texture tile (1600/800)
 let terrainTextures: Record<string, THREE.Texture> | null = null;
 
 async function loadTerrainTextures(): Promise<Record<string, THREE.Texture>> {
@@ -267,7 +267,7 @@ export async function buildTerrain(
 	const tex = await loadTerrainTextures();
 
 	const worldSize = 1600;
-	const segments = 128;
+	const segments = 256;
 
 	const geometry = new THREE.PlaneGeometry(worldSize, worldSize, segments, segments);
 	geometry.rotateX(-Math.PI / 2);
