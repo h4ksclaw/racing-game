@@ -137,9 +137,7 @@ async function loadTerrainTextures(): Promise<Record<string, THREE.Texture>> {
 			loadTex(`${base}/moss/Moss002_1K-JPG_Color.jpg`),
 			loadTexLinear(`${base}/moss/Moss002_1K-JPG_NormalGL.jpg`),
 		]);
-	for (const t of [grassC, dirtC, rockC, snowC, mossC, grassN, dirtN, rockN, snowN, mossN]) {
-		t.repeat.set(TERRAIN_TEX_REPEAT, TERRAIN_TEX_REPEAT);
-	}
+	// ShaderMaterial handles UV tiling via uTexRepeat uniform
 	terrainTextures = { grassC, grassN, dirtC, dirtN, rockC, rockN, snowC, snowN, mossC, mossN };
 	return terrainTextures;
 }
@@ -149,6 +147,7 @@ async function loadTerrainTextures(): Promise<Record<string, THREE.Texture>> {
 const terrainVertexShader = /* glsl */ `
 attribute vec3 aBlend0;
 attribute vec3 aBlend1;
+uniform float uTexRepeat;
 
 varying vec2 vUv;
 varying vec3 vWorldPos;
@@ -157,7 +156,7 @@ varying vec3 vBlend0;
 varying vec3 vBlend1;
 
 void main() {
-	vUv = uv;
+	vUv = uv * uTexRepeat;
 	vBlend0 = aBlend0;
 	vBlend1 = aBlend1;
 	vNormal = normalize(normalMatrix * normal);
@@ -182,6 +181,7 @@ uniform sampler2D tMossC;
 uniform sampler2D tMossN;
 uniform vec3 uSunDir;
 uniform vec3 uFogColor;
+uniform float uTexRepeat;
 uniform float uFogNear;
 uniform float uFogFar;
 
@@ -324,6 +324,7 @@ export async function buildTerrain(
 			tMossC: { value: tex.mossC },
 			tMossN: { value: tex.mossN },
 			uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3) },
+			uTexRepeat: { value: TERRAIN_TEX_REPEAT },
 			uFogColor: { value: new THREE.Color(0.75, 0.8, 0.85) },
 			uFogNear: { value: 500.0 },
 			uFogFar: { value: 1500.0 },
