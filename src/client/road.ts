@@ -150,48 +150,86 @@ export async function buildMeshes(data: TrackResponse, rng: () => number): Promi
 		metalness: 0.02,
 	});
 
-	// Inject gravel/wear detail at road edges via onBeforeCompile
-	roadMat.onBeforeCompile = (shader) => {
-		shader.uniforms.tGravelColor = { value: tex.gravelColor };
-		shader.uniforms.tGravelNormal = { value: tex.gravelNormal };
+	// ── Lane markings (thin quads above road surface) ─────────────
+	const ROAD_WIDTH = 12;
+	const DASH_LEN = 3.0;
+	const GAP_LEN = 4.0;
+	const LINE_HW = 0.12; // half-width of line
+	const MARK_Y = 0.04;
 
-		// Fragment shader: blend gravel at edges based on UV.x
-		shader.fragmentShader = shader.fragmentShader.replace(
-			"#include <map_fragment>",
-			/* glsl */ `
-				#include <map_fragment>
-				// Gravel detail at road edges
-				float edgeDist = abs(vUv.x - 0.5) * 2.0; // 0 at center, 1 at edges
-				float wearMask = smoothstep(0.6, 0.95, edgeDist);
-				// Add some noise-like variation along the road
-				float roadNoise = fract(sin(vUv.y * 127.1 + vUv.x * 311.7) * 43758.5453);
-				wearMask *= 0.5 + 0.5 * step(0.6, roadNoise); // patchy wear
-				// Occasional random patches in the middle (tire tracks, cracks)
-				float centerWear = (1.0 - edgeDist) * step(0.85, roadNoise) * 0.3;
-				wearMask = clamp(wearMask + centerWear, 0.0, 1.0);
+	function buildLine(
+		samples: TrackSample[],
+		offset: number, // 0=center, positive=left, negative=right
+		dashed: boolean,
+	): THREE.Mesh | null {
+		const v: number[] = [];
+		const idx: number[] = [];
+		const c: number[] = [];
+		let dist = 0;
+		let vertCount = 0;
 
-				vec4 gravel = texture2D(tGravelColor, vUv * 3.0);
-				diffuseColor.rgb = mix(diffuseColor.rgb, gravel.rgb, wearMask * 0.6);
-			`,
-		);
+		for (let i = 0; i < samples.length; i++) {
+			const s = samples[i];
+			if (i > 0) {
+				const dx = s.point.x - samples[i - 1].point.x;
+				const dy = s.point.y - samples[i - 1].point.y;
+				const dz = s.point.z - samples[i - 1].point.z;
+				dist += Math.sqrt(dx * dx + dy * dy + dz * dz);
+			}
 
-		// Normal map blending for gravel bumps
-		shader.fragmentShader = shader.fragmentShader.replace(
-			"#include <normal_fragment_maps>",
-			/* glsl */ `
-				#include <normal_fragment_maps>
-				float edgeDist = abs(vUv.x - 0.5) * 2.0;
-				float wearMask = smoothstep(0.6, 0.95, edgeDist);
-				float roadNoise = fract(sin(vUv.y * 127.1 + vUv.x * 311.7) * 43758.5453);
-				wearMask *= 0.5 + 0.5 * step(0.6, roadNoise);
-				float centerWear = (1.0 - edgeDist) * step(0.85, roadNoise) * 0.3;
-				wearMask = clamp(wearMask + centerWear, 0.0, 1.0);
+			// Skip dashes in gap region
+			if (dashed && dist % (DASH_LEN + GAP_LEN) > DASH_LEN) {
+				vertCount = 0; // break the strip
+				continue;
+			}
 
-				vec3 gravelN = texture2D(tGravelNormal, vUv * 3.0).rgb * 2.0 - 1.0;
-				normal = mix(normal, gravelN, wearMask * 0.4);
-			`,
-		);
-	};
+			// Compute position: lerp between left and right by offset fraction
+			const frac = 0.5 + offset / ROAD_WIDTH;
+			const px = s.left.x + (s.right.x - s.left.x) * frac;
+			const py = s.left.y + (s.right.y - s.left.y) * frac + MARK_Y;
+			const pz = s.left.z + (s.right.z - s.left.z) * frac;
+
+			// Tangent direction
+			const next = i < samples.length - 1 ? samples[i + 1] : samples[i - 1];
+			const tdx = next.point.x - s.point.x;
+			const tdz = next.point.z - s.point.z;
+			const tl = Math.sqrt(tdx * tdx + tdz * tdz) || 1;
+			// Normal = perpendicular to tangent
+			const nx = -tdz / tl;
+			const nz = tdx / tl;
+
+			v.push(px + nx * LINE_HW, py, pz + nz * LINE_HW, px - nx * LINE_HW, py, pz - nz * LINE_HW);
+			c.push(1, 1, 1, 1, 1, 1);
+
+			if (vertCount > 0) {
+				const base = v.length / 3 - 4;
+				idx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+			}
+			vertCount += 2;
+		}
+
+		if (v.length === 0) return null;
+		const mat = new THREE.MeshBasicMaterial({
+			vertexColors: true,
+			transparent: true,
+			opacity: dashed ? 0.85 : 0.9,
+			depthWrite: false,
+			polygonOffset: true,
+			polygonOffsetFactor: -1,
+		});
+		return new THREE.Mesh(makeGeo(v, idx, undefined, c), mat);
+	}
+
+	// Edge lines at ~10% from each side
+	const edgeOffset = ROAD_WIDTH * 0.4;
+	const leftEdge = buildLine(samples, edgeOffset, false);
+	if (leftEdge) group.add(leftEdge);
+	const rightEdge = buildLine(samples, -edgeOffset, false);
+	if (rightEdge) group.add(rightEdge);
+	// Center dashed line
+	const centerDash = buildLine(samples, 0, true);
+	if (centerDash) group.add(centerDash);
+
 	const roadMesh = new THREE.Mesh(makeGeo(roadVerts, roadIndices, roadUVs), roadMat);
 	roadMesh.receiveShadow = true;
 	group.add(roadMesh);
