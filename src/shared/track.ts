@@ -555,13 +555,39 @@ export function generateScenery(
 		if (rng() < 0.75 * sceneryDensity) {
 			const side = leftCurve ? 1 : rightCurve ? -1 : rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
-			const dist = 6 + rng() * 25;
+			const dist = 6 + rng() * 150;
 			const pos = v3Add(offset, v3Scale(s.binormal, side * dist));
 			scenery.push({
 				type: TREE_TYPES[Math.floor(rng() * TREE_TYPES.length)],
 				position: pos,
 				rotation: rng() * Math.PI * 2,
 				scale: 0.8 + rng() * 0.5,
+			});
+		}
+		// Second tree (extra density)
+		if (rng() < 0.75 * sceneryDensity) {
+			const side = rng() < 0.5 ? -1 : 1;
+			const offset = side === -1 ? s.grassLeft : s.grassRight;
+			const dist = 8 + rng() * 150;
+			const pos = v3Add(offset, v3Scale(s.binormal, side * dist));
+			scenery.push({
+				type: TREE_TYPES[Math.floor(rng() * TREE_TYPES.length)],
+				position: pos,
+				rotation: rng() * Math.PI * 2,
+				scale: 0.6 + rng() * 0.6,
+			});
+		}
+		// Third tree (extra density)
+		if (rng() < 0.6 * sceneryDensity) {
+			const side = rng() < 0.5 ? -1 : 1;
+			const offset = side === -1 ? s.grassLeft : s.grassRight;
+			const dist = 10 + rng() * 150;
+			const pos = v3Add(offset, v3Scale(s.binormal, side * dist));
+			scenery.push({
+				type: TREE_TYPES[Math.floor(rng() * TREE_TYPES.length)],
+				position: pos,
+				rotation: rng() * Math.PI * 2,
+				scale: 0.5 + rng() * 0.7,
 			});
 		}
 
@@ -591,17 +617,19 @@ export function generateScenery(
 			});
 		}
 
-		// Grass tufts (very close to road edge)
-		if (rng() < 0.4 * sceneryDensity) {
-			const side = rng() < 0.5 ? -1 : 1;
-			const offset = side === -1 ? s.grassLeft : s.grassRight;
-			const pos = v3Add(offset, v3Scale(s.binormal, side * (1 + rng() * 4)));
-			scenery.push({
-				type: GRASS_TYPES[Math.floor(rng() * GRASS_TYPES.length)],
-				position: pos,
-				rotation: rng() * Math.PI * 2,
-				scale: 0.8 + rng() * 0.4,
-			});
+		// Grass tufts — multiple passes for dense roadside vegetation
+		for (let g = 0; g < 10; g++) {
+			if (rng() < 0.5 * sceneryDensity) {
+				const side = rng() < 0.5 ? -1 : 1;
+				const offset = side === -1 ? s.grassLeft : s.grassRight;
+				const pos = v3Add(offset, v3Scale(s.binormal, side * (1 + rng() * 9)));
+				scenery.push({
+					type: GRASS_TYPES[Math.floor(rng() * GRASS_TYPES.length)],
+					position: pos,
+					rotation: rng() * Math.PI * 2,
+					scale: 0.6 + rng() * 0.6,
+				});
+			}
 		}
 
 		// Forest floor detail (stumps, mushrooms, logs)

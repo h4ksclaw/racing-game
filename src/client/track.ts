@@ -1,5 +1,6 @@
 import type { SceneryItem, TrackSample } from "@shared/track.ts";
 import { generateScenery, generateTrack, mulberry32 } from "@shared/track.ts";
+import { createNoise2D } from "simplex-noise";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -315,19 +316,21 @@ async function loadDecorations(): Promise<void> {
 
 const GLB_SCALE = 8;
 
-function createSceneryObject(item: SceneryItem): THREE.Group | null {
+function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.Group | null {
 	const cached = decorationCache.get(item.type);
 	if (cached) {
 		const obj = cached.clone();
 		obj.scale.setScalar(GLB_SCALE * (item.scale ?? 1));
-		obj.position.set(item.position.x, item.position.y, item.position.z);
+		const tY = terrain.getHeight(item.position.x, item.position.z);
+		obj.position.set(item.position.x, tY, item.position.z);
 		obj.rotation.y = item.rotation ?? 0;
 		return obj;
 	}
 
 	// Fallback for types not in GLB (barrier, light)
 	const group = new THREE.Group();
-	group.position.set(item.position.x, item.position.y, item.position.z);
+	const tY = terrain.getHeight(item.position.x, item.position.z);
+	group.position.set(item.position.x, tY, item.position.z);
 
 	switch (item.type) {
 		case "barrier": {
@@ -407,16 +410,9 @@ async function buildScene(data: TrackResponse) {
 	sun.shadow.camera.bottom = -400;
 	scene.add(sun);
 
-	// Ground
-	const groundY = Math.min(data.elevationRange.min - 5, -3);
-	const ground = new THREE.Mesh(
-		new THREE.PlaneGeometry(2000, 2000),
-		new THREE.MeshLambertMaterial({ color: 0x4d8f6e }),
-	);
-	ground.rotation.x = -Math.PI / 2;
-	ground.position.y = groundY;
-	ground.receiveShadow = true;
-	scene.add(ground);
+	// Terrain sampler (shared for terrain mesh + scenery placement)
+	const terrain = new TerrainSampler(data.seed, data.samples);
+	scene.add(buildTerrain(data, terrain));
 
 	// Track meshes — use same seed so RNG is deterministic
 	const rng = mulberry32(data.seed);
@@ -428,12 +424,12 @@ async function buildScene(data: TrackResponse) {
 	await loadDecorations();
 	for (const item of scenery) {
 		if (item.type === "barrier") continue; // handled by procedural guardrails
-		const obj = createSceneryObject(item);
+		const obj = createSceneryObject(item, terrain);
 		if (obj) scene.add(obj);
 	}
 
 	// Procedural guardrails — continuous fence along both sides of road
-	scene.add(buildGuardrails(data.samples));
+	scene.add(buildGuardrails(data.samples, terrain));
 
 	camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 2000);
 	camera.position.set(
@@ -465,7 +461,146 @@ async function buildScene(data: TrackResponse) {
 	}
 }
 
-function buildGuardrails(samples: TrackSample[]): THREE.Group {
+class TerrainSampler {
+	private noise2D: (x: number, z: number) => number;
+	private grid: Map<string, TrackSample[]>;
+	private samples: TrackSample[];
+	private readonly cellSize = 10;
+	private readonly noiseScale = 0.003;
+	private readonly noiseAmp = 60;
+	private readonly roadInfluence = 40;
+	private readonly blendStart = 15;
+
+	constructor(seed: number, samples: TrackSample[]) {
+		const rng = mulberry32(seed + 99999);
+		this.noise2D = createNoise2D(rng);
+		this.samples = samples;
+		this.grid = new Map();
+		for (const s of samples) {
+			const cx = Math.floor(s.point.x / this.cellSize);
+			const cz = Math.floor(s.point.z / this.cellSize);
+			const key = `${cx},${cz}`;
+			let arr = this.grid.get(key);
+			if (!arr) {
+				arr = [];
+				this.grid.set(key, arr);
+			}
+			arr.push(s);
+		}
+	}
+
+	private fbm(x: number, z: number): number {
+		let value = 0;
+		let amplitude = 1;
+		let frequency = 1;
+		let maxVal = 0;
+		for (let i = 0; i < 6; i++) {
+			value += amplitude * this.noise2D(x * frequency, z * frequency);
+			maxVal += amplitude;
+			amplitude *= 0.5;
+			frequency *= 2.03;
+		}
+		return value / maxVal;
+	}
+
+	nearestRoad(x: number, z: number): { dist: number; sample: TrackSample } {
+		const cx = Math.floor(x / this.cellSize);
+		const cz = Math.floor(z / this.cellSize);
+		let best = { dist: Infinity, sample: this.samples[0] };
+		for (let dx = -2; dx <= 2; dx++) {
+			for (let dz = -2; dz <= 2; dz++) {
+				const arr = this.grid.get(`${cx + dx},${cz + dz}`);
+				if (!arr) continue;
+				for (const s of arr) {
+					const ddx = x - s.point.x;
+					const ddz = z - s.point.z;
+					const d = Math.sqrt(ddx * ddx + ddz * ddz);
+					if (d < best.dist) best = { dist: d, sample: s };
+				}
+			}
+		}
+		return best;
+	}
+
+	getHeight(x: number, z: number): number {
+		const { dist, sample } = this.nearestRoad(x, z);
+		const noiseH = this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp;
+		const blend = smoothstep(this.blendStart, this.roadInfluence, dist);
+		return sample.point.y * (1 - blend) + noiseH * blend - 0.3;
+	}
+}
+
+function buildTerrain(_data: TrackResponse, terrain: TerrainSampler): THREE.Group {
+	const group = new THREE.Group();
+
+	// ── Generate terrain mesh ────────────────────────────────────────
+	const worldSize = 2000;
+	const segments = 200;
+
+	const geometry = new THREE.PlaneGeometry(worldSize, worldSize, segments, segments);
+	geometry.rotateX(-Math.PI / 2);
+	const pos = geometry.attributes.position;
+	const colors = new Float32Array(pos.count * 3);
+
+	for (let i = 0; i < pos.count; i++) {
+		const x = pos.getX(i);
+		const z = pos.getZ(i);
+
+		const terrainY = terrain.getHeight(x, z);
+		pos.setY(i, terrainY);
+
+		// Slope-based coloring
+		const { dist } = terrain.nearestRoad(x, z);
+		const height = terrainY;
+		const blend = smoothstep(15, 40, dist);
+		const slope = blend > 0.5 ? Math.abs(terrainY) / 60 : 0;
+
+		let r: number, g: number, b: number;
+		if (slope > 0.4) {
+			r = 0.45;
+			g = 0.42;
+			b = 0.38;
+		} else if (height > 50) {
+			r = 0.9;
+			g = 0.92;
+			b = 0.95;
+		} else if (height > 25) {
+			r = 0.15;
+			g = 0.35;
+			b = 0.12;
+		} else if (dist < 20) {
+			r = 0.35;
+			g = 0.6;
+			b = 0.25;
+		} else {
+			r = 0.28;
+			g = 0.52;
+			b = 0.2;
+		}
+
+		const colorNoise = Math.sin(x * 0.1) * Math.cos(z * 0.1) * 0.03;
+		colors[i * 3] = r + colorNoise;
+		colors[i * 3 + 1] = g + colorNoise;
+		colors[i * 3 + 2] = b + colorNoise;
+	}
+
+	geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+	geometry.computeVertexNormals();
+
+	const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+	const mesh = new THREE.Mesh(geometry, material);
+	mesh.receiveShadow = true;
+	group.add(mesh);
+
+	return group;
+}
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+	const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+	return t * t * (3 - 2 * t);
+}
+
+function buildGuardrails(samples: TrackSample[], terrain: TerrainSampler): THREE.Group {
 	const group = new THREE.Group();
 	const postMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
 	const railMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
@@ -495,8 +630,7 @@ function buildGuardrails(samples: TrackSample[]): THREE.Group {
 
 			// Post
 			const postMesh = new THREE.Mesh(postGeo, postMat);
-			postMesh.position.copy(post);
-			postMesh.position.y += 0.6; // half height
+			postMesh.position.set(post.x, terrain.getHeight(post.x, post.z) + 0.6, post.z);
 			group.add(postMesh);
 
 			// Two horizontal rails connecting to next post
@@ -507,8 +641,7 @@ function buildGuardrails(samples: TrackSample[]): THREE.Group {
 
 				const rail = new THREE.Mesh(railGeo, railMat);
 				rail.scale.z = len;
-				rail.position.copy(post);
-				rail.position.y += railY;
+				rail.position.set(post.x, terrain.getHeight(post.x, post.z) + railY, post.z);
 				// Orient rail to point toward next post
 				rail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
 				group.add(rail);
@@ -530,7 +663,7 @@ async function generate() {
 		buildScene(data);
 	} catch (_err) {
 		// Fallback: generate client-side if API unavailable (dev mode)
-		const data = generateTrack(seed, {});
+		const data = generateTrack(seed, { elevation: 80, downhillBias: 70 });
 		buildScene({ ...data, seed });
 	}
 }
