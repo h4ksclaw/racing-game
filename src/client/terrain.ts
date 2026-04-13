@@ -256,7 +256,7 @@ void main() {
 	vec3 snow  = triplanar(tSnowC,  vWorldPos, blendW);
 	vec3 moss  = triplanar(tMossC,  vWorldPos, blendW);
 
-	vec3 baseColor = grass * uGrassTint * wGrass + dirt * uDirtTint * (wBelowDirt + wFarDirt) + rock * uRockTint * wRock + snow * uSnow + moss * uGrassTint * wNearMoss;
+	vec3 baseColor = grass * uGrassTint * wGrass + dirt * uDirtTint * (wBelowDirt + wFarDirt) + rock * uRockTint * wRock + snow + moss * uGrassTint * wNearMoss;
 
 	vec3 sunDir = normalize(uSunDir);
 	float NdotL = max(dot(N, sunDir), 0.0);
