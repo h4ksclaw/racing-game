@@ -13,6 +13,7 @@
 - [x] **Day/night cycle** — Time keyframes interpolating sun/ambient/fog/sky
 - [x] **Night mode** — Headlights, street lights, stars, moon
 - [ ] **Weather: Rain** — Particle system + wet road + fog
+- [x] **Weather: Rain/Snow/Fog/Cloudy** — All particle systems + fog/light/turbidity modifiers
 
 ### Phase 3: Textures & Materials
 - [ ] **Download ambientCG textures** — 1K JPG packs (color + normal + roughness + AO)
@@ -35,6 +36,7 @@
 - [ ] **Fog** — Density control
 - [ ] **Cloudy** — Sky turbidity + dimmed sun
 - [ ] **Weather transitions** — Smooth crossfade between states
+- [x] ~~Rain/Snow/Fog/Cloudy~~ — Implemented in Phase 2 (see above)
 
 ### Phase 6: More 3D Assets
 - [ ] **Download additional Kenney packs** — Nature Extended, Farm, City
