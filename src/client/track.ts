@@ -350,7 +350,7 @@ function buildSnowSystem(): { points: THREE.Points; drifts: Float32Array } {
 		positions[i * 3 + 1] = Math.random() * height;
 		positions[i * 3 + 2] = (Math.random() - 0.5) * spread;
 		drifts[i * 2] = Math.random() * Math.PI * 2;
-		drifts[i * 2 + 1] = 0.5 + Math.random() * 1.5;
+		drifts[i * 2 + 1] = 0.3 + Math.random() * 0.8;
 	}
 	const geo = new THREE.BufferGeometry();
 	geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -421,6 +421,17 @@ function applyWeather(weather: WeatherType) {
 	rainSystem.visible = rainVisible;
 	snowSystem.visible = snowVisible;
 
+	// Dim particles at night
+	const nightDim = currentTime > 20 || currentTime < 5 ? 0.3 : currentTime > 18 ? 0.6 : 1.0;
+	(rainSystem.material as THREE.PointsMaterial).color.setRGB(
+		0.67 * nightDim,
+		0.8 * nightDim,
+		1.0 * nightDim,
+	);
+	(rainSystem.material as THREE.PointsMaterial).opacity =
+		(weather === "heavy_rain" ? 0.8 : 0.5) * nightDim;
+	(snowSystem.material as THREE.PointsMaterial).opacity = 0.9 * Math.max(0.4, nightDim);
+
 	if (!sun || !ambient || !scene) return;
 
 	// Weather modifiers on top of time-of-day
@@ -455,7 +466,9 @@ function applyWeather(weather: WeatherType) {
 			const fogH = scene.fog as THREE.Fog;
 			fogH.far = Math.min(fogH.far, 350);
 			fogH.near = Math.max(fogH.near, 50);
-			fogH.color.setRGB(0.15, 0.15, 0.18);
+			// Dark gray fog — not white
+			const isNight = currentTime > 20 || currentTime < 5;
+			fogH.color.setRGB(isNight ? 0.06 : 0.25, isNight ? 0.06 : 0.25, isNight ? 0.08 : 0.3);
 			break;
 		}
 		case "fog": {
