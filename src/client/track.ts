@@ -25,6 +25,235 @@ interface TrackResponse {
 	seed: number;
 }
 
+// ── Day/Night Cycle ──────────────────────────────────────────────────
+
+interface TimeKeyframe {
+	hour: number;
+	sunColor: [number, number, number];
+	sunIntensity: number;
+	sunElevation: number; // degrees
+	ambientColor: [number, number, number];
+	ambientIntensity: number;
+	fogColor: [number, number, number];
+	fogNear: number;
+	fogFar: number;
+	turbidity: number;
+	rayleigh: number;
+	starsOpacity: number;
+}
+
+const timeKeyframes: TimeKeyframe[] = [
+	{
+		hour: 0,
+		sunColor: [0.15, 0.15, 0.3],
+		sunIntensity: 0.02,
+		sunElevation: -30,
+		ambientColor: [0.04, 0.04, 0.08],
+		ambientIntensity: 0.08,
+		fogColor: [0.02, 0.02, 0.06],
+		fogNear: 50,
+		fogFar: 400,
+		turbidity: 0.5,
+		rayleigh: 0.5,
+		starsOpacity: 1.0,
+	},
+	{
+		hour: 5,
+		sunColor: [0.2, 0.15, 0.3],
+		sunIntensity: 0.05,
+		sunElevation: -10,
+		ambientColor: [0.08, 0.06, 0.12],
+		ambientIntensity: 0.1,
+		fogColor: [0.05, 0.04, 0.08],
+		fogNear: 100,
+		fogFar: 500,
+		turbidity: 1,
+		rayleigh: 0.8,
+		starsOpacity: 0.6,
+	},
+	{
+		hour: 6,
+		sunColor: [1.0, 0.5, 0.2],
+		sunIntensity: 0.3,
+		sunElevation: 2,
+		ambientColor: [0.4, 0.25, 0.2],
+		ambientIntensity: 0.25,
+		fogColor: [0.5, 0.3, 0.2],
+		fogNear: 200,
+		fogFar: 800,
+		turbidity: 8,
+		rayleigh: 2,
+		starsOpacity: 0.1,
+	},
+	{
+		hour: 8,
+		sunColor: [1.0, 0.9, 0.7],
+		sunIntensity: 1.0,
+		sunElevation: 25,
+		ambientColor: [0.5, 0.55, 0.6],
+		ambientIntensity: 0.5,
+		fogColor: [0.7, 0.75, 0.8],
+		fogNear: 400,
+		fogFar: 1400,
+		turbidity: 4,
+		rayleigh: 2,
+		starsOpacity: 0,
+	},
+	{
+		hour: 12,
+		sunColor: [1.0, 1.0, 0.95],
+		sunIntensity: 1.5,
+		sunElevation: 65,
+		ambientColor: [0.6, 0.65, 0.7],
+		ambientIntensity: 0.6,
+		fogColor: [0.75, 0.8, 0.85],
+		fogNear: 500,
+		fogFar: 1500,
+		turbidity: 3,
+		rayleigh: 2,
+		starsOpacity: 0,
+	},
+	{
+		hour: 16,
+		sunColor: [1.0, 0.9, 0.7],
+		sunIntensity: 1.1,
+		sunElevation: 30,
+		ambientColor: [0.5, 0.5, 0.55],
+		ambientIntensity: 0.5,
+		fogColor: [0.7, 0.72, 0.78],
+		fogNear: 400,
+		fogFar: 1300,
+		turbidity: 4,
+		rayleigh: 2,
+		starsOpacity: 0,
+	},
+	{
+		hour: 18,
+		sunColor: [1.0, 0.5, 0.15],
+		sunIntensity: 0.6,
+		sunElevation: 8,
+		ambientColor: [0.45, 0.3, 0.25],
+		ambientIntensity: 0.35,
+		fogColor: [0.6, 0.35, 0.2],
+		fogNear: 300,
+		fogFar: 900,
+		turbidity: 10,
+		rayleigh: 3,
+		starsOpacity: 0,
+	},
+	{
+		hour: 19.5,
+		sunColor: [0.6, 0.2, 0.15],
+		sunIntensity: 0.15,
+		sunElevation: -2,
+		ambientColor: [0.15, 0.1, 0.15],
+		ambientIntensity: 0.15,
+		fogColor: [0.15, 0.08, 0.12],
+		fogNear: 150,
+		fogFar: 600,
+		turbidity: 6,
+		rayleigh: 1.5,
+		starsOpacity: 0.3,
+	},
+	{
+		hour: 21,
+		sunColor: [0.2, 0.2, 0.35],
+		sunIntensity: 0.03,
+		sunElevation: -20,
+		ambientColor: [0.05, 0.05, 0.1],
+		ambientIntensity: 0.08,
+		fogColor: [0.03, 0.03, 0.07],
+		fogNear: 80,
+		fogFar: 450,
+		turbidity: 1,
+		rayleigh: 0.5,
+		starsOpacity: 0.8,
+	},
+	{
+		hour: 24,
+		sunColor: [0.15, 0.15, 0.3],
+		sunIntensity: 0.02,
+		sunElevation: -30,
+		ambientColor: [0.04, 0.04, 0.08],
+		ambientIntensity: 0.08,
+		fogColor: [0.02, 0.02, 0.06],
+		fogNear: 50,
+		fogFar: 400,
+		turbidity: 0.5,
+		rayleigh: 0.5,
+		starsOpacity: 1.0,
+	},
+];
+
+function lerp(a: number, b: number, t: number): number {
+	return a + (b - a) * t;
+}
+
+function lerpColor(
+	a: [number, number, number],
+	b: [number, number, number],
+	t: number,
+): [number, number, number] {
+	return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+}
+
+function getTimeState(hour: number): TimeKeyframe {
+	// Wrap to 0-24
+	hour = ((hour % 24) + 24) % 24;
+	let a = timeKeyframes[0];
+	let b = timeKeyframes[1];
+	for (let i = 0; i < timeKeyframes.length - 1; i++) {
+		if (hour >= timeKeyframes[i].hour && hour <= timeKeyframes[i + 1].hour) {
+			a = timeKeyframes[i];
+			b = timeKeyframes[i + 1];
+			break;
+		}
+	}
+	const range = b.hour - a.hour;
+	const t = range > 0 ? (hour - a.hour) / range : 0;
+	return {
+		hour,
+		sunColor: lerpColor(a.sunColor, b.sunColor, t),
+		sunIntensity: lerp(a.sunIntensity, b.sunIntensity, t),
+		sunElevation: lerp(a.sunElevation, b.sunElevation, t),
+		ambientColor: lerpColor(a.ambientColor, b.ambientColor, t),
+		ambientIntensity: lerp(a.ambientIntensity, b.ambientIntensity, t),
+		fogColor: lerpColor(a.fogColor, b.fogColor, t),
+		fogNear: lerp(a.fogNear, b.fogNear, t),
+		fogFar: lerp(a.fogFar, b.fogFar, t),
+		turbidity: lerp(a.turbidity, b.turbidity, t),
+		rayleigh: lerp(a.rayleigh, b.rayleigh, t),
+		starsOpacity: lerp(a.starsOpacity, b.starsOpacity, t),
+	};
+}
+
+function buildStars(): THREE.Points {
+	const count = 3000;
+	const positions = new Float32Array(count * 3);
+	const sizes = new Float32Array(count);
+	for (let i = 0; i < count; i++) {
+		// Random positions on a sphere
+		const theta = Math.random() * Math.PI * 2;
+		const phi = Math.acos(2 * Math.random() - 1);
+		const r = 4000;
+		positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+		positions[i * 3 + 1] = Math.abs(r * Math.cos(phi)); // only upper hemisphere
+		positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+		sizes[i] = 1 + Math.random() * 3;
+	}
+	const geo = new THREE.BufferGeometry();
+	geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+	geo.setAttribute("size", new THREE.BufferAttribute(sizes, 1));
+	const mat = new THREE.PointsMaterial({
+		color: 0xffffff,
+		size: 3,
+		sizeAttenuation: false,
+		transparent: true,
+		opacity: 0,
+	});
+	return new THREE.Points(geo, mat);
+}
+
 // ── Procedural textures ──────────────────────────────────────────────────
 
 function makeAsphaltTexture(): THREE.CanvasTexture {
@@ -453,6 +682,13 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 			);
 			fixture.position.y = 5.5;
 			group.add(fixture);
+			// Track for day/night glow control
+			lightFixtures.push(fixture);
+			// Add point light (off during day, on at night)
+			const pointLight = new THREE.PointLight(0xffeeaa, 0, 40, 2);
+			pointLight.position.y = 5;
+			group.add(pointLight);
+			streetLights.push(pointLight);
 			break;
 		}
 		default:
@@ -476,10 +712,23 @@ let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
 let controls: OrbitControls;
 let dispose: () => void = () => {};
+let sun: THREE.DirectionalLight | null = null;
+let ambient: THREE.HemisphereLight | null = null;
+let skyUniforms: Record<string, THREE.IUniform> | null = null;
+let stars: THREE.Points | null = null;
+let streetLights: THREE.PointLight[] = [];
+let lightFixtures: THREE.Mesh[] = []; // for emissive glow control
+let currentTime = 12; // default noon
 
 function clearScene() {
 	dispose();
 	if (controls) controls.dispose();
+	sun = null;
+	ambient = null;
+	skyUniforms = null;
+	stars = null;
+	streetLights = [];
+	lightFixtures = [];
 }
 
 async function buildScene(data: TrackResponse) {
@@ -493,7 +742,7 @@ async function buildScene(data: TrackResponse) {
 	const sky = new Sky();
 	sky.scale.setScalar(10000);
 	scene.add(sky);
-	const skyUniforms = sky.material.uniforms;
+	skyUniforms = sky.material.uniforms;
 	skyUniforms.turbidity.value = 4;
 	skyUniforms.rayleigh.value = 2;
 	skyUniforms.mieCoefficient.value = 0.005;
@@ -505,8 +754,9 @@ async function buildScene(data: TrackResponse) {
 	skyUniforms.sunPosition.value.copy(sunPos);
 
 	scene.add(new THREE.HemisphereLight(0x88bbff, 0x445511, 0.6));
+	ambient = scene.children[scene.children.length - 1] as THREE.HemisphereLight;
 
-	const sun = new THREE.DirectionalLight(0xffffcc, 1.2);
+	sun = new THREE.DirectionalLight(0xffffcc, 1.2);
 	sun.position.set(200, 300, 100); // roughly matches sky sun at 45° elevation
 	sun.castShadow = true;
 	sun.shadow.mapSize.width = 2048;
@@ -518,6 +768,10 @@ async function buildScene(data: TrackResponse) {
 	sun.shadow.camera.top = 400;
 	sun.shadow.camera.bottom = -400;
 	scene.add(sun);
+
+	// Stars (visible at night, hidden during day)
+	stars = buildStars();
+	scene.add(stars);
 
 	// Terrain sampler (shared for terrain mesh + scenery placement)
 	const terrain = new TerrainSampler(data.seed, data.samples);
@@ -565,6 +819,60 @@ async function buildScene(data: TrackResponse) {
 	if (infoEl) {
 		infoEl.textContent = `Seed: ${data.seed} | Length: ${data.length.toFixed(0)}m | Samples: ${data.numSamples} | Elev: ${data.elevationRange.min.toFixed(1)}...${data.elevationRange.max.toFixed(1)} | Scenery: ${scenery.length}`;
 	}
+
+	// Apply initial time
+	applyTimeOfDay(currentTime);
+}
+
+function applyTimeOfDay(hour: number) {
+	if (!scene || !sun || !ambient) return;
+	const state = getTimeState(hour);
+
+	// Sun
+	sun.color.setRGB(...state.sunColor);
+	sun.intensity = state.sunIntensity;
+	const sunElev = THREE.MathUtils.degToRad(state.sunElevation);
+	sun.position.set(Math.cos(sunElev) * 300, Math.sin(sunElev) * 300, 100);
+
+	// Ambient
+	ambient.color.setRGB(...state.ambientColor);
+	ambient.intensity = state.ambientIntensity;
+
+	// Fog
+	const fog = scene.fog as THREE.Fog;
+	fog.color.setRGB(...state.fogColor);
+	fog.near = state.fogNear;
+	fog.far = state.fogFar;
+
+	// Sky
+	if (skyUniforms) {
+		skyUniforms.turbidity.value = state.turbidity;
+		skyUniforms.rayleigh.value = state.rayleigh;
+		const phi = THREE.MathUtils.degToRad(90 - state.sunElevation);
+		const theta = THREE.MathUtils.degToRad(180);
+		const sunPos = new THREE.Vector3();
+		sunPos.setFromSphericalCoords(1, phi, theta);
+		skyUniforms.sunPosition.value.copy(sunPos);
+	}
+
+	// Stars
+	if (stars) {
+		(stars.material as THREE.PointsMaterial).opacity = state.starsOpacity;
+	}
+
+	// Street lights — glow at night, dim during day
+	const nightFactor = Math.max(0, 1 - state.sunIntensity / 0.5);
+	for (const light of streetLights) {
+		light.intensity = nightFactor * 2;
+	}
+	for (const fixture of lightFixtures) {
+		const mat = fixture.material as THREE.MeshLambertMaterial;
+		mat.emissiveIntensity = 0.3 + nightFactor * 1.5;
+	}
+
+	// Renderer exposure (darker at night)
+	renderer.toneMapping = THREE.ACESFilmicToneMapping;
+	renderer.toneMappingExposure = 0.3 + state.sunIntensity * 0.7;
 }
 
 class TerrainSampler {
@@ -805,6 +1113,20 @@ document.getElementById("randomBtn")?.addEventListener("click", () => {
 	if (el) el.value = String(Math.floor(Math.random() * 100000));
 	generate();
 });
+
+const timeSlider = document.getElementById("timeSlider") as HTMLInputElement | null;
+const timeLabel = document.getElementById("timeLabel") as HTMLElement | null;
+if (timeSlider) {
+	timeSlider.addEventListener("input", () => {
+		currentTime = Number.parseFloat(timeSlider.value);
+		applyTimeOfDay(currentTime);
+		if (timeLabel) {
+			const h = Math.floor(currentTime);
+			const m = Math.floor((currentTime % 1) * 60);
+			timeLabel.textContent = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+		}
+	});
+}
 
 // ── Render loop ──────────────────────────────────────────────────────────
 
