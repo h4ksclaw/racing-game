@@ -62,7 +62,12 @@ button:hover { background: #a4e8ff; }
 <div id="info"></div>
 
 <div id="controls-hint">
-  LMB: rotate · RMB: pan · Scroll: zoom · Middle: reset view
+  <b style="color:#8be9fd">🖱️ Controls:</b><br>
+  <b>Left drag</b> — rotate view<br>
+  <b>Right drag</b> — pan<br>
+  <b>Scroll</b> — zoom in/out<br>
+  <b>Middle click</b> — reset view<br><br>
+  <span style="color:#666">Try scrolling to zoom in!</span>
 </div>
 
 <script type="module">
@@ -396,7 +401,7 @@ scene.background = new THREE.Color(0x87CEEB);
 scene.fog = new THREE.Fog(0x87CEEB, 500, 1000);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 2000);
-camera.position.set(100, 200, 300);
+camera.position.set(0, 100, 150);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -640,7 +645,7 @@ function buildScene(data) {
   for (const s of data.samples) center.add(s.point);
   center.divideScalar(data.samples.length);
   controls.target.copy(center);
-  camera.position.set(center.x + 100, center.y + 200, center.z + 300);
+  camera.position.set(center.x + 50, center.y + 100, center.z + 150);
 }
 
 function getParams() {

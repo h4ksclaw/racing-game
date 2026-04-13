@@ -6,8 +6,15 @@ export default defineConfig({
   build: {
     outDir: resolve("/var/lib/openclaw/.openclaw/workspace/racing-game/game/public/debug-dist"),
     emptyOutDir: true,
+    target: "es2020",
     rollupOptions: {
       input: resolve("/var/lib/openclaw/.openclaw/workspace/racing-game/game/debug-track.html"),
+      output: {
+        format: "iife",
+        inlineDynamicImports: true,
+        entryFileNames: "track.js",
+        assetFileNames: "track.[ext]",
+      },
     },
   },
 });
