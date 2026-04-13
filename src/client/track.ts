@@ -256,25 +256,85 @@ function buildStars(): THREE.Points {
 
 // ── Weather Systems ─────────────────────────────────────────────────
 
+function makeRainTexture(): THREE.Texture {
+	const size = 32;
+	const canvas = document.createElement("canvas");
+	canvas.width = size;
+	canvas.height = size;
+	const ctx = canvas.getContext("2d")!;
+	// Vertical streak — elongated soft dot
+	const grad = ctx.createLinearGradient(size / 2, 2, size / 2, size - 2);
+	grad.addColorStop(0, "rgba(170,200,255,0)");
+	grad.addColorStop(0.3, "rgba(170,200,255,0.6)");
+	grad.addColorStop(0.7, "rgba(170,200,255,0.6)");
+	grad.addColorStop(1, "rgba(170,200,255,0)");
+	ctx.fillStyle = grad;
+	ctx.fillRect(size / 2 - 1, 2, 2, size - 4);
+	// Add a soft glow
+	const glow = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+	glow.addColorStop(0, "rgba(170,200,255,0.15)");
+	glow.addColorStop(1, "rgba(170,200,255,0)");
+	ctx.fillStyle = glow;
+	ctx.fillRect(0, 0, size, size);
+	const tex = new THREE.CanvasTexture(canvas);
+	tex.needsUpdate = true;
+	return tex;
+}
+
+function makeSnowTexture(): THREE.Texture {
+	const size = 64;
+	const canvas = document.createElement("canvas");
+	canvas.width = size;
+	canvas.height = size;
+	const ctx = canvas.getContext("2d")!;
+	// Soft circular snowflake with subtle crystal arms
+	const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+	grad.addColorStop(0, "rgba(255,255,255,1)");
+	grad.addColorStop(0.3, "rgba(255,255,255,0.8)");
+	grad.addColorStop(0.7, "rgba(230,235,255,0.3)");
+	grad.addColorStop(1, "rgba(230,235,255,0)");
+	ctx.fillStyle = grad;
+	ctx.beginPath();
+	ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2);
+	ctx.fill();
+	// Six crystal arms
+	ctx.strokeStyle = "rgba(255,255,255,0.4)";
+	ctx.lineWidth = 1;
+	for (let a = 0; a < 6; a++) {
+		const angle = (a * Math.PI) / 3;
+		ctx.beginPath();
+		ctx.moveTo(size / 2, size / 2);
+		ctx.lineTo(size / 2 + Math.cos(angle) * size * 0.35, size / 2 + Math.sin(angle) * size * 0.35);
+		ctx.stroke();
+	}
+	const tex = new THREE.CanvasTexture(canvas);
+	tex.needsUpdate = true;
+	return tex;
+}
+
 function buildRainSystem(): { points: THREE.Points; velocities: Float32Array } {
-	const count = 12000;
+	const count = 15000;
 	const positions = new Float32Array(count * 3);
 	const velocities = new Float32Array(count);
-	const spread = 500;
+	const spread = 250;
+	const height = 120;
 	for (let i = 0; i < count; i++) {
 		positions[i * 3] = (Math.random() - 0.5) * spread;
-		positions[i * 3 + 1] = Math.random() * 150;
+		positions[i * 3 + 1] = Math.random() * height;
 		positions[i * 3 + 2] = (Math.random() - 0.5) * spread;
-		velocities[i] = 1.5 + Math.random() * 2.5; // fall speed
+		velocities[i] = 2.0 + Math.random() * 3.0;
 	}
 	const geo = new THREE.BufferGeometry();
 	geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 	const mat = new THREE.PointsMaterial({
+		map: makeRainTexture(),
 		color: 0xaaccff,
-		size: 0.8,
+		size: 1.5,
 		sizeAttenuation: true,
 		transparent: true,
-		opacity: 0.6,
+		blending: THREE.AdditiveBlending,
+		depthWrite: false,
+		opacity: 0.7,
 	});
 	return { points: new THREE.Points(geo, mat), velocities };
 }
@@ -282,23 +342,27 @@ function buildRainSystem(): { points: THREE.Points; velocities: Float32Array } {
 function buildSnowSystem(): { points: THREE.Points; drifts: Float32Array } {
 	const count = 8000;
 	const positions = new Float32Array(count * 3);
-	const drifts = new Float32Array(count * 2); // phase + speed for sinusoidal drift
-	const spread = 500;
+	const drifts = new Float32Array(count * 2);
+	const spread = 300;
+	const height = 100;
 	for (let i = 0; i < count; i++) {
 		positions[i * 3] = (Math.random() - 0.5) * spread;
-		positions[i * 3 + 1] = Math.random() * 150;
+		positions[i * 3 + 1] = Math.random() * height;
 		positions[i * 3 + 2] = (Math.random() - 0.5) * spread;
-		drifts[i * 2] = Math.random() * Math.PI * 2; // phase
-		drifts[i * 2 + 1] = 0.5 + Math.random() * 1.5; // drift speed
+		drifts[i * 2] = Math.random() * Math.PI * 2;
+		drifts[i * 2 + 1] = 0.5 + Math.random() * 1.5;
 	}
 	const geo = new THREE.BufferGeometry();
 	geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 	const mat = new THREE.PointsMaterial({
+		map: makeSnowTexture(),
 		color: 0xffffff,
-		size: 2.5,
+		size: 3.0,
 		sizeAttenuation: true,
 		transparent: true,
-		opacity: 0.8,
+		blending: THREE.NormalBlending,
+		depthWrite: false,
+		opacity: 0.9,
 	});
 	return { points: new THREE.Points(geo, mat), drifts };
 }
@@ -306,8 +370,8 @@ function buildSnowSystem(): { points: THREE.Points; drifts: Float32Array } {
 function updateWeather(delta: number) {
 	if (!scene || !camera) return;
 
-	// Center particle systems around camera
 	const camX = camera.position.x;
+	const camY = camera.position.y;
 	const camZ = camera.position.z;
 
 	// Rain
@@ -317,11 +381,10 @@ function updateWeather(delta: number) {
 		const speedMult = isHeavyRain ? 1.5 : 1.0;
 		for (let i = 0; i < pos.count; i++) {
 			pos.array[i * 3 + 1] -= rainVelocities[i] * delta * 60 * speedMult;
-			// Reset when below ground
-			if (pos.array[i * 3 + 1] < -5) {
-				pos.array[i * 3] = camX + (Math.random() - 0.5) * 500;
-				pos.array[i * 3 + 1] = 120 + Math.random() * 30;
-				pos.array[i * 3 + 2] = camZ + (Math.random() - 0.5) * 500;
+			if (pos.array[i * 3 + 1] < camY - 20) {
+				pos.array[i * 3] = camX + (Math.random() - 0.5) * 250;
+				pos.array[i * 3 + 1] = camY + 40 + Math.random() * 80;
+				pos.array[i * 3 + 2] = camZ + (Math.random() - 0.5) * 250;
 			}
 		}
 		pos.needsUpdate = true;
@@ -334,15 +397,14 @@ function updateWeather(delta: number) {
 		const time = performance.now() * 0.001;
 		for (let i = 0; i < pos.count; i++) {
 			pos.array[i * 3 + 1] -= (0.3 + snowDrifts[i * 2 + 1] * 0.2) * delta * 60;
-			// Sinusoidal horizontal drift
 			pos.array[i * 3] +=
 				Math.sin(time * snowDrifts[i * 2 + 1] + snowDrifts[i * 2]) * 0.3 * delta * 60;
 			pos.array[i * 3 + 2] +=
 				Math.cos(time * snowDrifts[i * 2 + 1] * 0.7 + snowDrifts[i * 2]) * 0.2 * delta * 60;
-			if (pos.array[i * 3 + 1] < -5) {
-				pos.array[i * 3] = camX + (Math.random() - 0.5) * 500;
-				pos.array[i * 3 + 1] = 120 + Math.random() * 30;
-				pos.array[i * 3 + 2] = camZ + (Math.random() - 0.5) * 500;
+			if (pos.array[i * 3 + 1] < camY - 20) {
+				pos.array[i * 3] = camX + (Math.random() - 0.5) * 300;
+				pos.array[i * 3 + 1] = camY + 30 + Math.random() * 70;
+				pos.array[i * 3 + 2] = camZ + (Math.random() - 0.5) * 300;
 			}
 		}
 		pos.needsUpdate = true;
