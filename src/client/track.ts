@@ -361,16 +361,16 @@ function buildInstancedScenery(scenery: SceneryItem[], terrain: TerrainSampler):
 
 		const cached = decorationCache.get(type);
 		if (cached) {
-			// Extract geometry from the first mesh child
-			let geo: THREE.BufferGeometry | null = null;
-			let mat: THREE.Material | THREE.Material[] | null = null;
+			// Extract ALL mesh children (trees have trunk + foliage as separate sub-meshes)
+			const meshEntries: { geo: THREE.BufferGeometry; mat: THREE.Material | THREE.Material[] }[] =
+				[];
 			cached.traverse((child) => {
-				if (!geo && child instanceof THREE.Mesh) {
-					geo = child.geometry;
-					mat = child.material;
+				if (child instanceof THREE.Mesh) {
+					meshEntries.push({ geo: child.geometry, mat: child.material });
 				}
 			});
-			if (!geo || !mat) {
+
+			if (meshEntries.length === 0) {
 				// Fallback to individual objects
 				for (const item of items) {
 					const obj = createSceneryObject(item, terrain);
@@ -379,22 +379,25 @@ function buildInstancedScenery(scenery: SceneryItem[], terrain: TerrainSampler):
 				continue;
 			}
 
-			const instanced = new THREE.InstancedMesh(geo, mat, items.length);
-			instanced.castShadow = true;
-			instanced.receiveShadow = true;
+			// Create one InstancedMesh per sub-mesh (e.g., trunk + foliage)
+			for (const entry of meshEntries) {
+				const instanced = new THREE.InstancedMesh(entry.geo, entry.mat, items.length);
+				instanced.castShadow = true;
+				instanced.receiveShadow = true;
 
-			for (let i = 0; i < items.length; i++) {
-				const item = items[i];
-				const scale = GLB_SCALE * (item.scale ?? 1);
-				const tY = terrain.getHeight(item.position.x, item.position.z);
-				dummy.position.set(item.position.x, tY, item.position.z);
-				dummy.rotation.set(0, item.rotation ?? 0, 0);
-				dummy.scale.setScalar(scale);
-				dummy.updateMatrix();
-				instanced.setMatrixAt(i, dummy.matrix);
+				for (let i = 0; i < items.length; i++) {
+					const item = items[i];
+					const scale = GLB_SCALE * (item.scale ?? 1);
+					const tY = terrain.getHeight(item.position.x, item.position.z);
+					dummy.position.set(item.position.x, tY, item.position.z);
+					dummy.rotation.set(0, item.rotation ?? 0, 0);
+					dummy.scale.setScalar(scale);
+					dummy.updateMatrix();
+					instanced.setMatrixAt(i, dummy.matrix);
+				}
+				instanced.instanceMatrix.needsUpdate = true;
+				group.add(instanced);
 			}
-			instanced.instanceMatrix.needsUpdate = true;
-			group.add(instanced);
 		} else {
 			// Not in GLB (light, barrier, etc.) - use individual objects
 			for (const item of items) {

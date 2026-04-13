@@ -3,13 +3,13 @@
 ## Status: IN PROGRESS
 
 ### Phase 1: Performance Foundation
-- [ ] **Instanced meshes** — Convert 5000 individual scenery meshes to InstancedMesh (1 draw call per type)
+- [x] **Instanced meshes** — Convert 5000 individual scenery meshes to InstancedMesh (1 draw call per type)
   - Current: ~5000 separate mesh objects → ~5000 draw calls
   - Target: ~10 InstancedMesh objects → ~10 draw calls
   - Prerequisite for everything else
 
 ### Phase 2: Sky & Lighting
-- [ ] **Procedural sky** — Three.js Sky addon (turbidity, rayleigh, sun position)
+- [x] **Procedural sky** — Three.js Sky addon (turbidity, rayleigh, sun position)
 - [ ] **Day/night cycle** — Time keyframes interpolating sun/ambient/fog/sky
 - [ ] **Night mode** — Headlights, street lights, stars, moon
 
