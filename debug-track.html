@@ -536,10 +536,11 @@ function buildScene(data) {
     if (c.geometry) c.geometry.dispose();
   }
 
-  // Ground
+  // Ground — lowered to sit below lowest road elevation
+  const groundY = data.elevationRange.min - 5;
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(1500, 1500), groundMat);
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.1;
+  ground.position.y = groundY;
   ground.receiveShadow = true;
   trackGroup.add(ground);
 
