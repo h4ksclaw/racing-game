@@ -724,7 +724,6 @@ let stars: THREE.Points | null = null;
 let streetLights: THREE.PointLight[] = [];
 let lightFixtures: THREE.Mesh[] = []; // for emissive glow control
 let currentTime = 12; // default noon
-let pmremGenerator: THREE.PMREMGenerator | null = null;
 
 function clearScene() {
 	dispose();
@@ -735,10 +734,6 @@ function clearScene() {
 	stars = null;
 	streetLights = [];
 	lightFixtures = [];
-	if (pmremGenerator) {
-		pmremGenerator.dispose();
-		pmremGenerator = null;
-	}
 }
 
 async function buildScene(data: TrackResponse) {
@@ -762,17 +757,6 @@ async function buildScene(data: TrackResponse) {
 	const theta = THREE.MathUtils.degToRad(180);
 	sunPos.setFromSphericalCoords(1, phi, theta);
 	skyUniforms.sunPosition.value.copy(sunPos);
-
-	// Generate environment map from sky for PBR reflections
-	pmremGenerator = new THREE.PMREMGenerator(renderer);
-	pmremGenerator.compileEquirectangularShader();
-	const skyScene = new THREE.Scene();
-	const skyClone = sky.clone();
-	skyClone.material = sky.material.clone();
-	skyScene.add(skyClone);
-	const envMap = pmremGenerator.fromScene(skyScene, 0, 0.1, 100).texture;
-	scene.environment = envMap;
-	skyScene.clear();
 
 	scene.add(new THREE.HemisphereLight(0x88bbff, 0x445511, 0.6));
 	ambient = scene.children[scene.children.length - 1] as THREE.HemisphereLight;
@@ -892,8 +876,7 @@ function applyTimeOfDay(hour: number) {
 	}
 
 	// Renderer exposure (darker at night)
-	renderer.toneMapping = THREE.ACESFilmicToneMapping;
-	renderer.toneMappingExposure = 0.3 + state.sunIntensity * 0.7;
+	renderer.toneMappingExposure = 0.5 + state.sunIntensity * 0.5;
 }
 
 class TerrainSampler {
