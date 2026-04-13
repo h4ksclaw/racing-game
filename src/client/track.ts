@@ -5,7 +5,7 @@ import { getBiomeForSeed } from "./biomes.ts";
 import { initBloom, updateBloomSize } from "./effects.ts";
 import { buildGuardrails, buildMeshes } from "./road.ts";
 import { state } from "./scene.ts";
-import { buildInstancedScenery, loadDecorations } from "./scenery.ts";
+import { buildInstancedScenery, loadDecorations, setFallbackBiome } from "./scenery.ts";
 import { applyTimeOfDay, buildStars, setupSky } from "./sky.ts";
 import { buildTerrain, TerrainSampler } from "./terrain.ts";
 import type { TrackResponse, WeatherType } from "./utils.ts";
@@ -130,6 +130,7 @@ async function buildScene(data: TrackResponse) {
 		grassDensity: biome.grassDensity,
 		rockDensity: biome.rockDensity,
 	});
+	setFallbackBiome(biome.name);
 	await loadDecorations();
 	scene.add(buildInstancedScenery(scenery, terrain));
 

@@ -1,6 +1,7 @@
 import type { SceneryItem } from "@shared/track.ts";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { buildProceduralScenery } from "./procedural-scenery.ts";
 import { state } from "./scene.ts";
 import type { TerrainSampler } from "./terrain.ts";
 
@@ -9,53 +10,274 @@ import type { TerrainSampler } from "./terrain.ts";
 const decorationCache = new Map<string, THREE.Group>();
 let decorationsLoaded = false;
 
+/** Per-model scale overrides (multiply with item.scale). Nature kit models are ~5-15 units tall. */
+const MODEL_SCALE: Record<string, number> = {
+	// Pines → tall trees (models ~7-10 units → want ~10-14m in-game)
+	tree_pineTallA: 1.5,
+	tree_pineTallB: 1.5,
+	tree_pineTallC: 1.5,
+	tree_pineTallD: 1.5,
+	// Small pines (models ~7-10 units → want ~5-7m in-game)
+	tree_pineSmallA: 0.8,
+	tree_pineSmallB: 0.8,
+	tree_pineSmallC: 0.8,
+	tree_pineSmallD: 0.8,
+	// Broadleaf trees (models ~6-8 units → want ~8-10m)
+	tree_pineDefaultB: 1.3,
+	tree_broadA: 1.3,
+	tree_broadB: 1.3,
+	tree_broadC: 1.1,
+	tree_broadD: 1.5,
+	// Dead trees (models ~9-16 units → want ~6-10m)
+	tree_deadA: 0.7,
+	tree_deadB: 0.6,
+	// Twisted trees (models ~15-18 units → want ~6-8m)
+	tree_twistedA: 0.5,
+	tree_twistedB: 0.5,
+	// Bushes (models ~2 units → want ~2-3m)
+	bush_common: 1.5,
+	bush_flowers: 1.5,
+	// Rocks (models ~2-3 units → want ~2-4m)
+	rock_tallA: 1.2,
+	rock_tallB: 1.0,
+	rock_tallC: 1.1,
+	rock_tallD: 0.9,
+	rock_tallE: 1.3,
+	rock_tallF: 1.0,
+	rock_tallG: 1.1,
+	rock_tallH: 0.9,
+	rock_tallI: 1.2,
+	rock_tallJ: 1.0,
+	// Stones (models ~2-3 units → want ~1-2m)
+	stone_tallC: 0.6,
+	stone_tallD: 0.7,
+	stone_tallE: 0.6,
+	stone_tallF: 0.8,
+	stone_tallG: 0.6,
+	stone_tallH: 0.7,
+	stone_tallI: 0.6,
+	stone_tallJ: 0.8,
+	// Grass (models ~1-2 units → want ~1-2m)
+	grass: 1.0,
+	grass_large: 1.2,
+	grass_wispy: 1.0,
+	// Stumps, mushrooms, logs
+	stump_old: 0.8,
+	stump_round: 0.8,
+	stump_square: 0.8,
+	mushroom_red: 0.8,
+	log_large: 1.0,
+	crop_pumpkin: 0.8,
+};
+
+/** Default scale for models not in MODEL_SCALE */
+const DEFAULT_MODEL_SCALE = 1.2;
+
+let fallbackBiomeName = "Temperate Forest";
+
+export function setFallbackBiome(biomeName: string): void {
+	fallbackBiomeName = biomeName;
+}
+
+// ── Quaternius Nature Kit → SceneryType mapping ─────────────────────────
+
+const NATURE_KIT_BASE = "/models/naturekit/glTF";
+
+/**
+ * Maps our internal SceneryType names to nature kit glTF files.
+ * Multiple scenery types can share one model (with different scale/rotation).
+ */
+const NATURE_KIT_MAP: Record<string, string> = {
+	// Pines (5 variants) — cycle through for A-D variants
+	tree_pineTallA: "Pine_1",
+	tree_pineTallB: "Pine_2",
+	tree_pineTallC: "Pine_3",
+	tree_pineTallD: "Pine_4",
+	tree_pineSmallA: "Pine_5",
+	tree_pineSmallB: "Pine_1",
+	tree_pineSmallC: "Pine_2",
+	tree_pineSmallD: "Pine_3",
+	// Broadleaf trees
+	tree_pineDefaultB: "CommonTree_1",
+	// Rocks
+	rock_tallA: "Rock_Medium_1",
+	rock_tallB: "Rock_Medium_2",
+	rock_tallC: "Rock_Medium_3",
+	rock_tallD: "Rock_Medium_1",
+	rock_tallE: "Rock_Medium_2",
+	rock_tallF: "Rock_Medium_3",
+	rock_tallG: "Rock_Medium_1",
+	rock_tallH: "Rock_Medium_2",
+	rock_tallI: "Rock_Medium_3",
+	rock_tallJ: "Rock_Medium_1",
+	// Stones (pebbles)
+	stone_tallC: "Pebble_Round_1",
+	stone_tallD: "Pebble_Round_2",
+	stone_tallE: "Pebble_Round_3",
+	stone_tallF: "Pebble_Round_4",
+	stone_tallG: "Pebble_Round_5",
+	stone_tallH: "Pebble_Square_1",
+	stone_tallI: "Pebble_Square_2",
+	stone_tallJ: "Pebble_Square_3",
+	// Grass
+	grass: "Grass_Common_Short",
+	grass_large: "Grass_Common_Tall",
+	// Stumps
+	stump_old: "RockPath_Round_Small_1",
+	stump_round: "RockPath_Round_Small_2",
+	stump_square: "RockPath_Square_Small_1",
+	// Mushroom
+	mushroom_red: "Mushroom_Common",
+	// Log
+	log_large: "RockPath_Round_Wide",
+	// Pumpkin
+	crop_pumpkin: "Mushroom_Laetiporus",
+};
+
+/**
+ * Additional models to load beyond the mapped ones — for future use
+ * and to have variety available.
+ */
+const EXTRA_MODELS = [
+	"CommonTree_2",
+	"CommonTree_3",
+	"CommonTree_4",
+	"CommonTree_5",
+	"DeadTree_1",
+	"DeadTree_2",
+	"DeadTree_3",
+	"TwistedTree_1",
+	"TwistedTree_2",
+	"TwistedTree_3",
+	"Bush_Common",
+	"Bush_Common_Flowers",
+	"Fern_1",
+	"Clover_1",
+	"Clover_2",
+	"Flower_3_Group",
+	"Flower_4_Group",
+	"Plant_1",
+	"Plant_7",
+	"Grass_Wispy_Short",
+	"Grass_Wispy_Tall",
+	"Petal_1",
+	"Petal_2",
+	"Petal_3",
+	"RockPath_Round_Thin",
+	"RockPath_Square_Thin",
+	"Pebble_Round_1",
+	"Pebble_Square_1",
+];
+
 export async function loadDecorations(): Promise<void> {
 	if (decorationsLoaded) return;
 	decorationsLoaded = true;
 
 	const loader = new GLTFLoader();
-	let pending = 2;
-	const done = () => {
-		if (--pending === 0) {
-			console.log(`Loaded ${decorationCache.size} decoration models`);
-			resolveAll();
-		}
-	};
-	let resolveAll: () => void;
-	const promise = new Promise<void>((r) => {
-		resolveAll = r;
-	});
 
-	function loadGLB(url: string) {
-		loader.load(
-			url,
-			(gltf) => {
-				gltf.scene.traverse((node) => {
-					if (!node.name || !(node instanceof THREE.Object3D)) return;
-					const baseName = node.name.replace(/\.\d+$/, "");
-					if (!decorationCache.has(baseName)) {
-						const clone = node.clone() as THREE.Group;
-						clone.name = baseName;
-						decorationCache.set(baseName, clone);
-					}
-				});
-				done();
-			},
-			undefined,
-			(error) => {
-				console.error(`Failed to load ${url}:`, error);
-				done();
-			},
-		);
+	// Collect unique model files to load
+	const modelsToLoad = new Set<string>();
+	for (const gltfFile of Object.values(NATURE_KIT_MAP)) {
+		modelsToLoad.add(gltfFile);
+	}
+	for (const m of EXTRA_MODELS) {
+		modelsToLoad.add(m);
 	}
 
-	loadGLB("/models/maps/map1/decorations.glb");
-	loadGLB("/models/maps/map1/gates.glb");
+	const pending = modelsToLoad.size;
+	let loaded = 0;
+
+	const promise = new Promise<void>((resolve) => {
+		for (const modelName of modelsToLoad) {
+			const url = `${NATURE_KIT_BASE}/${modelName}.gltf`;
+			loader.load(
+				url,
+				(gltf) => {
+					// Cache the model under its original name
+					const group = gltf.scene;
+					group.name = modelName;
+					decorationCache.set(modelName, group);
+
+					// Also map to scenery types
+					for (const [sceneryType, gltfName] of Object.entries(NATURE_KIT_MAP)) {
+						if (gltfName === modelName && !decorationCache.has(sceneryType)) {
+							const clone = group.clone() as THREE.Group;
+							clone.name = sceneryType;
+							decorationCache.set(sceneryType, clone);
+						}
+					}
+
+					loaded++;
+					if (loaded === pending) {
+						console.log(
+							`Nature Kit: loaded ${loaded} models, ${decorationCache.size} cache entries`,
+						);
+						resolve();
+					}
+				},
+				undefined,
+				(error) => {
+					console.warn(`Failed to load nature kit model ${modelName}:`, error);
+					loaded++;
+					if (loaded === pending) {
+						// If nothing loaded, try Kenney fallback then procedural
+						if (decorationCache.size === 0) {
+							console.log("Nature Kit failed, trying Kenney GLB fallback");
+							loadKenneyFallback(loader).then(resolve);
+						} else {
+							resolve();
+						}
+					}
+				},
+			);
+		}
+	});
 
 	return promise;
 }
 
-const GLB_SCALE = 8;
+/** Fallback: try loading the old Kenney GLB files */
+function loadKenneyFallback(loader: GLTFLoader): Promise<void> {
+	let pending = 2;
+	return new Promise((resolve) => {
+		const done = () => {
+			if (--pending === 0) {
+				if (decorationCache.size === 0) {
+					console.log("Kenney GLB also failed, using procedural fallback");
+					buildProceduralScenery(fallbackBiomeName, decorationCache);
+				}
+				console.log(`Fallback: loaded ${decorationCache.size} decoration models`);
+				resolve();
+			}
+		};
+
+		function loadGLB(url: string) {
+			loader.load(
+				url,
+				(gltf) => {
+					gltf.scene.traverse((node) => {
+						if (!node.name || !(node instanceof THREE.Object3D)) return;
+						const baseName = node.name.replace(/\.\d+$/, "");
+						if (!decorationCache.has(baseName)) {
+							const clone = node.clone() as THREE.Group;
+							clone.name = baseName;
+							decorationCache.set(baseName, clone);
+						}
+					});
+					done();
+				},
+				undefined,
+				(error) => {
+					console.error(`Failed to load ${url}:`, error);
+					done();
+				},
+			);
+		}
+
+		loadGLB("/models/maps/map1/decorations.glb");
+		loadGLB("/models/maps/map1/gates.glb");
+	});
+}
 
 export function buildInstancedScenery(
 	scenery: SceneryItem[],
@@ -102,6 +324,8 @@ export function buildInstancedScenery(
 				continue;
 			}
 
+			const typeScale = MODEL_SCALE[type] ?? DEFAULT_MODEL_SCALE;
+
 			for (const entry of meshEntries) {
 				const instanced = new THREE.InstancedMesh(entry.geo, entry.mat, items.length);
 				instanced.castShadow = true;
@@ -109,7 +333,7 @@ export function buildInstancedScenery(
 
 				for (let i = 0; i < items.length; i++) {
 					const item = items[i];
-					const scale = GLB_SCALE * (item.scale ?? 1);
+					const scale = typeScale * (item.scale ?? 1);
 					const tY = terrain.getHeight(item.position.x, item.position.z);
 					dummy.position.set(item.position.x, tY, item.position.z);
 					dummy.rotation.set(0, item.rotation ?? 0, 0);
@@ -135,7 +359,8 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 	const cached = decorationCache.get(item.type);
 	if (cached) {
 		const obj = cached.clone();
-		obj.scale.setScalar(GLB_SCALE * (item.scale ?? 1));
+		const typeScale = MODEL_SCALE[item.type] ?? DEFAULT_MODEL_SCALE;
+		obj.scale.setScalar(typeScale * (item.scale ?? 1));
 		const tY = terrain.getHeight(item.position.x, item.position.z);
 		obj.position.set(item.position.x, tY, item.position.z);
 		obj.rotation.y = item.rotation ?? 0;
