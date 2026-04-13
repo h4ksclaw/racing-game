@@ -497,14 +497,24 @@ export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData 
 export function generateScenery(
 	seed: number,
 	samples: TrackSample[],
-	opts: { sceneryDensity?: number } = {},
+	opts: {
+		sceneryDensity?: number;
+		treeTypes?: SceneryType[];
+		grassTypes?: SceneryType[];
+		treeDensity?: number;
+		grassDensity?: number;
+		rockDensity?: number;
+	} = {},
 ): SceneryItem[] {
 	const rng = mulberry32(seed);
 	const sceneryDensity = opts.sceneryDensity ?? 1;
+	const treeDens = sceneryDensity * (opts.treeDensity ?? 1);
+	const grassDens = sceneryDensity * (opts.grassDensity ?? 1);
+	const rockDens = sceneryDensity * (opts.rockDensity ?? 1);
 	const scenery: SceneryItem[] = [];
 	const spacing = Math.max(3, Math.round(15 / sceneryDensity));
 
-	const TREE_TYPES: SceneryType[] = [
+	const TREE_TYPES: SceneryType[] = opts.treeTypes ?? [
 		"tree_pineTallA",
 		"tree_pineTallB",
 		"tree_pineTallC",
@@ -537,7 +547,7 @@ export function generateScenery(
 		"stone_tallI",
 		"stone_tallJ",
 	];
-	const GRASS_TYPES: SceneryType[] = ["grass", "grass_large"];
+	const GRASS_TYPES: SceneryType[] = opts.grassTypes ?? ["grass", "grass_large"];
 	const FOREST_DETAIL: SceneryType[] = [
 		"stump_old",
 		"stump_round",
@@ -569,7 +579,7 @@ export function generateScenery(
 		const rightCurve = curvature < -0.05;
 
 		// Trees (avoid tight curve inner side)
-		if (rng() < 0.85 * sceneryDensity) {
+		if (rng() < 0.85 * treeDens) {
 			const side = leftCurve ? 1 : rightCurve ? -1 : rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
 			const dist = 6 + rng() * 150;
@@ -582,7 +592,7 @@ export function generateScenery(
 			});
 		}
 		// Second tree (extra density)
-		if (rng() < 0.85 * sceneryDensity) {
+		if (rng() < 0.85 * treeDens) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
 			const dist = 8 + rng() * 150;
@@ -595,7 +605,7 @@ export function generateScenery(
 			});
 		}
 		// Third tree (extra density)
-		if (rng() < 0.75 * sceneryDensity) {
+		if (rng() < 0.75 * treeDens) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
 			const dist = 10 + rng() * 150;
@@ -608,7 +618,7 @@ export function generateScenery(
 			});
 		}
 		// Fourth tree (wider spread)
-		if (rng() < 0.65 * sceneryDensity) {
+		if (rng() < 0.65 * treeDens) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
 			const dist = 15 + rng() * 200;
@@ -622,7 +632,7 @@ export function generateScenery(
 		}
 
 		// Fifth tree (very wide spread, smaller trees)
-		if (rng() < 0.5 * sceneryDensity) {
+		if (rng() < 0.5 * treeDens) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
 			const dist = 20 + rng() * 250;
@@ -636,7 +646,7 @@ export function generateScenery(
 		}
 
 		// Rocky outcrops — dense clusters of rocks and stones
-		if (rng() < 0.12 * sceneryDensity) {
+		if (rng() < 0.12 * rockDens) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
 			const basePos = v3Add(offset, v3Scale(s.binormal, side * (5 + rng() * 20)));
@@ -730,7 +740,7 @@ export function generateScenery(
 		}
 
 		// Mushroom groves — clustered stumps, mushrooms, logs
-		if (rng() < 0.15 * sceneryDensity) {
+		if (rng() < 0.15 * grassDens) {
 			const side = rng() < 0.5 ? -1 : 1;
 			const offset = side === -1 ? s.grassLeft : s.grassRight;
 			const basePos = v3Add(offset, v3Scale(s.binormal, side * (8 + rng() * 40)));

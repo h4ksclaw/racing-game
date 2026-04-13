@@ -2,6 +2,7 @@ import type { TrackSample } from "@shared/track.ts";
 import { mulberry32 } from "@shared/track.ts";
 import { createNoise2D } from "simplex-noise";
 import * as THREE from "three";
+import type { BiomeConfig } from "./biomes.ts";
 import { state } from "./scene.ts";
 import type { TrackResponse } from "./utils.ts";
 import { smoothstep } from "./utils.ts";
@@ -46,14 +47,21 @@ export class TerrainSampler {
 	avgRoadY: number;
 	private readonly cellSize = 10;
 	private readonly noiseScale = 0.003;
-	private readonly noiseAmp = 60;
+	private noiseAmp: number;
+	private mountainAmp: number;
 	private readonly roadInfluence = 40;
 	private readonly blendStart = 15;
 
-	constructor(seed: number, samples: TrackSample[]) {
+	constructor(
+		seed: number,
+		samples: TrackSample[],
+		opts: { noiseAmp?: number; mountainAmp?: number } = {},
+	) {
 		const rng = mulberry32(seed + 99999);
 		this.noise2D = createNoise2D(rng);
 		this.samples = samples;
+		this.noiseAmp = opts.noiseAmp ?? 60;
+		this.mountainAmp = opts.mountainAmp ?? 3;
 
 		let sumY = 0;
 		for (const s of samples) sumY += s.point.y;
@@ -108,7 +116,7 @@ export class TerrainSampler {
 	getHeight(x: number, z: number): number {
 		const { dist, sample } = this.nearestRoad(x, z);
 		const centerDist = Math.sqrt(x * x + z * z);
-		const mountainFactor = 1 + smoothstep(600, 900, centerDist) * 3;
+		const mountainFactor = 1 + smoothstep(600, 900, centerDist) * this.mountainAmp;
 		const noiseH =
 			this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp * mountainFactor;
 		const blend = smoothstep(this.blendStart, this.roadInfluence, dist);
@@ -120,25 +128,31 @@ export class TerrainSampler {
 
 const TERRAIN_TEX_REPEAT = 800; // 2m per texture tile (1600/800)
 let terrainTextures: Record<string, THREE.Texture> | null = null;
+let loadedBiome: string | null = null;
 
-async function loadTerrainTextures(): Promise<Record<string, THREE.Texture>> {
-	if (terrainTextures) return terrainTextures;
-	const base = "/textures";
+async function loadTerrainTextures(biome: {
+	textures: { grass: string; dirt: string; rock: string; snow: string; moss: string };
+	name: string;
+}): Promise<Record<string, THREE.Texture>> {
+	// Reload if biome changed
+	if (terrainTextures && loadedBiome === biome.name) return terrainTextures;
+	const tex = biome.textures;
 	const [grassC, grassN, dirtC, dirtN, rockC, rockN, snowC, snowN, mossC, mossN] =
 		await Promise.all([
-			loadTex(`${base}/grass/Grass004_1K-JPG_Color.jpg`),
-			loadTexLinear(`${base}/grass/Grass004_1K-JPG_NormalGL.jpg`),
-			loadTex(`${base}/dirt/Ground015_1K-JPG_Color.jpg`),
-			loadTexLinear(`${base}/dirt/Ground015_1K-JPG_NormalGL.jpg`),
-			loadTex(`${base}/rock_mossy/Rock011_1K-JPG_Color.jpg`),
-			loadTexLinear(`${base}/rock_mossy/Rock011_1K-JPG_NormalGL.jpg`),
-			loadTex(`${base}/snow/Ground061_1K-JPG_Color.jpg`),
-			loadTexLinear(`${base}/snow/Ground061_1K-JPG_NormalGL.jpg`),
-			loadTex(`${base}/moss/Moss002_1K-JPG_Color.jpg`),
-			loadTexLinear(`${base}/moss/Moss002_1K-JPG_NormalGL.jpg`),
+			loadTex(`${tex.grass}_Color.jpg`),
+			loadTexLinear(`${tex.grass}_NormalGL.jpg`),
+			loadTex(`${tex.dirt}_Color.jpg`),
+			loadTexLinear(`${tex.dirt}_NormalGL.jpg`),
+			loadTex(`${tex.rock}_Color.jpg`),
+			loadTexLinear(`${tex.rock}_NormalGL.jpg`),
+			loadTex(`${tex.snow}_Color.jpg`),
+			loadTexLinear(`${tex.snow}_NormalGL.jpg`),
+			loadTex(`${tex.moss}_Color.jpg`),
+			loadTexLinear(`${tex.moss}_NormalGL.jpg`),
 		]);
 	// ShaderMaterial handles UV tiling via uTexRepeat uniform
 	terrainTextures = { grassC, grassN, dirtC, dirtN, rockC, rockN, snowC, snowN, mossC, mossN };
+	loadedBiome = biome.name;
 	return terrainTextures;
 }
 
@@ -188,6 +202,11 @@ uniform vec3 uFogColor;
 uniform float uTexRepeat;
 uniform float uFogNear;
 uniform float uFogFar;
+uniform vec3 uGrassTint;
+uniform vec3 uDirtTint;
+uniform vec3 uRockTint;
+uniform float uSnowThreshold;
+uniform float uRockThreshold;
 
 varying vec2 vUv;
 varying vec3 vWorldPos;
@@ -209,8 +228,8 @@ void main() {
 	float noise2 = vBlend1.y;
 	float nearRoad = vBlend1.z;
 
-	float wRock = smoothstep(0.3, 0.7, slope);
-	float wSnow = smoothstep(60.0, 90.0, aboveRoad);
+	float wRock = smoothstep(uRockThreshold, uRockThreshold + 0.2, slope);
+	float wSnow = smoothstep(uSnowThreshold, uSnowThreshold + 30.0, aboveRoad);
 	float wNearMoss = smoothstep(0.0, 1.0, nearRoad) * (0.5 + 0.5 * noise1);
 	float wBelowDirt = smoothstep(0.0, -10.0, aboveRoad);
 	float wFarDirt = smoothstep(40.0, 80.0, dist) * (0.3 + 0.7 * noise2);
@@ -237,7 +256,7 @@ void main() {
 	vec3 snow = texture2D(tSnowC, vUv).rgb;
 	vec3 moss = texture2D(tMossC, vUv).rgb;
 
-	vec3 baseColor = grass * wGrass + dirt * (wBelowDirt + wFarDirt) + rock * wRock + snow * wSnow + moss * wNearMoss;
+	vec3 baseColor = grass * uGrassTint * wGrass + dirt * uDirtTint * (wBelowDirt + wFarDirt) + rock * uRockTint * wRock + snow * wSnow + moss * uGrassTint * wNearMoss;
 
 	vec3 N = normalize(vNormal);
 	vec3 nGrass = perturbNormal(N, vUv, tGrassN);
@@ -265,9 +284,10 @@ void main() {
 export async function buildTerrain(
 	_data: TrackResponse,
 	terrain: TerrainSampler,
+	biome: BiomeConfig,
 ): Promise<THREE.Group> {
 	const group = new THREE.Group();
-	const tex = await loadTerrainTextures();
+	const tex = await loadTerrainTextures(biome);
 
 	const worldSize = 1600;
 	const segments = 256;
@@ -332,9 +352,14 @@ export async function buildTerrain(
 			uAmbientColor: { value: new THREE.Color(0.4, 0.45, 0.5) },
 			uAmbientIntensity: { value: 0.8 },
 			uTexRepeat: { value: TERRAIN_TEX_REPEAT },
-			uFogColor: { value: new THREE.Color(0.75, 0.8, 0.85) },
-			uFogNear: { value: 500.0 },
-			uFogFar: { value: 1500.0 },
+			uFogColor: { value: new THREE.Color(...biome.fogColor) },
+			uFogNear: { value: biome.fogNear },
+			uFogFar: { value: biome.fogFar },
+			uGrassTint: { value: new THREE.Color(...biome.grassTint) },
+			uDirtTint: { value: new THREE.Color(...biome.dirtTint) },
+			uRockTint: { value: new THREE.Color(...biome.rockTint) },
+			uSnowThreshold: { value: biome.snowThreshold },
+			uRockThreshold: { value: biome.rockThreshold },
 		},
 	});
 

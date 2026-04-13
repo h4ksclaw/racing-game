@@ -12,7 +12,7 @@
 - [x] **Procedural sky** — Three.js Sky addon (turbidity, rayleigh, sun position)
 - [x] **Day/night cycle** — Time keyframes interpolating sun/ambient/fog/sky
 - [x] **Night mode** — Headlights, street lights, stars, moon
-- [ ] **Weather: Rain** — Particle system + wet road + fog
+- [x] **Weather: Rain** — Particle system + fog (done in Phase 2)
 - [x] **Weather: Rain/Snow/Fog/Cloudy** — All particle systems + fog/light/turbidity modifiers
 
 ### Phase 3: Textures & Materials
@@ -21,7 +21,7 @@
 - [x] **Texture manager** — Load textures per biome, apply to terrain
 - [x] **Terrain shader** — Blend textures by slope/height/distance instead of vertex colors
 - [x] **Normal maps on terrain** — Surface detail without more geometry
-- [ ] **Road texture upgrade** — Use ambientCG road textures with baked markings
+- [x] **Road texture upgrade** — ambientCG Road007 PBR + lane marking geometry
 
 ### Phase 4: Biome System
 - [ ] **Biome config interface** — TypeScript types for biome definitions
@@ -31,10 +31,10 @@
 - [ ] **Per-biome atmosphere** — Fog, lighting, sky color
 
 ### Phase 5: Weather
-- [ ] **Rain** — Particle system + wet road texture + fog increase
-- [ ] **Snow** — Slow drifting particles + terrain accumulation
-- [ ] **Fog** — Density control
-- [ ] **Cloudy** — Sky turbidity + dimmed sun
+- [x] **Rain** — 15k particles + fog (done)
+- [x] **Snow** — 8k drifting particles (done)
+- [x] **Fog** — Density control (done)
+- [x] **Cloudy** — Sky turbidity + dimmed sun (done)
 - [ ] **Weather transitions** — Smooth crossfade between states
 - [x] ~~Rain/Snow/Fog/Cloudy~~ — Implemented in Phase 2 (see above)
 

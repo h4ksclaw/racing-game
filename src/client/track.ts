@@ -1,6 +1,7 @@
 import { generateScenery, generateTrack, mulberry32 } from "@shared/track.ts";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { getBiomeForSeed } from "./biomes.ts";
 import { buildGuardrails, buildMeshes } from "./road.ts";
 import { state } from "./scene.ts";
 import { buildInstancedScenery, loadDecorations } from "./scenery.ts";
@@ -51,12 +52,22 @@ async function buildScene(data: TrackResponse) {
 	clearScene();
 
 	const scene = new THREE.Scene();
+
+	// Biome
+	const biome = getBiomeForSeed(data.seed);
+
 	scene.background = new THREE.Color(0x87ceeb);
-	scene.fog = new THREE.Fog(0x88aacc, 500, 1500);
+	scene.fog = new THREE.Fog(
+		new THREE.Color(...biome.fogColor).getHex(),
+		biome.fogNear,
+		biome.fogFar,
+	);
 	state.scene = scene;
 
 	// Sky
 	state.skyUniforms = setupSky(scene);
+	state.skyUniforms.turbidity.value = biome.skyTurbidity;
+	state.skyUniforms.rayleigh.value = biome.skyRayleigh;
 
 	// Lights
 	scene.add(new THREE.HemisphereLight(0x88bbff, 0x445511, 0.6));
@@ -94,15 +105,24 @@ async function buildScene(data: TrackResponse) {
 	scene.add(snow.points);
 
 	// Terrain
-	const terrain = new TerrainSampler(data.seed, data.samples);
-	scene.add(await buildTerrain(data, terrain));
+	const terrain = new TerrainSampler(data.seed, data.samples, {
+		noiseAmp: biome.noiseAmp,
+		mountainAmp: biome.mountainAmplifier,
+	});
+	scene.add(await buildTerrain(data, terrain, biome));
 
 	// Track meshes
 	const rng = mulberry32(data.seed);
 	scene.add(await buildMeshes(data, rng));
 
 	// Scenery
-	const scenery = generateScenery(data.seed, data.samples);
+	const scenery = generateScenery(data.seed, data.samples, {
+		treeTypes: biome.treeTypes,
+		grassTypes: biome.grassTypes,
+		treeDensity: biome.treeDensity,
+		grassDensity: biome.grassDensity,
+		rockDensity: biome.rockDensity,
+	});
 	await loadDecorations();
 	scene.add(buildInstancedScenery(scenery, terrain));
 
@@ -139,7 +159,7 @@ async function buildScene(data: TrackResponse) {
 	};
 
 	if (infoEl) {
-		infoEl.textContent = `Seed: ${data.seed} | Length: ${data.length.toFixed(0)}m | Samples: ${data.numSamples} | Elev: ${data.elevationRange.min.toFixed(1)}...${data.elevationRange.max.toFixed(1)} | Scenery: ${scenery.length}`;
+		infoEl.textContent = `Seed: ${data.seed} | Biome: ${biome.name} | Length: ${data.length.toFixed(0)}m | Samples: ${data.numSamples} | Scenery: ${scenery.length}`;
 	}
 
 	applyTimeOfDay(state.currentTime);
