@@ -24,20 +24,6 @@ function loadTex(path: string): Promise<THREE.Texture> {
 	});
 }
 
-function loadTexLinear(path: string): Promise<THREE.Texture> {
-	return new Promise((resolve, reject) => {
-		new THREE.TextureLoader().load(
-			path,
-			(tex) => {
-				tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-				resolve(tex);
-			},
-			undefined,
-			reject,
-		);
-	});
-}
-
 // ── TerrainSampler ──────────────────────────────────────────────────────
 
 export class TerrainSampler {
@@ -49,6 +35,7 @@ export class TerrainSampler {
 	private readonly noiseScale = 0.003;
 	private noiseAmp: number;
 	private mountainAmp: number;
+	private heightCache = new Map<string, number>();
 	private readonly roadInfluence = 50;
 	private readonly blendStart = 20;
 
@@ -114,22 +101,32 @@ export class TerrainSampler {
 	}
 
 	getHeight(x: number, z: number): number {
+		// Quantize to 1m grid for caching
+		const qx = Math.round(x);
+		const qz = Math.round(z);
+		const cacheKey = `${qx},${qz}`;
+		const cached = this.heightCache.get(cacheKey);
+		if (cached !== undefined) return cached;
+
 		const { dist, sample } = this.nearestRoad(x, z);
 		const centerDist = Math.sqrt(x * x + z * z);
 		const mountainFactor = 1 + smoothstep(600, 900, centerDist) * this.mountainAmp;
 		const noiseH =
 			this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp * mountainFactor;
 		const blend = smoothstep(this.blendStart, this.roadInfluence, dist);
-		// Ramp noise amplitude gradually — prevents steep cliffs near road
-		const noiseRamp = smoothstep(this.blendStart, this.roadInfluence + 60, dist);
-		const rampedNoise = noiseH * noiseRamp;
-		return sample.point.y * (1 - blend) + (this.avgRoadY + rampedNoise) * blend - 0.3;
+		const blendedY = sample.point.y * (1 - blend) + (this.avgRoadY + noiseH) * blend;
+		// Clamp height difference to prevent cliffs: max 0.4m rise per 1m from road
+		const maxSlope = dist * 0.4;
+		const result =
+			Math.max(sample.point.y - maxSlope, Math.min(sample.point.y + maxSlope, blendedY)) - 0.3;
+		this.heightCache.set(cacheKey, result);
+		return result;
 	}
 }
 
 // ── Terrain textures ────────────────────────────────────────────────────
 
-const TERRAIN_TEX_REPEAT = 800; // 2m per texture tile (1600/800)
+const TERRAIN_TEX_REPEAT = 400; // 4m per texture tile (1600/400)
 let terrainTextures: Record<string, THREE.Texture> | null = null;
 let loadedBiome: string | null = null;
 
@@ -140,21 +137,15 @@ async function loadTerrainTextures(biome: {
 	// Reload if biome changed
 	if (terrainTextures && loadedBiome === biome.name) return terrainTextures;
 	const tex = biome.textures;
-	const [grassC, grassN, dirtC, dirtN, rockC, rockN, snowC, snowN, mossC, mossN] =
-		await Promise.all([
-			loadTex(`${tex.grass}_Color.jpg`),
-			loadTexLinear(`${tex.grass}_NormalGL.jpg`),
-			loadTex(`${tex.dirt}_Color.jpg`),
-			loadTexLinear(`${tex.dirt}_NormalGL.jpg`),
-			loadTex(`${tex.rock}_Color.jpg`),
-			loadTexLinear(`${tex.rock}_NormalGL.jpg`),
-			loadTex(`${tex.snow}_Color.jpg`),
-			loadTexLinear(`${tex.snow}_NormalGL.jpg`),
-			loadTex(`${tex.moss}_Color.jpg`),
-			loadTexLinear(`${tex.moss}_NormalGL.jpg`),
-		]);
+	const [grassC, dirtC, rockC, snowC, mossC] = await Promise.all([
+		loadTex(`${tex.grass}_Color.jpg`),
+		loadTex(`${tex.dirt}_Color.jpg`),
+		loadTex(`${tex.rock}_Color.jpg`),
+		loadTex(`${tex.snow}_Color.jpg`),
+		loadTex(`${tex.moss}_Color.jpg`),
+	]);
 	// ShaderMaterial handles UV tiling via uTexRepeat uniform
-	terrainTextures = { grassC, grassN, dirtC, dirtN, rockC, rockN, snowC, snowN, mossC, mossN };
+	terrainTextures = { grassC, dirtC, rockC, snowC, mossC };
 	loadedBiome = biome.name;
 	return terrainTextures;
 }
@@ -187,15 +178,10 @@ const terrainFragmentShader = /* glsl */ `
 precision highp float;
 
 uniform sampler2D tGrassC;
-uniform sampler2D tGrassN;
 uniform sampler2D tDirtC;
-uniform sampler2D tDirtN;
 uniform sampler2D tRockC;
-uniform sampler2D tRockN;
 uniform sampler2D tSnowC;
-uniform sampler2D tSnowN;
 uniform sampler2D tMossC;
-uniform sampler2D tMossN;
 uniform vec3 uSunDir;
 uniform float uSunIntensity;
 uniform vec3 uSunColor;
@@ -216,12 +202,6 @@ varying vec3 vWorldPos;
 varying vec3 vNormal;
 varying vec3 vBlend0;
 varying vec3 vBlend1;
-
-vec3 perturbNormal(vec3 N, vec2 uv, sampler2D normalMap) {
-	vec3 nm = texture2D(normalMap, uv).rgb * 2.0 - 1.0;
-	nm.xy *= 1.5;
-	return normalize(N + nm * 0.3);
-}
 
 void main() {
 	float aboveRoad = vBlend0.x;
@@ -262,16 +242,8 @@ void main() {
 	vec3 baseColor = grass * uGrassTint * wGrass + dirt * uDirtTint * (wBelowDirt + wFarDirt) + rock * uRockTint * wRock + snow * wSnow + moss * uGrassTint * wNearMoss;
 
 	vec3 N = normalize(vNormal);
-	vec3 nGrass = perturbNormal(N, vUv, tGrassN);
-	vec3 nDirt = perturbNormal(N, vUv, tDirtN);
-	vec3 nRock = perturbNormal(N, vUv, tRockN);
-	vec3 nSnow = perturbNormal(N, vUv, tSnowN);
-	vec3 nMoss = perturbNormal(N, vUv, tMossN);
-	vec3 blendedNormal = nGrass * wGrass + nDirt * (wBelowDirt + wFarDirt) + nRock * wRock + nSnow * wSnow + nMoss * wNearMoss;
-	blendedNormal = normalize(blendedNormal);
-
 	vec3 sunDir = normalize(uSunDir);
-	float NdotL = max(dot(blendedNormal, sunDir), 0.0);
+	float NdotL = max(dot(N, sunDir), 0.0);
 	vec3 diffuse = baseColor * (uAmbientColor * uAmbientIntensity + uSunColor * NdotL * uSunIntensity);
 
 	float fogDist = length(vWorldPos - cameraPosition);
@@ -293,7 +265,7 @@ export async function buildTerrain(
 	const tex = await loadTerrainTextures(biome);
 
 	const worldSize = 1600;
-	const segments = 400;
+	const segments = 256;
 
 	const geometry = new THREE.PlaneGeometry(worldSize, worldSize, segments, segments);
 	geometry.rotateX(-Math.PI / 2);
@@ -340,15 +312,10 @@ export async function buildTerrain(
 		fragmentShader: terrainFragmentShader,
 		uniforms: {
 			tGrassC: { value: tex.grassC },
-			tGrassN: { value: tex.grassN },
 			tDirtC: { value: tex.dirtC },
-			tDirtN: { value: tex.dirtN },
 			tRockC: { value: tex.rockC },
-			tRockN: { value: tex.rockN },
 			tSnowC: { value: tex.snowC },
-			tSnowN: { value: tex.snowN },
 			tMossC: { value: tex.mossC },
-			tMossN: { value: tex.mossN },
 			uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
 			uSunIntensity: { value: 1.0 },
 			uSunColor: { value: new THREE.Color(1.0, 0.95, 0.85) },
