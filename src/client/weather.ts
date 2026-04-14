@@ -243,7 +243,7 @@ export function applyWeather(weather: WeatherType): void {
 	}
 	// Sync terrain shader fog and lighting uniforms with weather
 	if (state.terrainMaterial) {
-		if (sc && sc.fog) {
+		if (sc?.fog) {
 			const tf = sc.fog as THREE.Fog;
 			state.terrainMaterial.uniforms.uFogColor.value.copy(tf.color);
 			state.terrainMaterial.uniforms.uFogNear.value = tf.near;

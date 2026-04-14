@@ -492,9 +492,9 @@ export async function buildMeshes(
 
 	// ── Concrete base slab (narrow strip under road edges) ──
 	if (concreteVerts.length > 0) {
-		const concreteColorMap = await loadTex(slabCfg.texture + "_Color.jpg");
-		const concreteNormalMap = await loadTex(slabCfg.texture + "_NormalGL.jpg", false);
-		const concreteRoughMap = await loadTex(slabCfg.texture + "_Roughness.jpg", false);
+		const concreteColorMap = await loadTex(`${slabCfg.texture}_Color.jpg`);
+		const concreteNormalMap = await loadTex(`${slabCfg.texture}_NormalGL.jpg`, false);
+		const concreteRoughMap = await loadTex(`${slabCfg.texture}_Roughness.jpg`, false);
 
 		// Concrete slab shader: fades to transparent at outer edge (u=1) for terrain blend
 		const concreteVertShader = `

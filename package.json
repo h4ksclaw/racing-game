@@ -15,7 +15,9 @@
     "check": "tsc --noEmit && biome check src/ && bash scripts/knip.sh",
     "fix": "biome check --write src/ && tsc --noEmit",
     "prepare": "husky",
-    "knip": "bash scripts/knip.sh"
+    "knip": "bash scripts/knip.sh",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "lint-staged": {
     "src/**/*.{ts,tsx}": [
@@ -34,7 +36,8 @@
     "lint-staged": "^15.5.2",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
-    "vite": "^8.0.8"
+    "vite": "^8.0.8",
+    "vitest": "^4.1.4"
   },
   "dependencies": {
     "express": "^5.2.1",
