@@ -200,6 +200,24 @@ export async function buildMeshes(
 	};
 	let roadDist = 0;
 
+	// Pre-compute curvature at each sample (tangent angle change)
+	const curvature = new Float32Array(samples.length);
+	for (let i = 1; i < samples.length - 1; i++) {
+		const prev = samples[i - 1].tangent;
+		const curr = samples[i].tangent;
+		const dot = prev.x * curr.x + prev.z * curr.z;
+		const cross = prev.x * curr.z - prev.z * curr.x;
+		curvature[i] = Math.atan2(cross, dot);
+	}
+	curvature[0] = curvature[1] || 0;
+	curvature[samples.length - 1] = curvature[samples.length - 2] || 0;
+
+	// Crown height (center of road is higher for drainage on straights)
+	const CROWN_HEIGHT = 0.08; // ~2% on a 4m half-width
+	// Max superelevation (outer edge raised on curves)
+	const SUPER_MAX = 0.15; // ~3.5% at tightest curves
+	const SUPER_SENSITIVITY = 40.0; // curvature multiplier (tune this)
+
 	const KERB_RED = [0.8, 0.2, 0.2];
 	const KERB_WHITE = [0.9, 0.9, 0.9];
 	const kerbStripeLen = 2.0;
@@ -213,22 +231,42 @@ export async function buildMeshes(
 			roadDist += Math.sqrt(dx * dx + dy * dy + dz * dz);
 		}
 
-		roadVerts.push(s.left.x, s.left.y + 0.02, s.left.z, s.right.x, s.right.y + 0.02, s.right.z);
+		// Road cross-section deformation (crown + superelevation)
+		const k = curvature[i];
+		const absK = Math.abs(k);
+		const signK = Math.sign(k);
+		// On curves, superelevation replaces crown; blend between them
+		const superFactor = Math.min(absK * SUPER_SENSITIVITY, 1.0);
+		// Crown: center high, edges low. k>0 = turning left = outer is right
+		const crownDrop = CROWN_HEIGHT * (1 - superFactor); // fades out in curves
+		const superRise = SUPER_MAX * superFactor; // grows in curves
+		// Left edge: crown drops it, superelevation raises inner (k>0 → left is inner)
+		const leftDrop = crownDrop - superRise * signK;
+		const rightDrop = crownDrop + superRise * signK;
+
+		roadVerts.push(
+			s.left.x,
+			s.left.y + 0.02 - leftDrop,
+			s.left.z,
+			s.right.x,
+			s.right.y + 0.02 - rightDrop,
+			s.right.z,
+		);
 		roadUVs.push(0, roadDist / 4, 1, roadDist / 4);
 
-		// ── Kerb (flat, same as before) ──
+		// ── Kerb (follows road cross slope) ──
 		kerbVerts.push(
 			s.left.x,
-			s.left.y + 0.03,
+			s.left.y + 0.03 - leftDrop,
 			s.left.z,
 			s.kerbLeft.x,
-			s.kerbLeft.y + 0.03,
+			s.kerbLeft.y + 0.03 - leftDrop * 0.5,
 			s.kerbLeft.z,
 			s.right.x,
-			s.right.y + 0.03,
+			s.right.y + 0.03 - rightDrop,
 			s.right.z,
 			s.kerbRight.x,
-			s.kerbRight.y + 0.03,
+			s.kerbRight.y + 0.03 - rightDrop * 0.5,
 			s.kerbRight.z,
 		);
 		const stripe = Math.floor(roadDist / kerbStripeLen) % 2 === 0 ? KERB_RED : KERB_WHITE;
