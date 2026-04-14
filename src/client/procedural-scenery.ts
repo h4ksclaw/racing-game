@@ -346,7 +346,7 @@ function createPumpkin(): THREE.Group {
 
 // ── Master registry ─────────────────────────────────────────────────────
 
-type SceneryType =
+export type SceneryType =
 	| "tree_pineTallA"
 	| "tree_pineTallB"
 	| "tree_pineTallC"
