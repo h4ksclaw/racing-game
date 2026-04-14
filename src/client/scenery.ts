@@ -450,35 +450,28 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 							roughness: 0.25,
 						});
 					} else if (matName === "grey") {
-						// Post body + light housing — white/silver with emissive glow
+						// Post body — white/silver metallic
 						const isAutumnWoods = currentLightModel?.includes("lightPost_exclusive");
 						child.material = new THREE.MeshStandardMaterial({
 							color: 0xdddddd,
 							emissive: 0xffffcc,
-							emissiveIntensity: isAutumnWoods ? 0.2 : 0.6,
+							emissiveIntensity: isAutumnWoods ? 0.05 : 0.6,
 							metalness: 0.5,
 							roughness: 0.2,
 						});
-						// Bloom multiplier: Autumn Woods gets much less bloom
-						child.userData.bloomMult = isAutumnWoods ? 0.25 : 1.0;
-						state.lightFixtures.push(child as THREE.Mesh);
-						// Track highest point for PointLight placement (in local coords)
+						if (!isAutumnWoods) {
+							state.lightFixtures.push(child as THREE.Mesh);
+						}
+						// Track highest point for light placement (in local coords)
 						const box = new THREE.Box3().setFromObject(child);
 						if (box.max.y > lightWorldY) lightWorldY = box.max.y;
 					} else if (matName === "pylon") {
-						// Arm/bracket — white metallic, slight glow for Autumn Woods
-						const isAutumnWoods = currentLightModel?.includes("lightPost_exclusive");
+						// Arm/bracket — white metallic, no bloom
 						child.material = new THREE.MeshStandardMaterial({
 							color: 0xcccccc,
 							metalness: 0.6,
 							roughness: 0.3,
-							emissive: isAutumnWoods ? 0xffffcc : 0x000000,
-							emissiveIntensity: 0.8,
 						});
-						if (isAutumnWoods) {
-							child.userData.bloomMult = 0.5;
-							state.lightFixtures.push(child as THREE.Mesh);
-						}
 					} else if (matName === "road") {
 						// Base plate — dark matte
 						child.material = new THREE.MeshStandardMaterial({
@@ -523,13 +516,28 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 				const isAutumnWoods = currentLightModel?.includes("lightPost_exclusive");
 				let light: THREE.Light;
 				if (isAutumnWoods) {
-					// SpotLight: 45° cone aimed toward road (downward toward -Z in local space)
+					// SpotLight: 45° cone aimed straight down (right below the light)
 					const spot = new THREE.SpotLight(0xffeeaa, 0, 60, Math.PI / 4, 0.5, 2);
 					spot.position.set(0, lightWorldY * LIGHT_MODEL_SCALE, 0);
-					spot.target.position.set(0, 0, -8);
+					spot.target.position.set(0, 0, 0);
 					group.add(spot);
 					group.add(spot.target);
 					light = spot;
+
+					// Bloom only at the light tip (small emissive sphere at arm end)
+					const tipBulb = new THREE.Mesh(
+						new THREE.SphereGeometry(0.08, 8, 8),
+						new THREE.MeshStandardMaterial({
+							color: 0xffffee,
+							emissive: 0xffffcc,
+							emissiveIntensity: 0.6,
+						}),
+					);
+					// Arm tip in local space is approx (0, 0.71, 0.08), scaled by LIGHT_MODEL_SCALE
+					tipBulb.position.set(0, 0.71 * LIGHT_MODEL_SCALE, 0.08 * LIGHT_MODEL_SCALE);
+					tipBulb.userData.bloomMult = 0.5;
+					group.add(tipBulb);
+					state.lightFixtures.push(tipBulb);
 				} else {
 					const pointLight = new THREE.PointLight(0xffeeaa, 0, 60, 2);
 					pointLight.position.set(0, lightWorldY * LIGHT_MODEL_SCALE, 0);
