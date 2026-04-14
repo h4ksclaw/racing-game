@@ -304,5 +304,16 @@ window.addEventListener("resize", () => {
 	updateBloomSize();
 });
 
+// Debug: press 'D' to toggle terrain blend weight visualization
+window.addEventListener("keydown", (e) => {
+	if (e.key === "d" || e.key === "D") {
+		const m = state.terrainMaterial;
+		if (!m) return;
+		const cur = m.uniforms.uDebugMode.value as number;
+		m.uniforms.uDebugMode.value = cur > 0.5 ? 0.0 : 1.0;
+		console.log("Terrain debug mode:", m.uniforms.uDebugMode.value > 0.5 ? "ON" : "OFF");
+	}
+});
+
 generate();
 animate();

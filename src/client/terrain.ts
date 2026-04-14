@@ -272,6 +272,7 @@ uniform float uDirtFarDist;
 uniform float uFarDirtStart;
 uniform float uFarDirtEnd;
 uniform float uPatchNoiseStrength;
+uniform float uDebugMode;
 uniform int uStreetLightCount;
 uniform vec3 uStreetLightPos[4];
 uniform vec3 uStreetLightColor[4];
@@ -373,7 +374,7 @@ void main() {
 	// Add Voronoi-driven rock patches on moderate slopes
 	wRock = max(wRock, smoothstep(0.55, 0.7, terrainNoise) * slopeBias * 0.5);
 
-	float wSnowRaw = smoothstep(uSnowThreshold, uSnowThreshold + 15.0, aboveRoad);
+	float wSnowRaw = smoothstep(uSnowThreshold, uSnowThreshold + 30.0, aboveRoad);
 	float snowBreakup = smoothstep(0.3, 0.7, terrainNoise);
 	float heightFactor = smoothstep(uSnowThreshold, uSnowThreshold + 60.0, aboveRoad);
 	float wSnow = wSnowRaw * mix(snowBreakup, 1.0, heightFactor);
@@ -473,6 +474,8 @@ void main() {
 	float blendedAO = grassAO * wGrass + dirtAO * (wBelowDirt + wFarDirt) + rockAO * wRock + snowAO * (wSnow + wGrassPatch) + mossAO * wNearMoss;
 	blendedRough = clamp(blendedRough, 0.0, 1.0);
 	blendedAO = clamp(blendedAO, 0.0, 1.0);
+	// Gentle AO — blend 70% full brightness with 30% actual AO to avoid over-darkening
+	blendedAO = mix(1.0, blendedAO, 0.3);
 
 	vec3 baseColor = grass * uGrassTint * wGrass + dirt * uDirtTint * (wBelowDirt + wFarDirt) + rock * uRockTint * wRock + snow * (wSnow + wGrassPatch) + moss * uGrassTint * wNearMoss;
 
@@ -512,6 +515,18 @@ void main() {
 	float fogDist = length(vWorldPos - cameraPosition);
 	float fogFactor = smoothstep(uFogNear, uFogFar, fogDist);
 	vec3 color = mix(diffuse, uFogColor, fogFactor);
+
+	// Debug: show blend weights as colors (set uDebugMode > 0.5 to enable)
+	if (uDebugMode > 0.5) {
+		// Grass=green, Rock=red, Snow=white, Moss=blue, BelowDirt=orange, FarDirt=yellow, GrassPatch=magenta
+		color = vec3(0.0, 0.8, 0.0) * wGrass
+			+ vec3(0.8, 0.2, 0.0) * wRock
+			+ vec3(1.0, 1.0, 1.0) * wSnow
+			+ vec3(0.0, 0.2, 0.8) * wNearMoss
+			+ vec3(1.0, 0.5, 0.0) * wBelowDirt
+			+ vec3(1.0, 1.0, 0.0) * wFarDirt
+			+ vec3(0.8, 0.0, 0.8) * wGrassPatch;
+	}
 
 	gl_FragColor = vec4(color, 1.0);
 }
@@ -626,6 +641,7 @@ export async function buildTerrain(
 			uFarDirtStart: { value: biome.farDirtStart ?? 40.0 },
 			uFarDirtEnd: { value: biome.farDirtEnd ?? 80.0 },
 			uPatchNoiseStrength: { value: biome.patchNoiseStrength ?? 0.7 },
+			uDebugMode: { value: 0.0 },
 		},
 	});
 

@@ -564,7 +564,7 @@ export async function buildMeshes(
 				uFogColor: { value: new THREE.Color(0.7, 0.75, 0.8) },
 			},
 			transparent: true,
-			depthWrite: true,
+			depthWrite: false,
 			side: THREE.DoubleSide,
 		});
 		state.concreteSlabMaterial = concreteMat;

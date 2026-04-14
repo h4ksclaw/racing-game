@@ -187,17 +187,17 @@ const BIOMES: BiomeConfig[] = [
 		name: "Alpine Meadow",
 		textures: {
 			grass: "/textures/gravel/Gravel015_1K-JPG", // rocky alpine ground, not grass
-			dirt: "/textures/rock_gray/Rock010_1K-JPG",
-			rock: "/textures/rock_mossy/Rock011_1K-JPG",
+			dirt: "/textures/dirt/Ground015_1K-JPG",
+			rock: "/textures/rock_gray/Rock010_1K-JPG",
 			snow: "/textures/snow/Snow_Procedural",
-			moss: "/textures/rock_dark/Rock031_1K-JPG", // dark rock for variety
+			moss: "/textures/moss/Moss002_1K-JPG", // dark rock for variety
 		},
-		snowThreshold: 40,
-		rockThreshold: 0.5,
+		snowThreshold: -10,
+		rockThreshold: 0.4,
 		grassTint: [0.65, 0.62, 0.58], // gray-brown rocky ground
-		dirtTint: [0.55, 0.53, 0.5],
-		rockTint: [0.6, 0.58, 0.55],
-		snowTint: [1.06, 1.06, 1.1],
+		dirtTint: [0.8, 0.75, 0.65],
+		rockTint: [0.7, 0.68, 0.65],
+		snowTint: [1.25, 1.25, 1.3],
 		roadTint: [0.85, 0.87, 0.92],
 		roadRoughnessBase: 0.8,
 		roadSnowOverlay: { amount: 0.65, color: [0.92, 0.93, 0.97] },
@@ -228,6 +228,13 @@ const BIOMES: BiomeConfig[] = [
 		noiseAmp: 70,
 		mountainAmplifier: 6,
 		texRepeat: 600, // tighter tiling to hide repeats
+		// Alpine-specific blend overrides: minimize dirt/moss/patches so snow dominates
+		mossRange: 15,
+		dirtNearDist: 0,
+		dirtFarDist: -10,
+		farDirtStart: 80,
+		farDirtEnd: 200,
+		patchNoiseStrength: 0.7,
 	},
 	{
 		name: "Tropical Jungle",
