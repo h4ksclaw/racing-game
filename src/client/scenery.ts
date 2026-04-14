@@ -443,7 +443,14 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 					const color = mat.color ? mat.color.clone() : new THREE.Color(0.8, 0.8, 0.8);
 
 					if (matName === "_defaultMat") {
-						// Light housing — bright white/silver metal with warm emissive glow
+						// Thin back plate — dark metallic post body
+						child.material = new THREE.MeshStandardMaterial({
+							color: new THREE.Color(0.4, 0.4, 0.42),
+							metalness: 0.7,
+							roughness: 0.25,
+						});
+					} else if (matName === "grey") {
+						// Post body + light housing — white/silver with emissive glow
 						child.material = new THREE.MeshStandardMaterial({
 							color: 0xdddddd,
 							emissive: 0xffffcc,
@@ -461,13 +468,6 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 							color,
 							metalness: 0.6,
 							roughness: 0.3,
-						});
-					} else if (matName === "grey") {
-						// Post pole — dark metallic
-						child.material = new THREE.MeshStandardMaterial({
-							color: new THREE.Color(0.4, 0.4, 0.42),
-							metalness: 0.7,
-							roughness: 0.25,
 						});
 					} else if (matName === "road") {
 						// Base plate — dark matte
