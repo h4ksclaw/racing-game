@@ -835,10 +835,14 @@ export function generateScenery(
 		const ls = samples[li];
 		for (const side of [-1, 1]) {
 			const offset = side === -1 ? ls.grassLeft : ls.grassRight;
+			// Orient light arm toward road: model arm extends in -Z,
+			// so rotate to face along tangent (side=-1) or opposite (side=1)
+			const tangentAngle = Math.atan2(ls.tangent.x, ls.tangent.z);
+			const armAngle = side === -1 ? tangentAngle : tangentAngle + Math.PI;
 			scenery.push({
 				type: "light",
 				position: { ...offset },
-				rotation: 0,
+				rotation: armAngle,
 				scale: 1,
 			});
 		}

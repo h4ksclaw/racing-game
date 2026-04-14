@@ -413,40 +413,98 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 				const model = lightModelCache.get(currentLightModel)!.clone();
 				model.scale.setScalar(LIGHT_MODEL_SCALE);
 
-				// Find light emitter position (highest point of model)
-				let maxY = 0;
-				const bbox = new THREE.Box3().setFromObject(model);
-				maxY = bbox.max.y;
-
-				// Make the fixture meshes emissive
+				// Fix materials: Kenney models use KHR_materials_unlit (flat white).
+				// Convert to MeshStandardMaterial with proper PBR values.
+				let lightY = 0;
 				model.traverse((child) => {
-					if (child instanceof THREE.Mesh) {
-						child.castShadow = true;
-						// Find meshes at the top of the model (likely the light fixture)
-						const meshBox = new THREE.Box3().setFromObject(child);
-						if (meshBox.max.y > maxY * 0.85) {
-							if (Array.isArray(child.material)) {
-								child.material = child.material.map((m) => {
-									const em = m.clone();
-									(em as THREE.MeshLambertMaterial).emissive = new THREE.Color(0xffffaa);
-									(em as THREE.MeshLambertMaterial).emissiveIntensity = 0.5;
-									return em;
-								});
-							} else {
-								const em = child.material.clone();
-								em.emissive = new THREE.Color(0xffffaa);
-								em.emissiveIntensity = 0.5;
-								child.material = em;
-							}
-							state.lightFixtures.push(child as THREE.Mesh);
-						}
+					if (!(child instanceof THREE.Mesh)) return;
+					child.castShadow = true;
+
+					// Get material name to determine role
+					const matName = child.material?.name || "";
+
+					// Replace unlit materials with lit MeshStandardMaterial
+					const mat = child.material as THREE.MeshStandardMaterial;
+					const color = mat.color ? mat.color.clone() : new THREE.Color(0.8, 0.8, 0.8);
+
+					if (matName === "_defaultMat") {
+						// This is the light bulb/housing — make it emissive
+						child.material = new THREE.MeshStandardMaterial({
+							color: 0xffffcc,
+							emissive: 0xffffaa,
+							emissiveIntensity: 0.8,
+							metalness: 0.3,
+							roughness: 0.4,
+						});
+						state.lightFixtures.push(child as THREE.Mesh);
+						// Track highest point for PointLight placement
+						const box = new THREE.Box3().setFromObject(child);
+						if (box.max.y > lightY) lightY = box.max.y;
+					} else if (matName === "pylon") {
+						// Arm/bracket — slightly metallic
+						child.material = new THREE.MeshStandardMaterial({
+							color,
+							metalness: 0.6,
+							roughness: 0.3,
+						});
+					} else if (matName === "grey") {
+						// Post pole — dark metallic
+						child.material = new THREE.MeshStandardMaterial({
+							color: new THREE.Color(0.4, 0.4, 0.42),
+							metalness: 0.7,
+							roughness: 0.25,
+						});
+					} else if (matName === "road") {
+						// Base plate — dark matte
+						child.material = new THREE.MeshStandardMaterial({
+							color: new THREE.Color(0.25, 0.25, 0.25),
+							metalness: 0.3,
+							roughness: 0.7,
+						});
+					} else if (matName === "red") {
+						// Warning lights — slight emissive
+						child.material = new THREE.MeshStandardMaterial({
+							color: new THREE.Color(0.9, 0.3, 0.3),
+							emissive: 0xff2200,
+							emissiveIntensity: 0.3,
+							metalness: 0.4,
+							roughness: 0.3,
+						});
+					} else if (matName === "grass") {
+						// Grass patch at base — matte green
+						child.material = new THREE.MeshStandardMaterial({
+							color,
+							metalness: 0.0,
+							roughness: 0.9,
+						});
+					} else {
+						// Unknown material — make it look reasonable
+						child.material = new THREE.MeshStandardMaterial({
+							color,
+							metalness: 0.4,
+							roughness: 0.5,
+						});
 					}
 				});
 
+				// Center the model: find bounding box and shift so base is at origin
+				const bbox = new THREE.Box3().setFromObject(model);
+				const center = new THREE.Vector3();
+				bbox.getCenter(center);
+				// Shift so bottom-center is at origin, keep the arm extending in its natural direction
+				model.position.set(-center.x, -bbox.min.y, -center.z);
+
+				// Orient: light arm should face the road (inward).
+				// Models have arm extending in -Z (before our centering).
+				// The item.rotation already points along the road normal,
+				// so we just need the arm to extend perpendicular to the post toward the road.
+				// The model's natural arm direction is -Z after centering.
+
 				group.add(model);
 
+				// Place PointLight at the emissive fixture position
 				const pointLight = new THREE.PointLight(0xffeeaa, 0, 60, 2);
-				pointLight.position.y = maxY * 0.95;
+				pointLight.position.set(0, lightY - bbox.min.y, 0);
 				group.add(pointLight);
 				state.streetLights.push(pointLight);
 				lightUsed = true;
