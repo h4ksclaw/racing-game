@@ -494,11 +494,8 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 				// Shift so bottom-center is at origin, keep the arm extending in its natural direction
 				model.position.set(-center.x, -bbox.min.y, -center.z);
 
-				// Orient: light arm should face the road (inward).
-				// Models have arm extending in -Z (before our centering).
-				// The item.rotation already points along the road normal,
-				// so we just need the arm to extend perpendicular to the post toward the road.
-				// The model's natural arm direction is -Z after centering.
+				// Orient light arm toward road using rotation from track generation
+				model.rotation.y = item.rotation ?? 0;
 
 				group.add(model);
 
