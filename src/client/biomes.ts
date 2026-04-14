@@ -30,6 +30,12 @@ export interface BiomeConfig {
 	roadTint: [number, number, number]; // color multiplier on road texture
 	roadRoughnessBase: number; // base roughness (lower = shinier)
 	roadSnowOverlay?: { amount: number; color: [number, number, number] }; // procedural snow patches on road
+	concreteSlab?: {
+		texture: string;
+		tint: [number, number, number];
+		earthColor: [number, number, number];
+		dropMax: number;
+	}; // road edge slab
 
 	// Vegetation
 	treeTypes: SceneryType[]; // which tree variants to use
@@ -82,6 +88,12 @@ const BIOMES: BiomeConfig[] = [
 		rockTint: [0.9, 0.9, 0.92],
 		roadTint: [0.95, 0.95, 0.95],
 		roadRoughnessBase: 0.85,
+		concreteSlab: {
+			texture: "/textures/path/Pathway004_1K-JPG",
+			tint: [0.55, 0.52, 0.48],
+			earthColor: [0.38, 0.33, 0.25],
+			dropMax: 0.15,
+		},
 		treeTypes: [
 			"tree_pineTallA",
 			"tree_pineTallB",
@@ -117,6 +129,12 @@ const BIOMES: BiomeConfig[] = [
 		rockTint: [0.95, 0.88, 0.75],
 		roadTint: [1.0, 0.92, 0.85],
 		roadRoughnessBase: 0.9,
+		concreteSlab: {
+			texture: "/textures/dirt/Ground015_1K-JPG",
+			tint: [0.7, 0.58, 0.45],
+			earthColor: [0.45, 0.35, 0.22],
+			dropMax: 0.12,
+		},
 		treeTypes: ["tree_broadA", "tree_broadB", "tree_broadC", "tree_deadA", "tree_pineTallA"],
 		grassTypes: ["grass" as SceneryType],
 		treeDensity: 0.85,
@@ -147,6 +165,12 @@ const BIOMES: BiomeConfig[] = [
 		roadTint: [1.05, 0.95, 0.82],
 		roadRoughnessBase: 0.95,
 		treeTypes: ["tree_deadA", "tree_deadB", "tree_twistedA"],
+		concreteSlab: {
+			texture: "/textures/sand_desert/Ground092A_1K-JPG",
+			tint: [1.05, 0.92, 0.72],
+			earthColor: [0.85, 0.72, 0.52],
+			dropMax: 0.08,
+		},
 		grassTypes: ["grass_wispy" as SceneryType],
 		treeDensity: 0.15,
 		grassDensity: 0.1,
@@ -177,6 +201,12 @@ const BIOMES: BiomeConfig[] = [
 		roadTint: [0.85, 0.87, 0.92],
 		roadRoughnessBase: 0.8,
 		roadSnowOverlay: { amount: 0.65, color: [0.92, 0.93, 0.97] },
+		concreteSlab: {
+			texture: "/textures/gravel/Gravel015_1K-JPG",
+			tint: [0.65, 0.63, 0.6],
+			earthColor: [0.5, 0.48, 0.45],
+			dropMax: 0.2,
+		},
 		treeTypes: [
 			"tree_pineTallA",
 			"tree_pineTallB",
@@ -215,6 +245,12 @@ const BIOMES: BiomeConfig[] = [
 		rockTint: [0.82, 0.95, 0.78],
 		roadTint: [0.88, 0.92, 0.85],
 		roadRoughnessBase: 0.75,
+		concreteSlab: {
+			texture: "/textures/forest_floor/Ground012_1K-JPG",
+			tint: [0.6, 0.72, 0.48],
+			earthColor: [0.35, 0.42, 0.25],
+			dropMax: 0.1,
+		},
 		treeTypes: ["tree_broadA", "tree_broadB", "tree_broadC", "tree_broadD", "tree_twistedA"],
 		grassTypes: ["grass_large", "grass_wispy" as SceneryType],
 		treeDensity: 1.5,
@@ -245,6 +281,12 @@ const BIOMES: BiomeConfig[] = [
 		roadRoughnessBase: 0.88,
 		snowTint: [0.8, 0.78, 0.72], // gravel tint (snow slot = gravel for this biome)
 		roadTint: [0.88, 0.88, 0.86],
+		concreteSlab: {
+			texture: "/textures/path/Pathway004_1K-JPG",
+			tint: [0.58, 0.55, 0.48],
+			earthColor: [0.4, 0.38, 0.28],
+			dropMax: 0.15,
+		},
 		treeTypes: ["tree_broadA", "tree_broadB", "tree_broadC", "tree_pineDefaultB", "tree_pineTallA"],
 		grassTypes: ["grass", "grass_large", "grass_wispy"],
 		bushTypes: ["bush_common", "bush_flowers", "bush_flowers"],

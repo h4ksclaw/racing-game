@@ -189,6 +189,15 @@ export async function buildMeshes(
 	const grassVerts: number[] = [];
 	const grassColors: number[] = [];
 	const grassIndices: number[] = [];
+	const concreteVerts: number[] = [];
+	const concreteUVs: number[] = [];
+	const concreteIndices: number[] = [];
+	const slabCfg = biome?.concreteSlab ?? {
+		texture: "/textures/path/Pathway004_1K-JPG",
+		tint: [0.55, 0.52, 0.48] as [number, number, number],
+		earthColor: [0.38, 0.33, 0.25] as [number, number, number],
+		dropMax: 0.15,
+	};
 	let roadDist = 0;
 
 	const KERB_RED = [0.8, 0.2, 0.2];
@@ -207,6 +216,7 @@ export async function buildMeshes(
 		roadVerts.push(s.left.x, s.left.y + 0.02, s.left.z, s.right.x, s.right.y + 0.02, s.right.z);
 		roadUVs.push(0, roadDist / 4, 1, roadDist / 4);
 
+		// ── Kerb (flat, same as before) ──
 		kerbVerts.push(
 			s.left.x,
 			s.left.y + 0.03,
@@ -224,6 +234,7 @@ export async function buildMeshes(
 		const stripe = Math.floor(roadDist / kerbStripeLen) % 2 === 0 ? KERB_RED : KERB_WHITE;
 		kerbColors.push(...stripe, ...stripe, ...stripe, ...stripe);
 
+		// ── Grass shoulder (simple 4-vertex quad, same as original) ──
 		grassVerts.push(
 			s.kerbLeft.x,
 			s.kerbLeft.y + 0.01,
@@ -241,6 +252,55 @@ export async function buildMeshes(
 		const gv = 0.3 + Math.sin(roadDist * 0.3) * 0.04 + (rng() - 0.5) * 0.03;
 		grassColors.push(0.28, gv + 0.04, 0.2, 0.28, gv, 0.2, 0.28, gv + 0.04, 0.2, 0.28, gv, 0.2);
 
+		// ── Concrete base slab (narrow strip past grass edges) ──
+		// Multi-frequency noise for organic irregular edges
+		const n1L =
+			Math.sin(i * 0.13 + roadDist * 0.05) * 0.4 + Math.sin(i * 0.37 + roadDist * 0.02) * 0.25;
+		const n2L = Math.sin(i * 0.71 + 1.3) * 0.15 + Math.sin(i * 1.53 + roadDist * 0.08) * 0.1;
+		const n3L = Math.sin(i * 3.17 + 2.7) * 0.06;
+		const deformL = n1L + n2L + n3L;
+		const n1R =
+			Math.sin(i * 0.17 + roadDist * 0.04 + 2.0) * 0.4 +
+			Math.sin(i * 0.29 + roadDist * 0.03 + 0.5) * 0.25;
+		const n2R = Math.sin(i * 0.63 + 3.1) * 0.15 + Math.sin(i * 1.41 + roadDist * 0.07 + 1.2) * 0.1;
+		const n3R = Math.sin(i * 2.93 + 0.8) * 0.06;
+		const deformR = n1R + n2R + n3R;
+		// Extend past grass edge (width varies with noise)
+		const slabBase = 0.75;
+		const extL = slabBase + deformL * 0.3;
+		const extR = slabBase + deformR * 0.3;
+		// 5 verts per side: road(0) → mid(0.25) → grass(0.5) → slope(0.75) → outer(1.0)
+		const slabSteps = 5;
+		const leftPts: [number, number, number][] = [];
+		const rightPts: [number, number, number][] = [];
+		for (let j = 0; j < slabSteps; j++) {
+			const t = j / (slabSteps - 1); // 0..1 across width
+			// Smooth quadratic drop: starts gentle, steepens toward outer
+			const drop =
+				t *
+				t *
+				(slabCfg.dropMax + Math.abs(t < 0.5 ? deformL : deformL + n3L) * slabCfg.dropMax * 0.5);
+			const lateralNoise = deformL * t * t * 0.6; // more noise further out
+			const lx = s.left.x + s.binormal.x * (-extL * t) + lateralNoise;
+			const lz = s.left.z + s.binormal.z * (-extL * t) + lateralNoise * 0.5;
+			leftPts.push([lx, s.left.y + 0.02 - drop, lz]);
+			// Right side
+			const dropR =
+				t *
+				t *
+				(slabCfg.dropMax + Math.abs(t < 0.5 ? deformR : deformR + n3R) * slabCfg.dropMax * 0.5);
+			const lateralNoiseR = deformR * t * t * 0.6;
+			const rx = s.right.x + s.binormal.x * (extR * t) + lateralNoiseR;
+			const rz = s.right.z + s.binormal.z * (extR * t) + lateralNoiseR * 0.5;
+			rightPts.push([rx, s.right.y + 0.02 - dropR, rz]);
+		}
+		// Push all verts: left side then right side
+		for (const p of leftPts) concreteVerts.push(p[0], p[1], p[2]);
+		for (const p of rightPts) concreteVerts.push(p[0], p[1], p[2]);
+		// UVs: u = 0→1 across width
+		for (let j = 0; j < slabSteps; j++) concreteUVs.push(j / (slabSteps - 1), roadDist / 3);
+		for (let j = 0; j < slabSteps; j++) concreteUVs.push(j / (slabSteps - 1), roadDist / 3);
+
 		if (i >= samples.length - 1) break;
 
 		const rb = i * 2;
@@ -250,9 +310,38 @@ export async function buildMeshes(
 		kerbIndices.push(kb, kb + 1, kb + 4, kb + 1, kb + 5, kb + 4);
 		kerbIndices.push(kb + 2, kb + 6, kb + 3, kb + 3, kb + 6, kb + 7);
 
+		// Grass shoulder indices (4 verts per sample, 2 per side)
 		const gb = i * 4;
 		grassIndices.push(gb, gb + 1, gb + 4, gb + 1, gb + 5, gb + 4);
 		grassIndices.push(gb + 2, gb + 6, gb + 3, gb + 3, gb + 6, gb + 7);
+
+		// Concrete slab indices: 10 verts per sample (5 left + 5 right)
+		const slabN = 5;
+		const stride = slabN * 2; // total verts per sample
+		const cb = i * stride;
+		// Left side: 4 quads between current and next sample (reversed winding)
+		for (let j = 0; j < slabN - 1; j++) {
+			concreteIndices.push(
+				cb + j,
+				cb + stride + j,
+				cb + j + 1,
+				cb + stride + j,
+				cb + stride + j + 1,
+				cb + j + 1,
+			);
+		}
+		// Right side: 4 quads (normal winding)
+		const slabRb = cb + slabN;
+		for (let j = 0; j < slabN - 1; j++) {
+			concreteIndices.push(
+				slabRb + j,
+				slabRb + j + 1,
+				slabRb + stride + j,
+				slabRb + j + 1,
+				slabRb + stride + j + 1,
+				slabRb + stride + j,
+			);
+		}
 	}
 
 	const tex = await loadRoadTextures();
@@ -399,6 +488,89 @@ export async function buildMeshes(
 		const gm = new THREE.Mesh(makeGeo(grassVerts, grassIndices, undefined, grassColors), grassMat);
 		gm.receiveShadow = true;
 		group.add(gm);
+	}
+
+	// ── Concrete base slab (narrow strip under road edges) ──
+	if (concreteVerts.length > 0) {
+		const concreteColorMap = await loadTex(slabCfg.texture + "_Color.jpg");
+		const concreteNormalMap = await loadTex(slabCfg.texture + "_NormalGL.jpg", false);
+		const concreteRoughMap = await loadTex(slabCfg.texture + "_Roughness.jpg", false);
+
+		// Concrete slab shader: fades to transparent at outer edge (u=1) for terrain blend
+		const concreteVertShader = `
+			varying vec2 vUv;
+			varying vec3 vNormal;
+			varying vec3 vWorldPos;
+			void main() {
+				vUv = uv;
+				vNormal = normalize(normalMatrix * normal);
+				vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+			}
+		`;
+		const concreteFragShader = `
+			uniform sampler2D uColorMap;
+			uniform sampler2D uNormalMap;
+			uniform sampler2D uRoughMap;
+			uniform vec3 uTint;
+			uniform vec3 uEarthColor;
+			uniform vec3 uSunDir;
+			uniform vec3 uSunColor;
+			uniform vec3 uAmbient;
+			uniform float uFogDensity;
+			uniform vec3 uFogColor;
+			varying vec2 vUv;
+			varying vec3 vNormal;
+			varying vec3 vWorldPos;
+			void main() {
+				vec3 N = normalize(vNormal);
+				vec3 L = normalize(uSunDir);
+				float NdL = max(dot(N, L), 0.0);
+				// Fade: solid at u<0.4, fade out from 0.4→1.0
+				float fade = 1.0;
+				if (vUv.x > 0.4) {
+					fade = 1.0 - smoothstep(0.4, 1.0, vUv.x);
+				}
+				// Sample concrete texture
+				vec4 tex = texture2D(uColorMap, vUv * 3.0);
+				vec3 base = tex.rgb * uTint;
+				// Mix with earth color at edges for natural transition
+				vec3 earthColor = uEarthColor;
+				float edgeMix = smoothstep(0.2, 1.0, vUv.x);
+				base = mix(base, earthColor, edgeMix * 0.6);
+				// Lighting
+				vec3 diffuse = base * (NdL * uSunColor + uAmbient);
+				// Fog
+				float dist = length(vWorldPos - cameraPosition);
+				float fog = 1.0 - exp(-dist * uFogDensity);
+				diffuse = mix(diffuse, uFogColor, fog);
+				gl_FragColor = vec4(diffuse, fade);
+			}
+		`;
+
+		const concreteMat = new THREE.ShaderMaterial({
+			vertexShader: concreteVertShader,
+			fragmentShader: concreteFragShader,
+			uniforms: {
+				uColorMap: { value: concreteColorMap },
+				uNormalMap: { value: concreteNormalMap },
+				uRoughMap: { value: concreteRoughMap },
+				uTint: { value: new THREE.Color(...slabCfg.tint) },
+				uEarthColor: { value: new THREE.Color(...slabCfg.earthColor) },
+				uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+				uSunColor: { value: new THREE.Color(1, 1, 1) },
+				uAmbient: { value: new THREE.Color(0.3, 0.3, 0.35) },
+				uFogDensity: { value: 0.003 },
+				uFogColor: { value: new THREE.Color(0.7, 0.75, 0.8) },
+			},
+			transparent: true,
+			depthWrite: true,
+			side: THREE.DoubleSide,
+		});
+		state.concreteSlabMaterial = concreteMat;
+		const cm = new THREE.Mesh(makeGeo(concreteVerts, concreteIndices, concreteUVs), concreteMat);
+		cm.receiveShadow = true;
+		group.add(cm);
 	}
 
 	// Checkers

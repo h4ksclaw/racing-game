@@ -321,6 +321,17 @@ export function applyTimeOfDay(hour: number): void {
 		roadSnowOverlayMaterial.uniforms.uFogFar.value = st.fogFar;
 	}
 
+	const concreteSlabMaterial = state.concreteSlabMaterial;
+	if (concreteSlabMaterial) {
+		concreteSlabMaterial.uniforms.uSunDir.value
+			.set(Math.cos(sunElev) * 300, Math.sin(sunElev) * 300, 100)
+			.normalize();
+		concreteSlabMaterial.uniforms.uSunColor.value.setRGB(...st.sunColor);
+		concreteSlabMaterial.uniforms.uAmbient.value.setRGB(...st.ambientColor);
+		concreteSlabMaterial.uniforms.uFogColor.value.setRGB(...st.fogColor);
+		concreteSlabMaterial.uniforms.uFogDensity.value = 1.0 / Math.max(1, st.fogFar - st.fogNear);
+	}
+
 	if (renderer) {
 		const biomeExpMult = state.currentBiome?.exposureMult ?? 1.0;
 		renderer.toneMappingExposure = (0.4 + st.sunIntensity * 0.4) * biomeExpMult;
