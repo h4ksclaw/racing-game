@@ -200,23 +200,32 @@ export async function buildMeshes(
 	};
 	let roadDist = 0;
 
-	// Pre-compute curvature at each sample (tangent angle change)
+	// Pre-compute smoothed curvature at each sample
+	// Uses a wide lookahead (20 samples ~40m) to avoid per-sample noise
+	const SMOOTH_WINDOW = 20;
 	const curvature = new Float32Array(samples.length);
-	for (let i = 1; i < samples.length - 1; i++) {
-		const prev = samples[i - 1].tangent;
-		const curr = samples[i].tangent;
-		const dot = prev.x * curr.x + prev.z * curr.z;
-		const cross = prev.x * curr.z - prev.z * curr.x;
-		curvature[i] = Math.atan2(cross, dot);
+	for (let i = 0; i < samples.length; i++) {
+		const ahead = Math.min(i + SMOOTH_WINDOW, samples.length - 1);
+		const behind = Math.max(i - SMOOTH_WINDOW, 0);
+		if (ahead === behind) {
+			curvature[i] = 0;
+			continue;
+		}
+		// Total angle change from behind to ahead
+		const t0 = samples[behind].tangent;
+		const t1 = samples[ahead].tangent;
+		const dot = t0.x * t1.x + t0.z * t1.z;
+		const cross = t0.x * t1.z - t0.z * t1.x;
+		// Divide by distance for actual curvature (1/radius)
+		const span = ahead - behind;
+		curvature[i] = Math.atan2(cross, dot) / span;
 	}
-	curvature[0] = curvature[1] || 0;
-	curvature[samples.length - 1] = curvature[samples.length - 2] || 0;
 
 	// Crown height (center of road is higher for drainage on straights)
-	const CROWN_HEIGHT = 0.08; // ~2% on a 4m half-width
+	const CROWN_HEIGHT = 0.06;
 	// Max superelevation (outer edge raised on curves)
-	const SUPER_MAX = 0.15; // ~3.5% at tightest curves
-	const SUPER_SENSITIVITY = 40.0; // curvature multiplier (tune this)
+	const SUPER_MAX = 0.12;
+	const SUPER_SENSITIVITY = 80.0;
 
 	const KERB_RED = [0.8, 0.2, 0.2];
 	const KERB_WHITE = [0.9, 0.9, 0.9];
