@@ -157,13 +157,16 @@ async function loadTerrainTextures(biome: {
 const terrainVertexShader = /* glsl */ `
 attribute vec3 aBlend0;
 attribute vec3 aBlend1;
+uniform float uTexRepeat;
 
+varying vec2 vUv;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
 varying vec3 vBlend0;
 varying vec3 vBlend1;
 
 void main() {
+	vUv = uv * uTexRepeat;
 	vBlend0 = aBlend0;
 	vBlend1 = aBlend1;
 	vNormal = normalize(normalMatrix * normal);
@@ -188,7 +191,6 @@ uniform vec3 uAmbientColor;
 uniform float uAmbientIntensity;
 uniform vec3 uFogColor;
 uniform float uTexRepeat;
-uniform float uTriplanarScale;
 uniform float uFogNear;
 uniform float uFogFar;
 uniform vec3 uGrassTint;
@@ -201,18 +203,11 @@ uniform vec3 uStreetLightPos[4];
 uniform vec3 uStreetLightColor[4];
 uniform float uStreetLightIntensity;
 
+varying vec2 vUv;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
 varying vec3 vBlend0;
 varying vec3 vBlend1;
-
-// Tri-planar texture sampling — prevents stretching on cliffs
-// Projects texture from 3 axes (top XZ, front XY, side ZY), blends by normal
-vec3 triplanar(sampler2D tex, vec3 pos, vec3 blendW) {
-	return texture2D(tex, pos.xz * uTriplanarScale).rgb * blendW.y
-	     + texture2D(tex, pos.xy * uTriplanarScale).rgb * blendW.z
-	     + texture2D(tex, pos.zy * uTriplanarScale).rgb * blendW.x;
-}
 
 void main() {
 	float aboveRoad = vBlend0.x;
@@ -244,20 +239,15 @@ void main() {
 	wBelowDirt /= total;
 	wFarDirt /= total;
 
-	// Compute tri-planar blend weights from surface normal
-	vec3 N = normalize(vNormal);
-	vec3 blendW = abs(N);
-	blendW = pow(blendW, vec3(2.0));  // sharpen transitions
-	blendW /= (blendW.x + blendW.y + blendW.z + 0.001);
-
-	vec3 grass = triplanar(tGrassC, vWorldPos, blendW);
-	vec3 dirt  = triplanar(tDirtC,  vWorldPos, blendW);
-	vec3 rock  = triplanar(tRockC,  vWorldPos, blendW);
-	vec3 snow  = triplanar(tSnowC,  vWorldPos, blendW);
-	vec3 moss  = triplanar(tMossC,  vWorldPos, blendW);
+	vec3 grass = texture2D(tGrassC, vUv).rgb;
+	vec3 dirt = texture2D(tDirtC, vUv).rgb;
+	vec3 rock = texture2D(tRockC, vUv).rgb;
+	vec3 snow = texture2D(tSnowC, vUv).rgb;
+	vec3 moss = texture2D(tMossC, vUv).rgb;
 
 	vec3 baseColor = grass * uGrassTint * wGrass + dirt * uDirtTint * (wBelowDirt + wFarDirt) + rock * uRockTint * wRock + snow + moss * uGrassTint * wNearMoss;
 
+	vec3 N = normalize(vNormal);
 	vec3 sunDir = normalize(uSunDir);
 	float NdotL = max(dot(N, sunDir), 0.0);
 
@@ -327,6 +317,13 @@ export async function buildTerrain(
 		blend1Data[i * 3 + 2] = nearRoad;
 	}
 
+	const uvs = geometry.attributes.uv;
+	for (let i = 0; i < pos.count; i++) {
+		const x = pos.getX(i);
+		const z = pos.getZ(i);
+		uvs.setXY(i, x / worldSize, z / worldSize);
+	}
+
 	geometry.setAttribute("aBlend0", new THREE.BufferAttribute(blend0Data, 3));
 	geometry.setAttribute("aBlend1", new THREE.BufferAttribute(blend1Data, 3));
 	geometry.computeVertexNormals();
@@ -346,7 +343,6 @@ export async function buildTerrain(
 			uAmbientColor: { value: new THREE.Color(0.4, 0.45, 0.5) },
 			uAmbientIntensity: { value: 0.8 },
 			uTexRepeat: { value: TERRAIN_TEX_REPEAT },
-			uTriplanarScale: { value: TERRAIN_TEX_REPEAT / worldSize },
 			uFogColor: { value: new THREE.Color(...biome.fogColor) },
 			uFogNear: { value: biome.fogNear },
 			uFogFar: { value: biome.fogFar },
