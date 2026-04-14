@@ -525,8 +525,8 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 				const lightY = lightWorldY * LIGHT_MODEL_SCALE;
 				if (isAutumnWoods && spotDirection) {
 					// SpotLight using direction from the cone helper in the model
-					// Cone tip = aim direction; negate so light shines toward where tip points
-					const dir = new THREE.Vector3().copy(spotDirection!).negate();
+					// Cone tip = where light should aim; direction is center→tip
+					const dir = new THREE.Vector3().copy(spotDirection!);
 					const spot = new THREE.SpotLight(0xffeeaa, 0, 80, Math.PI / 3, 0.6, 1.5);
 					spot.position.set(0, lightY, 0);
 					spot.target.position.set(dir.x * 10, lightY + dir.y * 10, dir.z * 10);
