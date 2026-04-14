@@ -59,6 +59,7 @@ function clearScene() {
 
 async function buildScene(data: TrackResponse) {
 	clearScene();
+	state.trackSamples = data.samples;
 
 	const scene = new THREE.Scene();
 
@@ -244,6 +245,30 @@ document.getElementById("generateBtn")?.addEventListener("click", () => {
 	generate();
 });
 
+document.getElementById("flyoverBtn")?.addEventListener("click", () => {
+	const btn = document.getElementById("flyoverBtn") as HTMLButtonElement | null;
+	if (!btn) return;
+	if (state.flyover.active) {
+		state.flyover.active = false;
+		state.flyover.distance = 0;
+		btn.textContent = "▶ Preview Track";
+		if (state.controls) state.controls.enabled = true;
+	} else {
+		state.flyover.active = true;
+		state.flyover.distance = 0;
+		btn.textContent = "⏹ Stop Preview";
+	}
+});
+
+const flyoverSpeed = document.getElementById("flyoverSpeed") as HTMLInputElement | null;
+if (flyoverSpeed) {
+	flyoverSpeed.addEventListener("input", () => {
+		state.flyover.speed = Number(flyoverSpeed.value);
+		const label = document.getElementById("flyoverSpeedLabel");
+		if (label) label.textContent = `${flyoverSpeed.value} km/h`;
+	});
+}
+
 const timeSlider = document.getElementById("timeSlider") as HTMLInputElement | null;
 if (timeSlider) {
 	timeSlider.addEventListener("input", () => {
@@ -284,6 +309,58 @@ function updateTerrainStreetLights() {
 	terrainMaterial.uniforms.uStreetLightCount.value = Math.min(sorted.length, 4);
 }
 
+// ── Track Flyover ───────────────────────────────────────────────────────
+
+function updateFlyover(delta: number) {
+	const { flyover, camera, controls, trackSamples } = state;
+	if (!flyover.active || !camera || !trackSamples.length) return;
+
+	if (controls) controls.enabled = false;
+
+	const speedMs = (flyover.speed / 3.6) * delta;
+	flyover.distance += speedMs;
+
+	// Walk samples to find current segment
+	let walked = 0;
+	let idx = 0;
+	let segLen = 0;
+	for (let i = 1; i < trackSamples.length; i++) {
+		const dx = trackSamples[i].point.x - trackSamples[i - 1].point.x;
+		const dy = trackSamples[i].point.y - trackSamples[i - 1].point.y;
+		const dz = trackSamples[i].point.z - trackSamples[i - 1].point.z;
+		segLen = Math.sqrt(dx * dx + dy * dy + dz * dz);
+		if (walked + segLen >= flyover.distance) {
+			idx = i;
+			break;
+		}
+		walked += segLen;
+	}
+
+	// Loop when reaching end
+	if (idx === 0) {
+		flyover.distance = 0;
+		idx = 1;
+	}
+
+	const s = trackSamples[idx];
+	const prev = trackSamples[idx - 1];
+	const t = segLen > 0 ? (flyover.distance - walked) / segLen : 0;
+
+	// Interpolate position (5m above road center)
+	const px = prev.point.x + (s.point.x - prev.point.x) * t;
+	const py = prev.point.y + (s.point.y - prev.point.y) * t + 5;
+	const pz = prev.point.z + (s.point.z - prev.point.z) * t;
+
+	// Interpolate tangent for look direction
+	const tx = prev.tangent.x + (s.tangent.x - prev.tangent.x) * t;
+	const ty = prev.tangent.y + (s.tangent.y - prev.tangent.y) * t;
+	const tz = prev.tangent.z + (s.tangent.z - prev.tangent.z) * t;
+	const tLen = Math.sqrt(tx * tx + ty * ty + tz * tz);
+
+	camera.position.set(px, py, pz);
+	camera.lookAt(px + (tx / tLen) * 10, py + (ty / tLen) * 10, pz + (tz / tLen) * 10);
+}
+
 function animate() {
 	requestAnimationFrame(animate);
 	const now = performance.now();
@@ -292,6 +369,7 @@ function animate() {
 	if (state.controls) state.controls.update();
 	updateWeather(delta);
 	updateTerrainStreetLights();
+	updateFlyover(delta);
 	if (state.scene && state.camera) {
 		if (state.composer) {
 			state.composer.render();
