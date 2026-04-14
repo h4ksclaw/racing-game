@@ -411,11 +411,49 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 			let lightUsed = false;
 			if (currentLightModel && lightModelCache.has(currentLightModel)) {
 				const model = lightModelCache.get(currentLightModel)!.clone();
+
+				// Kenney GLBs bake a node translation (e.g. [-0.35, -0.01, -0.65])
+				// into the root node. Reset it so we can properly center the model.
+				// Walk children: if a child is a Group with its own position, absorb its
+				// transform into the geometry by baking it, then reset the parent.
+				model.updateMatrixWorld(true);
+				model.traverse((child) => {
+					if (child === model) return;
+					if (child instanceof THREE.Mesh && child.parent) {
+						// Bake parent's world transform into the mesh geometry
+						child.geometry.applyMatrix4(child.matrixWorld);
+						child.position.set(0, 0, 0);
+						child.rotation.set(0, 0, 0);
+						child.scale.set(1, 1, 1);
+					}
+				});
+				// Reset root to identity
+				model.position.set(0, 0, 0);
+				model.rotation.set(0, 0, 0);
+				model.scale.set(1, 1, 1);
+				model.updateMatrixWorld(true);
+
+				// Now properly center: find base center (bottom of model)
+				const bbox = new THREE.Box3().setFromObject(model);
+				const baseCenter = new THREE.Vector3(
+					(bbox.min.x + bbox.max.x) / 2,
+					bbox.min.y,
+					(bbox.min.z + bbox.max.z) / 2,
+				);
+				// Shift all geometry so base center sits at world origin
+				model.traverse((child) => {
+					if (child instanceof THREE.Mesh) {
+						child.geometry.translate(-baseCenter.x, -baseCenter.y, -baseCenter.z);
+					}
+				});
+				model.updateMatrixWorld(true);
+
+				// Scale after centering so scale applies from the base
 				model.scale.setScalar(LIGHT_MODEL_SCALE);
 
 				// Fix materials: Kenney models use KHR_materials_unlit (flat white).
 				// Convert to MeshStandardMaterial with proper PBR values.
-				let lightY = 0;
+				let lightWorldY = 0;
 				model.traverse((child) => {
 					if (!(child instanceof THREE.Mesh)) return;
 					child.castShadow = true;
@@ -437,9 +475,9 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 							roughness: 0.2,
 						});
 						state.lightFixtures.push(child as THREE.Mesh);
-						// Track highest point for PointLight placement
+						// Track highest point for PointLight placement (in local coords)
 						const box = new THREE.Box3().setFromObject(child);
-						if (box.max.y > lightY) lightY = box.max.y;
+						if (box.max.y > lightWorldY) lightWorldY = box.max.y;
 					} else if (matName === "pylon") {
 						// Arm/bracket — slightly metallic
 						child.material = new THREE.MeshStandardMaterial({
@@ -487,21 +525,15 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 					}
 				});
 
-				// Center the model: find bounding box and shift so base is at origin
-				const bbox = new THREE.Box3().setFromObject(model);
-				const center = new THREE.Vector3();
-				bbox.getCenter(center);
-				// Shift so bottom-center is at origin, keep the arm extending in its natural direction
-				model.position.set(-center.x, -bbox.min.y, -center.z);
-
 				// Orient light arm toward road using rotation from track generation
-				model.rotation.y = item.rotation ?? 0;
+				// item.rotation is pre-computed as tangentAngle ± π/2 so arm faces inward
+				model.rotation.y = (item.rotation ?? 0) + Math.PI;
 
 				group.add(model);
 
-				// Place PointLight at the emissive fixture position
+				// Place PointLight at the emissive fixture height
 				const pointLight = new THREE.PointLight(0xffeeaa, 0, 60, 2);
-				pointLight.position.set(0, lightY - bbox.min.y, 0);
+				pointLight.position.set(0, lightWorldY * LIGHT_MODEL_SCALE, 0);
 				group.add(pointLight);
 				state.streetLights.push(pointLight);
 				lightUsed = true;
