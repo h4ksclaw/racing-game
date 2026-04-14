@@ -428,13 +428,13 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 					const color = mat.color ? mat.color.clone() : new THREE.Color(0.8, 0.8, 0.8);
 
 					if (matName === "_defaultMat") {
-						// This is the light bulb/housing — make it emissive
+						// Light housing — bright white/silver metal with warm emissive glow
 						child.material = new THREE.MeshStandardMaterial({
-							color: 0xffffcc,
-							emissive: 0xffffaa,
-							emissiveIntensity: 0.8,
-							metalness: 0.3,
-							roughness: 0.4,
+							color: 0xdddddd,
+							emissive: 0xffffcc,
+							emissiveIntensity: 0.6,
+							metalness: 0.5,
+							roughness: 0.2,
 						});
 						state.lightFixtures.push(child as THREE.Mesh);
 						// Track highest point for PointLight placement
