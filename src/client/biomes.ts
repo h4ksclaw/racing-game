@@ -67,6 +67,7 @@ export interface BiomeConfig {
 	farDirtStart?: number; // farDirt blend start distance from road (default 40)
 	farDirtEnd?: number; // farDirt blend end distance from road (default 80)
 	patchNoiseStrength?: number; // how strongly noise2 breaks up farDirt (default 0.7)
+	lightModel?: string; // GLB path for light post model (default: procedural)
 }
 
 // ── Biome definitions ──────────────────────────────────────────────────
@@ -112,6 +113,7 @@ const BIOMES: BiomeConfig[] = [
 		skyRayleigh: 2,
 		noiseAmp: 60,
 		mountainAmplifier: 3,
+		lightModel: "/assets/kenney-racing-kit/Models/GLTF format/lightPostModern.glb",
 	},
 	{
 		name: "Autumn Woods",
@@ -147,6 +149,7 @@ const BIOMES: BiomeConfig[] = [
 		skyRayleigh: 3,
 		noiseAmp: 55,
 		mountainAmplifier: 3,
+		lightModel: "/assets/kenney-racing-kit/Models/GLTF format/lightPost_exclusive.glb",
 	},
 	{
 		name: "Desert Canyon",
@@ -182,6 +185,7 @@ const BIOMES: BiomeConfig[] = [
 		skyRayleigh: 1,
 		noiseAmp: 80,
 		mountainAmplifier: 5,
+		lightModel: "/assets/kenney-racing-kit/Models/GLTF format/lightRedDouble.glb",
 	},
 	{
 		name: "Alpine Meadow",
@@ -235,6 +239,7 @@ const BIOMES: BiomeConfig[] = [
 		farDirtStart: 80,
 		farDirtEnd: 200,
 		patchNoiseStrength: 0.7,
+		lightModel: "/assets/kenney-racing-kit/Models/GLTF format/lightPostLarge.glb",
 	},
 	{
 		name: "Tropical Jungle",
@@ -270,6 +275,7 @@ const BIOMES: BiomeConfig[] = [
 		skyRayleigh: 3,
 		noiseAmp: 45,
 		mountainAmplifier: 3,
+		lightModel: "/assets/kenney-racing-kit/Models/GLTF format/lightColored.glb",
 	},
 	{
 		name: "Rural Countryside",
@@ -315,6 +321,7 @@ const BIOMES: BiomeConfig[] = [
 		farDirtStart: 200, // far dirt only at extreme distances
 		farDirtEnd: 400, // gradual fade to far dirt
 		patchNoiseStrength: 0.9, // strong noise breakup on far dirt
+		lightModel: "/assets/kenney-racing-kit/Models/GLTF format/lightColored.glb",
 	},
 ];
 

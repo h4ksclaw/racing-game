@@ -5,7 +5,13 @@ import { getBiomeForSeed } from "./biomes.ts";
 import { initBloom, updateBloomSize } from "./effects.ts";
 import { buildGuardrails, buildMeshes } from "./road.ts";
 import { state } from "./scene.ts";
-import { buildInstancedScenery, loadDecorations, setFallbackBiome } from "./scenery.ts";
+import {
+	buildInstancedScenery,
+	loadDecorations,
+	loadLightModel,
+	setFallbackBiome,
+	setLightModel,
+} from "./scenery.ts";
 import { applyTimeOfDay, buildStars, setupSky } from "./sky.ts";
 import { buildTerrain, TerrainSampler } from "./terrain.ts";
 import type { TrackResponse, WeatherType } from "./utils.ts";
@@ -132,7 +138,12 @@ async function buildScene(data: TrackResponse) {
 		rockDensity: biome.rockDensity,
 	});
 	setFallbackBiome(biome.name);
+	setLightModel(biome.lightModel);
 	await loadDecorations();
+	if (biome.lightModel) {
+		const loader = new (await import("three/addons/loaders/GLTFLoader.js")).GLTFLoader();
+		await loadLightModel(loader, biome.lightModel);
+	}
 	scene.add(buildInstancedScenery(scenery, terrain));
 
 	// Guardrails

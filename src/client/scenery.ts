@@ -74,9 +74,34 @@ const MODEL_SCALE: Record<string, number> = {
 const DEFAULT_MODEL_SCALE = 1.2;
 
 let fallbackBiomeName = "Temperate Forest";
+let currentLightModel: string | null = null;
+const lightModelCache = new Map<string, THREE.Group>();
+const LIGHT_MODEL_SCALE = 7;
 
 export function setFallbackBiome(biomeName: string): void {
 	fallbackBiomeName = biomeName;
+}
+
+export function setLightModel(modelPath: string | undefined): void {
+	currentLightModel = modelPath ?? null;
+}
+
+export function loadLightModel(loader: GLTFLoader, path: string): Promise<void> {
+	return new Promise((resolve) => {
+		if (lightModelCache.has(path)) {
+			resolve();
+			return;
+		}
+		loader.load(
+			path,
+			(gltf) => {
+				lightModelCache.set(path, gltf.scene.clone());
+				resolve();
+			},
+			undefined,
+			() => resolve(),
+		);
+	});
 }
 
 // ── Quaternius Nature Kit → SceneryType mapping ─────────────────────────
@@ -382,27 +407,74 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 			break;
 		}
 		case "light": {
-			const post = new THREE.Mesh(
-				new THREE.CylinderGeometry(0.15, 0.15, 5),
-				new THREE.MeshLambertMaterial({ color: 0x888888 }),
-			);
-			post.position.y = 2.5;
-			group.add(post);
-			const fixture = new THREE.Mesh(
-				new THREE.BoxGeometry(1, 0.3, 0.5),
-				new THREE.MeshLambertMaterial({
-					color: 0xffffcc,
-					emissive: 0xffffaa,
-					emissiveIntensity: 0.5,
-				}),
-			);
-			fixture.position.y = 5.5;
-			group.add(fixture);
-			state.lightFixtures.push(fixture);
-			const pointLight = new THREE.PointLight(0xffeeaa, 0, 60, 2);
-			pointLight.position.y = 5;
-			group.add(pointLight);
-			state.streetLights.push(pointLight);
+			// Try GLB model first, fall back to procedural
+			let lightUsed = false;
+			if (currentLightModel && lightModelCache.has(currentLightModel)) {
+				const model = lightModelCache.get(currentLightModel)!.clone();
+				model.scale.setScalar(LIGHT_MODEL_SCALE);
+
+				// Find light emitter position (highest point of model)
+				let maxY = 0;
+				const bbox = new THREE.Box3().setFromObject(model);
+				maxY = bbox.max.y;
+
+				// Make the fixture meshes emissive
+				model.traverse((child) => {
+					if (child instanceof THREE.Mesh) {
+						child.castShadow = true;
+						// Find meshes at the top of the model (likely the light fixture)
+						const meshBox = new THREE.Box3().setFromObject(child);
+						if (meshBox.max.y > maxY * 0.85) {
+							if (Array.isArray(child.material)) {
+								child.material = child.material.map((m) => {
+									const em = m.clone();
+									(em as THREE.MeshLambertMaterial).emissive = new THREE.Color(0xffffaa);
+									(em as THREE.MeshLambertMaterial).emissiveIntensity = 0.5;
+									return em;
+								});
+							} else {
+								const em = child.material.clone();
+								em.emissive = new THREE.Color(0xffffaa);
+								em.emissiveIntensity = 0.5;
+								child.material = em;
+							}
+							state.lightFixtures.push(child as THREE.Mesh);
+						}
+					}
+				});
+
+				group.add(model);
+
+				const pointLight = new THREE.PointLight(0xffeeaa, 0, 60, 2);
+				pointLight.position.y = maxY * 0.95;
+				group.add(pointLight);
+				state.streetLights.push(pointLight);
+				lightUsed = true;
+			}
+			if (!lightUsed) {
+				// Procedural fallback
+				const post = new THREE.Mesh(
+					new THREE.CylinderGeometry(0.15, 0.15, 5),
+					new THREE.MeshLambertMaterial({ color: 0x888888 }),
+				);
+				post.position.y = 2.5;
+				group.add(post);
+				const fixture = new THREE.Mesh(
+					new THREE.BoxGeometry(1, 0.3, 0.5),
+					new THREE.MeshLambertMaterial({
+						color: 0xffffcc,
+						emissive: 0xffffaa,
+						emissiveIntensity: 0.5,
+					}),
+				);
+				fixture.position.y = 5.5;
+				group.add(fixture);
+				state.lightFixtures.push(fixture);
+				const pointLight = new THREE.PointLight(0xffeeaa, 0, 60, 2);
+				pointLight.position.y = 5;
+				group.add(pointLight);
+				state.streetLights.push(pointLight);
+			}
 			break;
 		}
 		default:
