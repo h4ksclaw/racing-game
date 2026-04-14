@@ -310,7 +310,8 @@ export function applyTimeOfDay(hour: number): void {
 	if (renderer) {
 		renderer.toneMappingExposure = 0.5 + st.sunIntensity * 0.5;
 		if (roadMaterial) {
-			roadMaterial.roughness = 0.3 + st.sunIntensity * 0.5; // 0.3 at night, 0.8 at day
+			roadMaterial.roughness = state.roadRoughnessBase * (0.3 + st.sunIntensity * 0.5);
+			roadMaterial.metalness = 0.02 + state.roadWetness * 0.1;
 		}
 	}
 }

@@ -285,5 +285,62 @@ export function applyWeather(weather: WeatherType): void {
 								: 1.0;
 		state.terrainMaterial.uniforms.uSunIntensity.value *= weatherSunMult;
 		state.terrainMaterial.uniforms.uAmbientIntensity.value *= weatherAmbMult;
+
+		// Weather-based terrain tint shifts
+		const gt = state.terrainMaterial.uniforms.uGrassTint.value;
+		const dt = state.terrainMaterial.uniforms.uDirtTint.value;
+		const rt = state.terrainMaterial.uniforms.uRockTint.value;
+		switch (weather) {
+			case "heavy_rain":
+				// Wet ground — darker, slightly blue-shifted
+				gt.setRGB(gt.r * 0.85, gt.g * 0.85, gt.b * 0.95);
+				dt.setRGB(dt.r * 0.8, dt.g * 0.8, dt.b * 0.9);
+				rt.setRGB(rt.r * 0.85, rt.g * 0.85, rt.b * 0.92);
+				break;
+			case "rain":
+				gt.setRGB(gt.r * 0.9, gt.g * 0.9, gt.b * 0.97);
+				dt.setRGB(dt.r * 0.85, dt.g * 0.85, dt.b * 0.93);
+				break;
+			case "snow":
+				// Snow brightens and cools terrain slightly
+				gt.setRGB(
+					Math.min(gt.r * 1.05, 1.2),
+					Math.min(gt.g * 1.05, 1.2),
+					Math.min(gt.b * 1.1, 1.3),
+				);
+				rt.setRGB(
+					Math.min(rt.r * 1.05, 1.2),
+					Math.min(rt.g * 1.05, 1.2),
+					Math.min(rt.b * 1.1, 1.3),
+				);
+				break;
+			case "fog":
+				// Fog desaturates slightly
+				gt.setRGB(gt.r * 0.95, gt.g * 0.95, gt.b * 0.98);
+				break;
+		}
+	}
+
+	// Weather effects on road surface
+	switch (weather) {
+		case "heavy_rain":
+			state.roadRoughnessBase = 0.15;
+			state.roadWetness = 1.0;
+			break;
+		case "rain":
+			state.roadRoughnessBase = 0.25;
+			state.roadWetness = 0.7;
+			break;
+		case "snow":
+			state.roadRoughnessBase = 0.9;
+			state.roadWetness = 0.0;
+			break;
+		case "fog":
+			state.roadRoughnessBase = 0.7;
+			state.roadWetness = 0.2;
+			break;
+		default:
+			state.roadRoughnessBase = 0.8;
+			state.roadWetness = 0.0;
 	}
 }

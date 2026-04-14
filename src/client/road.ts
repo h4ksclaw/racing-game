@@ -1,5 +1,6 @@
 import type { TrackSample } from "@shared/track.ts";
 import * as THREE from "three";
+import type { BiomeConfig } from "./biomes.ts";
 import { state } from "./scene.ts";
 import type { TerrainSampler } from "./terrain.ts";
 import type { TrackResponse } from "./utils.ts";
@@ -58,7 +59,11 @@ function makeGeo(
 
 // ── Build track meshes ──────────────────────────────────────────────────
 
-export async function buildMeshes(data: TrackResponse, rng: () => number): Promise<THREE.Group> {
+export async function buildMeshes(
+	data: TrackResponse,
+	rng: () => number,
+	biome?: BiomeConfig,
+): Promise<THREE.Group> {
 	const group = new THREE.Group();
 	const samples = data.samples;
 
@@ -143,9 +148,13 @@ export async function buildMeshes(data: TrackResponse, rng: () => number): Promi
 		normalMap: tex.normal,
 		normalScale: new THREE.Vector2(1, 1),
 		roughnessMap: tex.roughness,
-		roughness: 0.8,
+		roughness: biome?.roadRoughnessBase ?? 0.85,
 		metalness: 0.02,
 	});
+	if (biome) {
+		roadMat.color.setRGB(...biome.roadTint);
+		state.roadRoughnessBase = biome.roadRoughnessBase;
+	}
 	state.roadMaterial = roadMat;
 
 	// ── Lane markings (thin quads above road surface) ─────────────
