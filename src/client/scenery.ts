@@ -95,7 +95,37 @@ export function loadLightModel(loader: GLTFLoader, path: string): Promise<void> 
 		loader.load(
 			path,
 			(gltf) => {
-				lightModelCache.set(path, gltf.scene.clone());
+				const scene = gltf.scene;
+				scene.updateMatrixWorld(true);
+
+				// Kenney GLBs bake a node translation into the root node.
+				// Bake all world transforms into geometry so we can work with raw verts.
+				scene.traverse((child) => {
+					if (child instanceof THREE.Mesh && child.matrixWorld) {
+						child.geometry.applyMatrix4(child.matrixWorld);
+						child.position.set(0, 0, 0);
+						child.rotation.set(0, 0, 0);
+						child.scale.set(1, 1, 1);
+					}
+				});
+				scene.position.set(0, 0, 0);
+				scene.rotation.set(0, 0, 0);
+				scene.scale.set(1, 1, 1);
+
+				// Center on base: shift geometry so base-bottom-center = origin
+				const bbox = new THREE.Box3().setFromObject(scene);
+				const baseCenter = new THREE.Vector3(
+					(bbox.min.x + bbox.max.x) / 2,
+					bbox.min.y,
+					(bbox.min.z + bbox.max.z) / 2,
+				);
+				scene.traverse((child) => {
+					if (child instanceof THREE.Mesh) {
+						child.geometry.translate(-baseCenter.x, -baseCenter.y, -baseCenter.z);
+					}
+				});
+
+				lightModelCache.set(path, scene);
 				resolve();
 			},
 			undefined,
@@ -412,43 +442,7 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 			if (currentLightModel && lightModelCache.has(currentLightModel)) {
 				const model = lightModelCache.get(currentLightModel)!.clone();
 
-				// Kenney GLBs bake a node translation (e.g. [-0.35, -0.01, -0.65])
-				// into the root node. Reset it so we can properly center the model.
-				// Walk children: if a child is a Group with its own position, absorb its
-				// transform into the geometry by baking it, then reset the parent.
-				model.updateMatrixWorld(true);
-				model.traverse((child) => {
-					if (child === model) return;
-					if (child instanceof THREE.Mesh && child.parent) {
-						// Bake parent's world transform into the mesh geometry
-						child.geometry.applyMatrix4(child.matrixWorld);
-						child.position.set(0, 0, 0);
-						child.rotation.set(0, 0, 0);
-						child.scale.set(1, 1, 1);
-					}
-				});
-				// Reset root to identity
-				model.position.set(0, 0, 0);
-				model.rotation.set(0, 0, 0);
-				model.scale.set(1, 1, 1);
-				model.updateMatrixWorld(true);
-
-				// Now properly center: find base center (bottom of model)
-				const bbox = new THREE.Box3().setFromObject(model);
-				const baseCenter = new THREE.Vector3(
-					(bbox.min.x + bbox.max.x) / 2,
-					bbox.min.y,
-					(bbox.min.z + bbox.max.z) / 2,
-				);
-				// Shift all geometry so base center sits at world origin
-				model.traverse((child) => {
-					if (child instanceof THREE.Mesh) {
-						child.geometry.translate(-baseCenter.x, -baseCenter.y, -baseCenter.z);
-					}
-				});
-				model.updateMatrixWorld(true);
-
-				// Scale after centering so scale applies from the base
+				// Scale from base (model is pre-centered at load time)
 				model.scale.setScalar(LIGHT_MODEL_SCALE);
 
 				// Fix materials: Kenney models use KHR_materials_unlit (flat white).
