@@ -34,6 +34,7 @@ export interface BiomeConfig {
 	// Vegetation
 	treeTypes: SceneryType[]; // which tree variants to use
 	grassTypes: SceneryType[]; // which grass variants
+	bushTypes?: SceneryType[]; // which bush/shrub variants
 	treeDensity: number; // multiplier
 	grassDensity: number;
 	rockDensity: number;
@@ -51,6 +52,15 @@ export interface BiomeConfig {
 
 	// Texture tiling
 	texRepeat?: number; // overrides default TERRAIN_TEX_REPEAT
+	exposureMult?: number; // multiplier on renderer exposure (default 1.0)
+
+	// Terrain blend distances (override shader defaults)
+	mossRange?: number; // how far from road moss extends (default 25)
+	dirtNearDist?: number; // belowDirt fade start (default 0)
+	dirtFarDist?: number; // belowDirt fade end (default -10)
+	farDirtStart?: number; // farDirt blend start distance from road (default 40)
+	farDirtEnd?: number; // farDirt blend end distance from road (default 80)
+	patchNoiseStrength?: number; // how strongly noise2 breaks up farDirt (default 0.7)
 }
 
 // ── Biome definitions ──────────────────────────────────────────────────
@@ -221,23 +231,25 @@ const BIOMES: BiomeConfig[] = [
 	{
 		name: "Rural Countryside",
 		textures: {
-			grass: "/textures/grass/Grass004_1K-JPG",
-			dirt: "/textures/path/Pathway004_1K-JPG",
-			rock: "/textures/gravel/Gravel015_1K-JPG",
-			snow: "/textures/snow/Ground061_1K-JPG",
-			moss: "/textures/moss/Moss002_1K-JPG",
+			grass: "/textures/grass_moss/Grass007_1K-JPG", // mossy grass — rich varied greens
+			dirt: "/textures/forest_floor/Ground012_1K-JPG", // forest floor — dark earthy tones
+			rock: "/textures/rock_mossy/Rock011_1K-JPG", // mossy rocks
+			snow: "/textures/gravel/Gravel015_1K-JPG", // gravel patches mixed into grass
+			moss: "/textures/moss/Moss002_1K-JPG", // deep moss
 		},
 		snowThreshold: 70,
 		rockThreshold: 0.5,
-		grassTint: [1.0, 1.08, 0.88],
-		dirtTint: [0.98, 0.92, 0.82],
-		rockTint: [0.95, 0.95, 0.9],
-		roadTint: [0.92, 0.92, 0.9],
+		grassTint: [0.85, 0.95, 0.72],
+		dirtTint: [0.82, 0.78, 0.68],
+		rockTint: [0.8, 0.8, 0.76],
 		roadRoughnessBase: 0.88,
-		treeTypes: ["tree_pineDefaultB", "tree_broadA", "tree_broadB", "tree_pineTallA"],
-		grassTypes: ["grass", "grass_large"],
-		treeDensity: 0.6,
-		grassDensity: 1.2,
+		snowTint: [0.8, 0.78, 0.72], // gravel tint (snow slot = gravel for this biome)
+		roadTint: [0.88, 0.88, 0.86],
+		treeTypes: ["tree_broadA", "tree_broadB", "tree_broadC", "tree_pineDefaultB", "tree_pineTallA"],
+		grassTypes: ["grass", "grass_large", "grass_wispy"],
+		bushTypes: ["bush_common", "bush_flowers", "bush_flowers"],
+		treeDensity: 1.2,
+		grassDensity: 3.0,
 		rockDensity: 0.8,
 		fogColor: [0.82, 0.85, 0.8],
 		fogNear: 450,
@@ -246,6 +258,14 @@ const BIOMES: BiomeConfig[] = [
 		skyRayleigh: 1.5,
 		noiseAmp: 40,
 		mountainAmplifier: 2,
+		exposureMult: 0.85,
+		// Blend: mostly grass with scattered dirt/rock patches
+		mossRange: 30, // moss extends 30m from road
+		dirtNearDist: -5, // only show below-dirt when well below road
+		dirtFarDist: -30, // stronger fade for below-dirt
+		farDirtStart: 200, // far dirt only at extreme distances
+		farDirtEnd: 400, // gradual fade to far dirt
+		patchNoiseStrength: 0.9, // strong noise breakup on far dirt
 	},
 ];
 

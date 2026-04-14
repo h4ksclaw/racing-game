@@ -1,6 +1,7 @@
 import type * as THREE from "three";
 import type { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import type { BiomeConfig } from "./biomes.ts";
 import type { WeatherType } from "./utils.ts";
 
 /**
@@ -24,6 +25,7 @@ export const state = {
 	terrainMaterial: null as THREE.ShaderMaterial | null,
 	roadMaterial: null as THREE.MeshStandardMaterial | null,
 	roadSnowOverlayMaterial: null as THREE.ShaderMaterial | null,
+	currentBiome: null as BiomeConfig | null,
 	roadRoughnessBase: 0.8, // set by biome, overridden by weather
 	roadWetness: 0.0, // 0=dry, 1=soaked (rain)
 	currentTime: 12,

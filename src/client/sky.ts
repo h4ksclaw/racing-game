@@ -322,7 +322,8 @@ export function applyTimeOfDay(hour: number): void {
 	}
 
 	if (renderer) {
-		renderer.toneMappingExposure = 0.4 + st.sunIntensity * 0.4;
+		const biomeExpMult = state.currentBiome?.exposureMult ?? 1.0;
+		renderer.toneMappingExposure = (0.4 + st.sunIntensity * 0.4) * biomeExpMult;
 		if (roadMaterial) {
 			roadMaterial.roughness = state.roadRoughnessBase * (0.3 + st.sunIntensity * 0.5);
 			roadMaterial.metalness = 0.02 + state.roadWetness * 0.1;

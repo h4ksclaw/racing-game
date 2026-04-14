@@ -58,6 +58,7 @@ async function buildScene(data: TrackResponse) {
 
 	// Biome
 	const biome = getBiomeForSeed(data.seed);
+	state.currentBiome = biome;
 
 	scene.background = new THREE.Color(0x87ceeb);
 	scene.fog = new THREE.Fog(

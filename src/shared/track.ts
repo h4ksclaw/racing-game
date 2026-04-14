@@ -516,6 +516,7 @@ export function generateScenery(
 		sceneryDensity?: number;
 		treeTypes?: SceneryType[];
 		grassTypes?: SceneryType[];
+		bushTypes?: SceneryType[];
 		treeDensity?: number;
 		grassDensity?: number;
 		rockDensity?: number;
@@ -563,6 +564,7 @@ export function generateScenery(
 		"stone_tallJ",
 	];
 	const GRASS_TYPES: SceneryType[] = opts.grassTypes ?? ["grass", "grass_large"];
+	const BUSH_TYPES: SceneryType[] = opts.bushTypes ?? ["bush_common"];
 	const FOREST_DETAIL: SceneryType[] = [
 		"stump_old",
 		"stump_round",
@@ -699,6 +701,44 @@ export function generateScenery(
 					position: pos,
 					rotation: rng() * Math.PI * 2,
 					scale: 0.2 + rng() * 1.2,
+				});
+			}
+		}
+
+		// Bushes — low shrubbery near track (1-12 units)
+		for (let b = 0; b < 8; b++) {
+			if (rng() < 0.45 * sceneryDensity) {
+				const side = rng() < 0.5 ? -1 : 1;
+				const offset = side === -1 ? s.grassLeft : s.grassRight;
+				const dist = 1.5 + rng() * 10;
+				const jitter = (rng() - 0.5) * 4;
+				const pos = v3Add(offset, v3Scale(s.binormal, side * dist));
+				pos.x += jitter;
+				pos.z += jitter;
+				scenery.push({
+					type: BUSH_TYPES[Math.floor(rng() * BUSH_TYPES.length)],
+					position: pos,
+					rotation: rng() * Math.PI * 2,
+					scale: 0.3 + rng() * 0.8,
+				});
+			}
+		}
+
+		// Bushes — wider spread (5-30 units)
+		for (let b = 0; b < 5; b++) {
+			if (rng() < 0.3 * sceneryDensity) {
+				const side = rng() < 0.5 ? -1 : 1;
+				const offset = side === -1 ? s.grassLeft : s.grassRight;
+				const dist = 5 + rng() * 25;
+				const jitter = (rng() - 0.5) * 6;
+				const pos = v3Add(offset, v3Scale(s.binormal, side * dist));
+				pos.x += jitter;
+				pos.z += jitter;
+				scenery.push({
+					type: BUSH_TYPES[Math.floor(rng() * BUSH_TYPES.length)],
+					position: pos,
+					rotation: rng() * Math.PI * 2,
+					scale: 0.3 + rng() * 1.0,
 				});
 			}
 		}
