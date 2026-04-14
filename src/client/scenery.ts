@@ -451,6 +451,7 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 						});
 					} else if (matName === "grey") {
 						// Post body + light housing — white/silver with emissive glow
+						const isAutumnWoods = currentLightModel?.includes("lightPost_exclusive");
 						child.material = new THREE.MeshStandardMaterial({
 							color: 0xdddddd,
 							emissive: 0xffffcc,
@@ -458,6 +459,8 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 							metalness: 0.5,
 							roughness: 0.2,
 						});
+						// Tag with bloom multiplier (0.5 for Autumn Woods = half bloom)
+						child.userData.bloomMult = isAutumnWoods ? 0.5 : 1.0;
 						state.lightFixtures.push(child as THREE.Mesh);
 						// Track highest point for PointLight placement (in local coords)
 						const box = new THREE.Box3().setFromObject(child);
@@ -509,11 +512,24 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 
 				group.add(model);
 
-				// Place PointLight at the emissive fixture height
-				const pointLight = new THREE.PointLight(0xffeeaa, 0, 60, 2);
-				pointLight.position.set(0, lightWorldY * LIGHT_MODEL_SCALE, 0);
-				group.add(pointLight);
-				state.streetLights.push(pointLight);
+				// Place light at the emissive fixture height
+				const isAutumnWoods = currentLightModel?.includes("lightPost_exclusive");
+				let light: THREE.Light;
+				if (isAutumnWoods) {
+					// SpotLight: 45° cone aimed toward road (downward toward -Z in local space)
+					const spot = new THREE.SpotLight(0xffeeaa, 0, 60, Math.PI / 4, 0.5, 2);
+					spot.position.set(0, lightWorldY * LIGHT_MODEL_SCALE, 0);
+					spot.target.position.set(0, 0, -8);
+					group.add(spot);
+					group.add(spot.target);
+					light = spot;
+				} else {
+					const pointLight = new THREE.PointLight(0xffeeaa, 0, 60, 2);
+					pointLight.position.set(0, lightWorldY * LIGHT_MODEL_SCALE, 0);
+					group.add(pointLight);
+					light = pointLight;
+				}
+				state.streetLights.push(light);
 				lightUsed = true;
 			}
 			if (!lightUsed) {

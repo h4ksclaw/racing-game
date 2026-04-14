@@ -18,7 +18,7 @@ export const state = {
 	ambient: null as THREE.HemisphereLight | null,
 	skyUniforms: null as Record<string, THREE.IUniform> | null,
 	stars: null as THREE.Points | null,
-	streetLights: [] as THREE.PointLight[],
+	streetLights: [] as THREE.Light[],
 	lightFixtures: [] as THREE.Mesh[],
 	rainSystem: null as THREE.Points | null,
 	snowSystem: null as THREE.Points | null,
