@@ -443,17 +443,17 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 					const color = mat.color ? mat.color.clone() : new THREE.Color(0.8, 0.8, 0.8);
 
 					if (matName === "_defaultMat") {
-						// Thin back plate — dark metallic post body
+						// Back plate — dark metallic (same as post body)
 						child.material = new THREE.MeshStandardMaterial({
 							color: new THREE.Color(0.4, 0.4, 0.42),
 							metalness: 0.7,
 							roughness: 0.25,
 						});
 					} else if (matName === "grey") {
-						// Post body — white/silver metallic
+						// Pillar — white/silver metallic
 						const isAutumnWoods = currentLightModel?.includes("lightPost_exclusive");
 						child.material = new THREE.MeshStandardMaterial({
-							color: 0xdddddd,
+							color: 0xe8e8e8,
 							emissive: 0xffffcc,
 							emissiveIntensity: isAutumnWoods ? 0.05 : 0.6,
 							metalness: 0.5,
@@ -462,15 +462,14 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 						if (!isAutumnWoods) {
 							state.lightFixtures.push(child as THREE.Mesh);
 						}
-						// Track highest point for light placement (in local coords)
 						const box = new THREE.Box3().setFromObject(child);
 						if (box.max.y > lightWorldY) lightWorldY = box.max.y;
 					} else if (matName === "pylon") {
-						// Arm/bracket — white metallic, no bloom
+						// Arm bracket — dark metallic (same as post body)
 						child.material = new THREE.MeshStandardMaterial({
-							color: 0xcccccc,
-							metalness: 0.6,
-							roughness: 0.3,
+							color: new THREE.Color(0.4, 0.4, 0.42),
+							metalness: 0.7,
+							roughness: 0.25,
 						});
 					} else if (matName === "road") {
 						// Base plate — dark matte
@@ -524,20 +523,25 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 					group.add(spot.target);
 					light = spot;
 
-					// Bloom only at the light tip (small emissive sphere at arm end)
-					const tipBulb = new THREE.Mesh(
-						new THREE.SphereGeometry(0.08, 8, 8),
-						new THREE.MeshStandardMaterial({
-							color: 0xffffee,
-							emissive: 0xffffcc,
-							emissiveIntensity: 0.6,
-						}),
-					);
-					// Arm tip in local space is approx (0, 0.71, 0.08), scaled by LIGHT_MODEL_SCALE
-					tipBulb.position.set(0, 0.71 * LIGHT_MODEL_SCALE, 0.08 * LIGHT_MODEL_SCALE);
-					tipBulb.userData.bloomMult = 0.5;
-					group.add(tipBulb);
-					state.lightFixtures.push(tipBulb);
+					// Two bloom spheres at arm tip, side by side (in model local space)
+					// Arm tip: Y=0.714, Z=0.074 in mesh coords, scaled by LIGHT_MODEL_SCALE
+					const tipY = 0.714 * LIGHT_MODEL_SCALE;
+					const tipZ = 0.074 * LIGHT_MODEL_SCALE;
+					const bulbRadius = 0.1;
+					const bulbSep = 0.2; // 20cm apart center-to-center
+					const bulbGeo = new THREE.SphereGeometry(bulbRadius, 8, 8);
+					const bulbMat = new THREE.MeshStandardMaterial({
+						color: 0xffffee,
+						emissive: 0xffffcc,
+						emissiveIntensity: 0.6,
+					});
+					for (const xOff of [-bulbSep / 2, bulbSep / 2]) {
+						const bulb = new THREE.Mesh(bulbGeo, bulbMat);
+						bulb.position.set(xOff, tipY, tipZ);
+						bulb.userData.bloomMult = 0.5;
+						group.add(bulb);
+						state.lightFixtures.push(bulb);
+					}
 				} else {
 					const pointLight = new THREE.PointLight(0xffeeaa, 0, 60, 2);
 					pointLight.position.set(0, lightWorldY * LIGHT_MODEL_SCALE, 0);
