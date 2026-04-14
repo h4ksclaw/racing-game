@@ -450,7 +450,7 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 					} else if (matName === "top") {
 						// Light housing — dark metallic with emissive
 						child.material = new THREE.MeshStandardMaterial({
-							color: 0x555555,
+							color: 0x888888,
 							emissive: 0xffffcc,
 							emissiveIntensity: isAutumnWoods ? 0.15 : 0.6,
 							metalness: 0.7,
