@@ -97,16 +97,12 @@ export function loadLightModel(loader: GLTFLoader, path: string): Promise<void> 
 			(gltf) => {
 				const scene = gltf.scene;
 
-				// Kenney GLBs have a single root node with a baked translation (e.g. [-0.35, -0.01, -0.65]).
-				// The mesh geometry is in local space (Y: 0 to ~0.8, X centered at 0, arm extends in +Z).
-				// We do NOT bake transforms into geometry because GLTFLoader caches accessor buffers —
-				// all primitives sharing the same POSITION accessor would corrupt each other.
-				//
-				// Instead, we negate the root translation so the post base sits at origin.
-				// The model structure is: root Group → mesh children with their own local transforms.
-				// We adjust the root position to cancel the baked offset.
-				const bakedT = scene.position.clone();
-				scene.position.set(-bakedT.x, -bakedT.y, -bakedT.z);
+				// If the model has a baked root translation, negate it so base sits at origin.
+				// Custom models (e.g. lightPost_exclusive v2) are already centered — skip.
+				const bakedT = scene.position;
+				if (bakedT.x !== 0 || bakedT.y !== 0 || bakedT.z !== 0) {
+					scene.position.set(-bakedT.x, -bakedT.y, -bakedT.z);
+				}
 
 				lightModelCache.set(path, scene);
 				resolve();
@@ -425,37 +421,37 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 			if (currentLightModel && lightModelCache.has(currentLightModel)) {
 				const model = lightModelCache.get(currentLightModel)!.clone();
 
-				// Scale from base (model is pre-centered at load time)
+				// Scale from base
 				model.scale.setScalar(LIGHT_MODEL_SCALE);
 
-				// Fix materials: Kenney models use KHR_materials_unlit (flat white).
-				// Convert to MeshStandardMaterial with proper PBR values.
+				const isAutumnWoods = currentLightModel?.includes("lightPost_exclusive");
+
+				// Replace unlit materials with proper PBR MeshStandardMaterial.
+				// Material names: Pilar (pole), top (housing), pylon (arm), light_direction (helper cone).
 				let lightWorldY = 0;
+				let spotDirection: THREE.Vector3 | null = null;
 				model.traverse((child) => {
 					if (!(child instanceof THREE.Mesh)) return;
 					child.castShadow = true;
-
-					// Get material name to determine role
 					const matName = child.material?.name || "";
-
-					// Replace unlit materials with lit MeshStandardMaterial
 					const mat = child.material as THREE.MeshStandardMaterial;
 					const color = mat.color ? mat.color.clone() : new THREE.Color(0.8, 0.8, 0.8);
 
-					if (matName === "_defaultMat") {
-						// Back plate — dark metallic (same as post body)
+					if (matName === "Pilar") {
+						// Main pole — dark metallic
 						child.material = new THREE.MeshStandardMaterial({
-							color: new THREE.Color(0.4, 0.4, 0.42),
+							color: new THREE.Color(0.35, 0.35, 0.37),
 							metalness: 0.7,
 							roughness: 0.25,
 						});
-					} else if (matName === "grey") {
-						// Pillar — white/silver metallic
-						const isAutumnWoods = currentLightModel?.includes("lightPost_exclusive");
+						const box = new THREE.Box3().setFromObject(child);
+						if (box.max.y > lightWorldY) lightWorldY = box.max.y;
+					} else if (matName === "top") {
+						// Light housing — white/silver with emissive
 						child.material = new THREE.MeshStandardMaterial({
 							color: 0xe8e8e8,
 							emissive: 0xffffcc,
-							emissiveIntensity: isAutumnWoods ? 0.05 : 0.6,
+							emissiveIntensity: isAutumnWoods ? 0.15 : 0.6,
 							metalness: 0.5,
 							roughness: 0.2,
 						});
@@ -465,21 +461,36 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 						const box = new THREE.Box3().setFromObject(child);
 						if (box.max.y > lightWorldY) lightWorldY = box.max.y;
 					} else if (matName === "pylon") {
-						// Arm bracket — dark metallic (same as post body)
+						// Arm bracket — dark metallic, slight bloom for Autumn Woods
 						child.material = new THREE.MeshStandardMaterial({
-							color: new THREE.Color(0.4, 0.4, 0.42),
+							color: new THREE.Color(0.35, 0.35, 0.37),
 							metalness: 0.7,
 							roughness: 0.25,
+							emissive: isAutumnWoods ? 0xffffcc : 0x000000,
+							emissiveIntensity: isAutumnWoods ? 0.4 : 0,
 						});
+						if (isAutumnWoods) {
+							child.userData.bloomMult = 0.3;
+							state.lightFixtures.push(child as THREE.Mesh);
+						}
+					} else if (matName === "light_direction") {
+						// Direction helper cone — extract direction vector, then hide
+						child.visible = false;
+						const box = new THREE.Box3().setFromObject(child);
+						const center = new THREE.Vector3();
+						box.getCenter(center);
+						spotDirection = new THREE.Vector3(
+							box.max.x - center.x,
+							box.max.y - center.y,
+							box.max.z - center.z,
+						).normalize();
 					} else if (matName === "road") {
-						// Base plate — dark matte
 						child.material = new THREE.MeshStandardMaterial({
 							color: new THREE.Color(0.25, 0.25, 0.25),
 							metalness: 0.3,
 							roughness: 0.7,
 						});
 					} else if (matName === "red") {
-						// Warning lights — slight emissive
 						child.material = new THREE.MeshStandardMaterial({
 							color: new THREE.Color(0.9, 0.3, 0.3),
 							emissive: 0xff2200,
@@ -488,14 +499,12 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 							roughness: 0.3,
 						});
 					} else if (matName === "grass") {
-						// Grass patch at base — matte green
 						child.material = new THREE.MeshStandardMaterial({
 							color,
 							metalness: 0.0,
 							roughness: 0.9,
 						});
 					} else {
-						// Unknown material — make it look reasonable
 						child.material = new THREE.MeshStandardMaterial({
 							color,
 							metalness: 0.4,
@@ -511,40 +520,29 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 
 				group.add(model);
 
-				// Place light at the emissive fixture height
-				const isAutumnWoods = currentLightModel?.includes("lightPost_exclusive");
+				// Place light at the fixture height
 				let light: THREE.Light;
-				if (isAutumnWoods) {
-					// SpotLight: 45° cone aimed straight down (right below the light)
+				const lightY = lightWorldY * LIGHT_MODEL_SCALE;
+				if (isAutumnWoods && spotDirection) {
+					// SpotLight using direction from the cone helper in the model
+					const dir = spotDirection as THREE.Vector3;
 					const spot = new THREE.SpotLight(0xffeeaa, 0, 60, Math.PI / 4, 0.5, 2);
-					spot.position.set(0, lightWorldY * LIGHT_MODEL_SCALE, 0);
+					spot.position.set(0, lightY, 0);
+					spot.target.position.set(dir.x * 10, lightY + dir.y * 10, dir.z * 10);
+					group.add(spot);
+					group.add(spot.target);
+					light = spot;
+				} else if (isAutumnWoods) {
+					// Fallback: SpotLight straight down
+					const spot = new THREE.SpotLight(0xffeeaa, 0, 60, Math.PI / 4, 0.5, 2);
+					spot.position.set(0, lightY, 0);
 					spot.target.position.set(0, 0, 0);
 					group.add(spot);
 					group.add(spot.target);
 					light = spot;
-
-					// Two bloom spheres at arm tip, side by side (in model local space)
-					// Arm tip: Y=0.714, Z=0.074 in mesh coords, scaled by LIGHT_MODEL_SCALE
-					const tipY = 0.714 * LIGHT_MODEL_SCALE;
-					const tipZ = 0.074 * LIGHT_MODEL_SCALE;
-					const bulbRadius = 0.1;
-					const bulbSep = 0.2; // 20cm apart center-to-center
-					const bulbGeo = new THREE.SphereGeometry(bulbRadius, 8, 8);
-					const bulbMat = new THREE.MeshStandardMaterial({
-						color: 0xffffee,
-						emissive: 0xffffcc,
-						emissiveIntensity: 0.6,
-					});
-					for (const xOff of [-bulbSep / 2, bulbSep / 2]) {
-						const bulb = new THREE.Mesh(bulbGeo, bulbMat);
-						bulb.position.set(xOff, tipY, tipZ);
-						bulb.userData.bloomMult = 0.5;
-						group.add(bulb);
-						state.lightFixtures.push(bulb);
-					}
 				} else {
 					const pointLight = new THREE.PointLight(0xffeeaa, 0, 60, 2);
-					pointLight.position.set(0, lightWorldY * LIGHT_MODEL_SCALE, 0);
+					pointLight.position.set(0, lightY, 0);
 					group.add(pointLight);
 					light = pointLight;
 				}
