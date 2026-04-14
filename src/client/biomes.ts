@@ -24,10 +24,12 @@ export interface BiomeConfig {
 	grassTint: [number, number, number];
 	dirtTint: [number, number, number];
 	rockTint: [number, number, number];
+	snowTint?: [number, number, number]; // boost snow brightness (default 1.3, 1.3, 1.35)
 
 	// Road appearance per biome
 	roadTint: [number, number, number]; // color multiplier on road texture
 	roadRoughnessBase: number; // base roughness (lower = shinier)
+	roadSnowOverlay?: { amount: number; color: [number, number, number] }; // procedural snow patches on road
 
 	// Vegetation
 	treeTypes: SceneryType[]; // which tree variants to use
@@ -46,6 +48,9 @@ export interface BiomeConfig {
 	// Terrain height
 	noiseAmp: number;
 	mountainAmplifier: number;
+
+	// Texture tiling
+	texRepeat?: number; // overrides default TERRAIN_TEX_REPEAT
 }
 
 // ── Biome definitions ──────────────────────────────────────────────────
@@ -147,31 +152,42 @@ const BIOMES: BiomeConfig[] = [
 	{
 		name: "Alpine Meadow",
 		textures: {
-			grass: "/textures/grass/Grass004_1K-JPG",
+			grass: "/textures/gravel/Gravel015_1K-JPG", // rocky alpine ground, not grass
 			dirt: "/textures/rock_gray/Rock010_1K-JPG",
 			rock: "/textures/rock_mossy/Rock011_1K-JPG",
-			snow: "/textures/snow/Ground061_1K-JPG",
-			moss: "/textures/grass_moss/Grass007_1K-JPG",
+			snow: "/textures/snow/Snow_Procedural",
+			moss: "/textures/rock_dark/Rock031_1K-JPG", // dark rock for variety
 		},
-		snowThreshold: 80,
-		rockThreshold: 0.4,
-		grassTint: [0.8, 0.95, 0.82],
-		dirtTint: [0.82, 0.8, 0.78],
-		rockTint: [0.82, 0.82, 0.88],
-		roadTint: [0.88, 0.9, 0.95],
+		snowThreshold: 40,
+		rockThreshold: 0.5,
+		grassTint: [0.65, 0.62, 0.58], // gray-brown rocky ground
+		dirtTint: [0.55, 0.53, 0.5],
+		rockTint: [0.6, 0.58, 0.55],
+		snowTint: [1.06, 1.06, 1.1],
+		roadTint: [0.85, 0.87, 0.92],
 		roadRoughnessBase: 0.8,
-		treeTypes: ["tree_pineTallA", "tree_pineTallB", "tree_pineTallC", "tree_pineDefaultB"],
-		grassTypes: ["grass", "grass_large"],
-		treeDensity: 0.5,
-		grassDensity: 0.6,
-		rockDensity: 1.8,
-		fogColor: [0.75, 0.8, 0.85],
-		fogNear: 300,
-		fogFar: 1400,
-		skyTurbidity: 3,
-		skyRayleigh: 2,
+		roadSnowOverlay: { amount: 0.65, color: [0.92, 0.93, 0.97] },
+		treeTypes: [
+			"tree_pineTallA",
+			"tree_pineTallB",
+			"tree_pineTallC",
+			"tree_pineTallD",
+			"tree_pineDefaultB",
+			"tree_pineSmallA",
+			"tree_pineSmallB",
+		],
+		grassTypes: [], // no grass in alpine — it's rocks and snow
+		treeDensity: 0.9,
+		grassDensity: 0.0,
+		rockDensity: 2.0,
+		fogColor: [0.72, 0.78, 0.85],
+		fogNear: 250,
+		fogFar: 1200,
+		skyTurbidity: 2,
+		skyRayleigh: 1.5,
 		noiseAmp: 70,
 		mountainAmplifier: 6,
+		texRepeat: 600, // tighter tiling to hide repeats
 	},
 	{
 		name: "Tropical Jungle",

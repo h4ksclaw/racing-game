@@ -51,43 +51,43 @@ export const timeKeyframes: TimeKeyframe[] = [
 	{
 		hour: 8,
 		sunColor: [1.0, 0.9, 0.7],
-		sunIntensity: 1.0,
+		sunIntensity: 0.85,
 		sunElevation: 25,
-		ambientColor: [0.5, 0.55, 0.6],
-		ambientIntensity: 0.5,
+		ambientColor: [0.45, 0.5, 0.55],
+		ambientIntensity: 0.4,
 		fogColor: [0.7, 0.75, 0.8],
 		fogNear: 400,
 		fogFar: 1800,
-		turbidity: 4,
-		rayleigh: 2,
+		turbidity: 3,
+		rayleigh: 1,
 		starsOpacity: 0,
 	},
 	{
 		hour: 12,
 		sunColor: [1.0, 1.0, 0.95],
-		sunIntensity: 1.5,
+		sunIntensity: 1.2,
 		sunElevation: 65,
-		ambientColor: [0.6, 0.65, 0.7],
-		ambientIntensity: 0.6,
+		ambientColor: [0.5, 0.55, 0.6],
+		ambientIntensity: 0.5,
 		fogColor: [0.75, 0.8, 0.85],
 		fogNear: 600,
 		fogFar: 2000,
-		turbidity: 3,
-		rayleigh: 2,
+		turbidity: 2.5,
+		rayleigh: 1,
 		starsOpacity: 0,
 	},
 	{
 		hour: 16,
 		sunColor: [1.0, 0.9, 0.7],
-		sunIntensity: 1.1,
+		sunIntensity: 0.9,
 		sunElevation: 30,
-		ambientColor: [0.5, 0.5, 0.55],
-		ambientIntensity: 0.5,
+		ambientColor: [0.45, 0.48, 0.52],
+		ambientIntensity: 0.4,
 		fogColor: [0.7, 0.72, 0.78],
 		fogNear: 500,
 		fogFar: 1800,
-		turbidity: 4,
-		rayleigh: 2,
+		turbidity: 3,
+		rayleigh: 1,
 		starsOpacity: 0,
 	},
 	{
@@ -224,7 +224,7 @@ export function setupSky(scene: THREE.Scene): Record<string, THREE.IUniform> {
 	(sky.material as THREE.ShaderMaterial).onBeforeCompile = (shader) => {
 		shader.fragmentShader = shader.fragmentShader.replace(
 			"gl_FragColor = vec4( texColor, 1.0 );",
-			"gl_FragColor = vec4( min(texColor, vec3(0.84)), 1.0 );",
+			"gl_FragColor = vec4( min(texColor, vec3(0.72)), 1.0 );",
 		);
 	};
 	scene.add(sky);
@@ -252,6 +252,7 @@ export function applyTimeOfDay(hour: number): void {
 		lightFixtures,
 		terrainMaterial,
 		roadMaterial,
+		roadSnowOverlayMaterial,
 		renderer,
 	} = state;
 	if (!sc || !sun || !ambient) return;
@@ -307,8 +308,21 @@ export function applyTimeOfDay(hour: number): void {
 		terrainMaterial.uniforms.uStreetLightIntensity.value = nightFactor;
 	}
 
+	if (roadSnowOverlayMaterial) {
+		roadSnowOverlayMaterial.uniforms.uSunDir.value
+			.set(Math.cos(sunElev) * 300, Math.sin(sunElev) * 300, 100)
+			.normalize();
+		roadSnowOverlayMaterial.uniforms.uSunColor.value.setRGB(...st.sunColor);
+		roadSnowOverlayMaterial.uniforms.uSunIntensity.value = st.sunIntensity;
+		roadSnowOverlayMaterial.uniforms.uAmbientColor.value.setRGB(...st.ambientColor);
+		roadSnowOverlayMaterial.uniforms.uAmbientIntensity.value = st.ambientIntensity;
+		roadSnowOverlayMaterial.uniforms.uFogColor.value.setRGB(...st.fogColor);
+		roadSnowOverlayMaterial.uniforms.uFogNear.value = st.fogNear;
+		roadSnowOverlayMaterial.uniforms.uFogFar.value = st.fogFar;
+	}
+
 	if (renderer) {
-		renderer.toneMappingExposure = 0.5 + st.sunIntensity * 0.5;
+		renderer.toneMappingExposure = 0.4 + st.sunIntensity * 0.4;
 		if (roadMaterial) {
 			roadMaterial.roughness = state.roadRoughnessBase * (0.3 + st.sunIntensity * 0.5);
 			roadMaterial.metalness = 0.02 + state.roadWetness * 0.1;

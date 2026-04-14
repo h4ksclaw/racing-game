@@ -23,6 +23,7 @@ export const state = {
 	snowSystem: null as THREE.Points | null,
 	terrainMaterial: null as THREE.ShaderMaterial | null,
 	roadMaterial: null as THREE.MeshStandardMaterial | null,
+	roadSnowOverlayMaterial: null as THREE.ShaderMaterial | null,
 	roadRoughnessBase: 0.8, // set by biome, overridden by weather
 	roadWetness: 0.0, // 0=dry, 1=soaked (rain)
 	currentTime: 12,

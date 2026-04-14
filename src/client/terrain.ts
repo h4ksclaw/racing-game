@@ -24,6 +24,21 @@ function loadTex(path: string): Promise<THREE.Texture> {
 	});
 }
 
+function loadNormalTex(path: string): Promise<THREE.Texture> {
+	return new Promise((resolve, reject) => {
+		new THREE.TextureLoader().load(
+			path,
+			(tex) => {
+				tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+				// Normal maps stay in linear space
+				resolve(tex);
+			},
+			undefined,
+			reject,
+		);
+	});
+}
+
 // ── TerrainSampler ──────────────────────────────────────────────────────
 
 export class TerrainSampler {
@@ -140,14 +155,16 @@ async function loadTerrainTextures(biome: {
 	// Reload if biome changed
 	if (terrainTextures && loadedBiome === biome.name) return terrainTextures;
 	const tex = biome.textures;
-	const [grassC, dirtC, rockC, snowC, mossC] = await Promise.all([
+	const [grassC, dirtC, rockC, rockN, snowC, snowN, mossC] = await Promise.all([
 		loadTex(`${tex.grass}_Color.jpg`),
 		loadTex(`${tex.dirt}_Color.jpg`),
 		loadTex(`${tex.rock}_Color.jpg`),
+		loadNormalTex(`${tex.rock}_NormalGL.jpg`),
 		loadTex(`${tex.snow}_Color.jpg`),
+		loadNormalTex(`${tex.snow}_NormalGL.jpg`),
 		loadTex(`${tex.moss}_Color.jpg`),
 	]);
-	terrainTextures = { grassC, dirtC, rockC, snowC, mossC };
+	terrainTextures = { grassC, dirtC, rockC, rockN, snowC, snowN, mossC };
 	loadedBiome = biome.name;
 	return terrainTextures;
 }
@@ -182,7 +199,9 @@ precision highp float;
 uniform sampler2D tGrassC;
 uniform sampler2D tDirtC;
 uniform sampler2D tRockC;
+uniform sampler2D tRockN;
 uniform sampler2D tSnowC;
+uniform sampler2D tSnowN;
 uniform sampler2D tMossC;
 uniform vec3 uSunDir;
 uniform float uSunIntensity;
@@ -198,6 +217,7 @@ uniform vec3 uDirtTint;
 uniform vec3 uRockTint;
 uniform float uSnowThreshold;
 uniform float uRockThreshold;
+uniform vec3 uSnowTint; // brightness boost for snow
 uniform int uStreetLightCount;
 uniform vec3 uStreetLightPos[4];
 uniform vec3 uStreetLightColor[4];
@@ -209,6 +229,19 @@ varying vec3 vNormal;
 varying vec3 vBlend0;
 varying vec3 vBlend1;
 
+// Stochastic tiling: rotates each texture tile by a random angle
+// based on tile position. Completely breaks the grid pattern.
+vec2 stochasticUV(vec2 uv, float scale) {
+	vec2 tileId = floor(uv * scale);
+	vec2 tileUv = fract(uv * scale);
+	float h = fract(sin(dot(tileId, vec2(127.1, 311.7))) * 43758.5453);
+	float angle = h * 6.28318;
+	vec2 centered = tileUv - 0.5;
+	float c = cos(angle); float s = sin(angle);
+	vec2 rotated = vec2(c * centered.x - s * centered.y, s * centered.x + c * centered.y) + 0.5;
+	return rotated;
+}
+
 void main() {
 	float aboveRoad = vBlend0.x;
 	float slope = vBlend0.y;
@@ -217,10 +250,20 @@ void main() {
 	float noise2 = vBlend1.y;
 	float nearRoad = vBlend1.z;
 
-	float wRock = smoothstep(uRockThreshold, uRockThreshold + 0.2, slope);
-	float wSnow = smoothstep(uSnowThreshold, uSnowThreshold + 30.0, aboveRoad);
+	float wRock = smoothstep(uRockThreshold, uRockThreshold + 0.15, slope);
+	float wSnowRaw = smoothstep(uSnowThreshold, uSnowThreshold + 15.0, aboveRoad);
+	// Break up snow with noise — rock pokes through in patches
+	float snowBreakup = smoothstep(0.3, 0.7, noise2);
+	// At moderate height, breakup is strong. At very high, snow wins.
+	float heightFactor = smoothstep(uSnowThreshold, uSnowThreshold + 60.0, aboveRoad);
+	float wSnow = wSnowRaw * mix(snowBreakup, 1.0, heightFactor);
 	float wNearMoss = smoothstep(0.0, 1.0, nearRoad) * (0.5 + 0.5 * noise1);
 	float wBelowDirt = smoothstep(0.0, -10.0, aboveRoad);
+	// Steep slopes punch through snow — rock faces show on cliffs
+	float slopeBreak = smoothstep(0.35, 0.55, slope) * (1.0 - heightFactor * 0.5);
+	wSnow *= (1.0 - slopeBreak * 0.7);
+	wRock = max(wRock, slopeBreak * 0.5);
+
 	float wFarDirt = smoothstep(40.0, 80.0, dist) * (0.3 + 0.7 * noise2);
 
 	float wGrass = 1.0;
@@ -239,17 +282,57 @@ void main() {
 	wBelowDirt /= total;
 	wFarDirt /= total;
 
-	vec3 grass = texture2D(tGrassC, vUv).rgb;
-	vec3 dirt = texture2D(tDirtC, vUv).rgb;
-	vec3 rock = texture2D(tRockC, vUv).rgb;
-	vec3 snow = texture2D(tSnowC, vUv).rgb;
-	vec3 moss = texture2D(tMossC, vUv).rgb;
+	// Stochastic UVs to break tiling — each tile rotated randomly
+	vec2 suvG = stochasticUV(vUv, uTexRepeat);
+	vec2 suvD = stochasticUV(vUv, uTexRepeat * 1.1);
+	vec2 suvR = stochasticUV(vUv, uTexRepeat);
+	vec2 suvS = stochasticUV(vUv, uTexRepeat);
+	vec2 suvM = stochasticUV(vUv, uTexRepeat * 0.9);
+
+	vec3 grass = texture2D(tGrassC, suvG).rgb;
+	vec3 dirt = texture2D(tDirtC, suvD).rgb;
+	vec3 rock = texture2D(tRockC, suvR).rgb;
+	vec3 snow = texture2D(tSnowC, suvS).rgb * uSnowTint;
+	vec3 moss = texture2D(tMossC, suvM).rgb;
+
+	// Normal maps with same stochastic UVs
+	vec3 snowNormal = texture2D(tSnowN, suvS).rgb * 2.0 - 1.0;
+	snowNormal = normalize(snowNormal);
+	vec3 rockNormal = texture2D(tRockN, suvR).rgb * 2.0 - 1.0;
+	rockNormal = normalize(rockNormal);
+
+	// Compute TBN from screen-space derivatives
+	vec3 Q1 = dFdx(vWorldPos);
+	vec3 Q2 = dFdy(vWorldPos);
+	vec2 st1 = dFdx(vUv);
+	vec2 st2 = dFdy(vUv);
+	vec3 T = normalize(Q1 * st2.t - Q2 * st1.t);
+	vec3 B = normalize(-Q1 * st2.s + Q2 * st1.s);
+	vec3 N0 = normalize(vNormal);
+	mat3 tbn = mat3(T, B, N0);
+
+	// Blend normals same as colors
+	vec3 normalMap = normalize(
+		N0 * (wGrass + wBelowDirt + wFarDirt + wNearMoss) +
+		(tbn * rockNormal) * wRock +
+		(tbn * snowNormal) * wSnow
+	);
 
 	vec3 baseColor = grass * uGrassTint * wGrass + dirt * uDirtTint * (wBelowDirt + wFarDirt) + rock * uRockTint * wRock + snow + moss * uGrassTint * wNearMoss;
 
-	vec3 N = normalize(vNormal);
+	vec3 N = normalize(normalMap);
 	vec3 sunDir = normalize(uSunDir);
 	float NdotL = max(dot(N, sunDir), 0.0);
+
+	// Snow specular sparkle (Blinn-Phong, tight highlight)
+	vec3 viewDir = normalize(cameraPosition - vWorldPos);
+	vec3 halfDir = normalize(sunDir + viewDir);
+	float snowSpec = pow(max(dot(N, halfDir), 0.0), 128.0) * wSnow * uSunIntensity;
+	// Fresnel rim on snow for icy look
+	float snowFresnel = pow(1.0 - max(dot(N, viewDir), 0.0), 3.0) * wSnow * 0.15;
+
+	// Rock specular (softer)
+	float rockSpec = pow(max(dot(N, halfDir), 0.0), 32.0) * wRock * uSunIntensity * 0.15;
 
 	// Street light point light contribution
 	vec3 pointLighting = vec3(0.0);
@@ -264,6 +347,8 @@ void main() {
 	pointLighting *= uStreetLightIntensity;
 
 	vec3 diffuse = baseColor * (uAmbientColor * uAmbientIntensity + uSunColor * NdotL * uSunIntensity + pointLighting);
+	diffuse += vec3(snowSpec * 0.6 + snowFresnel); // snow sparkle
+	diffuse += vec3(rockSpec * 0.3); // subtle rock sheen
 
 	float fogDist = length(vWorldPos - cameraPosition);
 	float fogFactor = smoothstep(uFogNear, uFogFar, fogDist);
@@ -306,7 +391,13 @@ export async function buildTerrain(
 		const blend = smoothstep(15, 40, dist);
 		const slope = blend > 0.5 ? Math.abs(terrainY - terrain.avgRoadY) / 80 : 0;
 		const noise1 = Math.sin(x * 0.05 + z * 0.07) * 0.5 + 0.5;
-		const noise2 = Math.cos(x * 0.03 + z * 0.09) * 0.5 + 0.5;
+		// Better noise for snow/rock breakup — multi-scale pseudo-random
+		const nx = x * 0.02,
+			nz = z * 0.02;
+		const noise2 =
+			(Math.sin(nx * 1.7 + nz * 2.3) * 0.5 + 0.5) * 0.5 +
+			(Math.sin(nx * 5.1 + nz * 3.7 + 1.3) * 0.5 + 0.5) * 0.3 +
+			(Math.sin(nx * 11.3 + nz * 9.1 + 4.7) * 0.5 + 0.5) * 0.2;
 		const nearRoad = smoothstep(25.0, 0.0, dist);
 
 		blend0Data[i * 3] = aboveRoad;
@@ -328,6 +419,8 @@ export async function buildTerrain(
 	geometry.setAttribute("aBlend1", new THREE.BufferAttribute(blend1Data, 3));
 	geometry.computeVertexNormals();
 
+	// Compute tangent space for normal mapping
+
 	const material = new THREE.ShaderMaterial({
 		vertexShader: terrainVertexShader,
 		fragmentShader: terrainFragmentShader,
@@ -335,14 +428,16 @@ export async function buildTerrain(
 			tGrassC: { value: tex.grassC },
 			tDirtC: { value: tex.dirtC },
 			tRockC: { value: tex.rockC },
+			tRockN: { value: tex.rockN },
 			tSnowC: { value: tex.snowC },
+			tSnowN: { value: tex.snowN },
 			tMossC: { value: tex.mossC },
 			uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
 			uSunIntensity: { value: 1.0 },
 			uSunColor: { value: new THREE.Color(1.0, 0.95, 0.85) },
 			uAmbientColor: { value: new THREE.Color(0.4, 0.45, 0.5) },
 			uAmbientIntensity: { value: 0.6 },
-			uTexRepeat: { value: TERRAIN_TEX_REPEAT },
+			uTexRepeat: { value: biome.texRepeat ?? TERRAIN_TEX_REPEAT },
 			uFogColor: { value: new THREE.Color(...biome.fogColor) },
 			uFogNear: { value: biome.fogNear },
 			uFogFar: { value: biome.fogFar },
@@ -350,6 +445,7 @@ export async function buildTerrain(
 			uDirtTint: { value: new THREE.Color(...biome.dirtTint) },
 			uRockTint: { value: new THREE.Color(...biome.rockTint) },
 			uSnowThreshold: { value: biome.snowThreshold },
+			uSnowTint: { value: new THREE.Color(...(biome.snowTint ?? [1.3, 1.3, 1.35])) },
 			uRockThreshold: { value: biome.rockThreshold },
 			uStreetLightCount: { value: 0 },
 			uStreetLightPos: { value: Array.from({ length: 4 }, () => new THREE.Vector3()) },

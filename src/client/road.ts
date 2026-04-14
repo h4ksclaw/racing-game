@@ -23,6 +23,119 @@ function loadTex(path: string, srgb = true): Promise<THREE.Texture> {
 	);
 }
 
+// ── Road snow overlay shader ─────────────────────────────────────────
+
+const snowOverlayVert = /* glsl */ `
+varying vec3 vWorldPos;
+varying vec2 vUv;
+varying vec3 vNormal;
+
+void main() {
+	vUv = uv;
+	vNormal = normalize(normalMatrix * normal);
+	vec4 wp = modelMatrix * vec4(position, 1.0);
+	vWorldPos = wp.xyz;
+	gl_Position = projectionMatrix * viewMatrix * wp;
+}
+`;
+
+const snowOverlayFrag = /* glsl */ `
+uniform float uSnowAmount;
+uniform vec3 uSnowColor;
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform float uSunIntensity;
+uniform vec3 uAmbientColor;
+uniform float uAmbientIntensity;
+uniform vec3 uFogColor;
+uniform float uFogNear;
+uniform float uFogFar;
+
+varying vec3 vWorldPos;
+varying vec2 vUv;
+varying vec3 vNormal;
+
+float hash(vec2 p) {
+	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float vnoise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	float a = hash(i);
+	float b = hash(i + vec2(1.0, 0.0));
+	float c = hash(i + vec2(0.0, 1.0));
+	float d = hash(i + vec2(1.0, 1.0));
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float snowNoise(vec2 p) {
+	float n = 0.0;
+	n += vnoise(p * 0.8) * 0.5;
+	n += vnoise(p * 1.6 + 3.7) * 0.25;
+	n += vnoise(p * 3.2 + 7.1) * 0.125;
+	n += vnoise(p * 6.4 + 13.3) * 0.0625;
+	return n / 0.9375;
+}
+
+void main() {
+	vec2 wp = vWorldPos.xz;
+	float snowPatch = snowNoise(wp);
+
+	// Snow patch mask
+	float threshold = 1.0 - uSnowAmount * 0.8;
+	float snowMask = smoothstep(threshold - 0.05, threshold + 0.05, snowPatch);
+	float edgeFade = smoothstep(threshold, threshold + 0.15, snowPatch);
+	float thickness = mix(0.3, 0.85, edgeFade);
+
+	// Tire tracks — clear strips at 32% and 68%
+	float u = vUv.x;
+	float leftTrack  = 1.0 - smoothstep(0.05, 0.10, abs(u - 0.32));
+	float rightTrack = 1.0 - smoothstep(0.05, 0.10, abs(u - 0.68));
+	float snowTrack = 1.0 - max(leftTrack, rightTrack);
+	snowMask *= snowTrack;
+
+	if (snowMask < 0.01) discard;
+
+	// ── Proper lighting (same as terrain) ──
+	vec3 N = normalize(vNormal);
+	vec3 sunDir = normalize(uSunDir);
+
+	// Diffuse (Lambert)
+	float NdotL = max(dot(N, sunDir), 0.0);
+
+	// Ambient
+	vec3 ambient = uAmbientColor * uAmbientIntensity;
+
+	// Snow diffuse — slightly boosted because snow is highly reflective
+	vec3 diffuse = uSunColor * uSunIntensity * NdotL * 1.2;
+
+	// Subtle specular on snow (sun sparkle)
+	vec3 viewDir = normalize(cameraPosition - vWorldPos);
+	vec3 halfDir = normalize(sunDir + viewDir);
+	float spec = pow(max(dot(N, halfDir), 0.0), 64.0) * uSunIntensity * 0.3;
+
+	vec3 lighting = ambient + diffuse + vec3(spec);
+
+	// Snow color with slight noise variation
+	float variation = vnoise(wp * 5.0) * 0.06 - 0.03;
+	vec3 baseColor = uSnowColor * (1.0 + variation);
+
+	// Dirty edges
+	baseColor = mix(baseColor * 0.6, baseColor, edgeFade);
+
+	vec3 color = baseColor * lighting;
+
+	// Fog
+	float dist = length(vWorldPos - cameraPosition);
+	float fogFactor = smoothstep(uFogNear, uFogFar, dist);
+	color = mix(color, uFogColor, fogFactor);
+
+	gl_FragColor = vec4(color, snowMask * thickness * 0.9);
+}
+`;
+
 let roadTextures: {
 	color: THREE.Texture;
 	normal: THREE.Texture;
@@ -240,6 +353,41 @@ export async function buildMeshes(
 	const roadMesh = new THREE.Mesh(makeGeo(roadVerts, roadIndices, roadUVs), roadMat);
 	roadMesh.receiveShadow = true;
 	group.add(roadMesh);
+
+	// ── Road snow overlay (biome-dependent) ─────────────────────
+	if (biome?.roadSnowOverlay) {
+		const snowOverlayMat = new THREE.ShaderMaterial({
+			vertexShader: snowOverlayVert,
+			fragmentShader: snowOverlayFrag,
+			uniforms: {
+				uSnowAmount: { value: biome.roadSnowOverlay.amount },
+				uSnowColor: { value: new THREE.Color(...biome.roadSnowOverlay.color) },
+				uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+				uSunColor: { value: new THREE.Color(1, 1, 1) },
+				uSunIntensity: { value: 1.0 },
+				uAmbientColor: { value: new THREE.Color(0.4, 0.45, 0.5) },
+				uAmbientIntensity: { value: 0.5 },
+				uFogColor: { value: new THREE.Color(0.75, 0.8, 0.85) },
+				uFogNear: { value: 250 },
+				uFogFar: { value: 1200 },
+			},
+			transparent: true,
+			depthWrite: false,
+			polygonOffset: true,
+			polygonOffsetFactor: -1,
+			polygonOffsetUnits: -1,
+		});
+		// Slightly raised copy of road geometry
+		const overlayGeo = makeGeo(
+			roadVerts.map((v, i) => (i % 3 === 1 ? v + 0.03 : v)), // raise Y by 0.03
+			roadIndices,
+			roadUVs,
+		);
+		const overlayMesh = new THREE.Mesh(overlayGeo, snowOverlayMat);
+		overlayMesh.receiveShadow = true;
+		group.add(overlayMesh);
+		state.roadSnowOverlayMaterial = snowOverlayMat;
+	}
 
 	if (kerbVerts.length > 0) {
 		const kerbMat = new THREE.MeshLambertMaterial({ vertexColors: true });

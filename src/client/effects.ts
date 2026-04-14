@@ -18,9 +18,9 @@ export function initBloom(
 
 	bloomPass = new UnrealBloomPass(
 		new THREE.Vector2(window.innerWidth, window.innerHeight),
-		0.2, // strength
-		0.4, // radius
-		0.85, // threshold — only bright stuff blooms
+		0.4, // strength
+		0.6, // radius
+		1.5, // threshold — only street lights and emissives bloom, not sky
 	);
 	composer.addPass(bloomPass);
 	composer.addPass(new OutputPass());
