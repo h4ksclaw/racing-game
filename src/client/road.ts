@@ -222,10 +222,10 @@ export async function buildMeshes(
 	}
 
 	// Crown height (center of road is higher for drainage on straights)
-	const CROWN_HEIGHT = 0.06;
+	const CROWN_HEIGHT = 0.2;
 	// Max superelevation (outer edge raised on curves)
-	const SUPER_MAX = 0.12;
-	const SUPER_SENSITIVITY = 80.0;
+	const SUPER_MAX = 0.35;
+	const SUPER_SENSITIVITY = 100.0;
 
 	const KERB_RED = [0.8, 0.2, 0.2];
 	const KERB_WHITE = [0.9, 0.9, 0.9];
