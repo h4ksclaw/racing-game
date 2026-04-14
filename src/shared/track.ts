@@ -834,14 +834,14 @@ export function generateScenery(
 	for (let li = 0; li < samples.length; li += spacing * 4) {
 		const ls = samples[li];
 		for (const side of [-1, 1]) {
-			// Place lights just past the kerb (further from road, after fences)
+			// Place lights well past the kerb (further from road, outside fences)
 			const edgePt = side === -1 ? ls.left : ls.right;
 			const kerbPt = side === -1 ? ls.kerbLeft : ls.kerbRight;
-			// Offset = kerb + 50% of the edge→kerb distance (halfway between kerb and fence)
+			// Offset = kerb + 1.5x the edge→kerb distance
 			const offset = {
-				x: kerbPt.x + (kerbPt.x - edgePt.x) * 0.5,
-				y: kerbPt.y + (kerbPt.y - edgePt.y) * 0.5,
-				z: kerbPt.z + (kerbPt.z - edgePt.z) * 0.5,
+				x: kerbPt.x + (kerbPt.x - edgePt.x) * 1.5,
+				y: kerbPt.y + (kerbPt.y - edgePt.y) * 1.5,
+				z: kerbPt.z + (kerbPt.z - edgePt.z) * 1.5,
 			};
 			// Orient light arm toward road center.
 			// Model arm extends in -Z; rotating by θ around Y makes arm point (-sinθ, 0, -cosθ).
