@@ -429,6 +429,7 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 				// Replace unlit materials with proper PBR MeshStandardMaterial.
 				// Material names: Pilar (pole), top (housing), pylon (arm), light_direction (helper cone).
 				let lightWorldY = 0;
+				let spotOrigin: THREE.Vector3 | null = null;
 				let spotDirection: THREE.Vector3 | null = null;
 				model.traverse((child) => {
 					if (!(child instanceof THREE.Mesh)) return;
@@ -473,6 +474,7 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 						const box = new THREE.Box3().setFromObject(child);
 						const center = new THREE.Vector3();
 						box.getCenter(center);
+						spotOrigin = center.clone();
 						spotDirection = new THREE.Vector3(
 							box.max.x - center.x,
 							box.max.y - center.y,
@@ -522,8 +524,14 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 					// Cone tip = where light should aim; direction is center→tip
 					const dir = new THREE.Vector3().copy(spotDirection!);
 					const spot = new THREE.SpotLight(0xffeeaa, 0, 80, Math.PI / 3, 0.6, 1.5);
-					spot.position.set(0, lightY, 0);
-					spot.target.position.set(dir.x * 10, lightY + dir.y * 10, dir.z * 10);
+					// Place spotlight at cone center (arm tip area)
+					const s = LIGHT_MODEL_SCALE;
+					spot.position.set(spotOrigin!.x * s, spotOrigin!.y * s, spotOrigin!.z * s);
+					spot.target.position.set(
+						spotOrigin!.x * s + dir.x * 10,
+						spotOrigin!.y * s + dir.y * 10,
+						spotOrigin!.z * s + dir.z * 10,
+					);
 					group.add(spot);
 					group.add(spot.target);
 					light = spot;
