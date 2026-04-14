@@ -243,11 +243,6 @@ document.getElementById("generateBtn")?.addEventListener("click", () => {
 	setURLParam("seed", String(seed));
 	generate();
 });
-document.getElementById("randomBtn")?.addEventListener("click", () => {
-	const seed = Math.floor(Math.random() * 100000);
-	setURLParam("seed", String(seed));
-	generate();
-});
 
 const timeSlider = document.getElementById("timeSlider") as HTMLInputElement | null;
 if (timeSlider) {
