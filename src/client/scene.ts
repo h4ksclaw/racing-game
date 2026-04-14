@@ -29,6 +29,8 @@ export const state = {
 	currentBiome: null as BiomeConfig | null,
 	roadRoughnessBase: 0.8, // set by biome, overridden by weather
 	roadWetness: 0.0, // 0=dry, 1=soaked (rain)
+	_baseSunIntensity: undefined as number | undefined,
+	_baseAmbientIntensity: undefined as number | undefined,
 	currentTime: 12,
 	currentWeather: "clear" as WeatherType,
 };

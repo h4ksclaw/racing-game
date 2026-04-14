@@ -174,6 +174,13 @@ export function applyWeather(weather: WeatherType): void {
 	if (!rainSystem || !snowSystem) return;
 	state.currentWeather = weather;
 
+	// Save original intensities on first call so we can reset before multiplying
+	if (!state._baseSunIntensity && sun) state._baseSunIntensity = sun.intensity;
+	if (!state._baseAmbientIntensity && ambient) state._baseAmbientIntensity = ambient.intensity;
+	if (sun && state._baseSunIntensity !== undefined) sun.intensity = state._baseSunIntensity;
+	if (ambient && state._baseAmbientIntensity !== undefined)
+		ambient.intensity = state._baseAmbientIntensity;
+
 	const rainVisible = weather === "rain" || weather === "heavy_rain";
 	const snowVisible = weather === "snow";
 	rainSystem.visible = rainVisible;
