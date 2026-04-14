@@ -609,18 +609,18 @@ export async function buildMeshes(
 		group.add(new THREE.Mesh(makeGeo(checkerVerts, checkerIndices), checkerMat));
 	}
 
-	// Spline visualization
-	const splinePoints = data.splinePoints.map((p) => new THREE.Vector3(p.x, p.y, p.z));
-	const splineGeo = new THREE.BufferGeometry().setFromPoints(splinePoints);
-	group.add(new THREE.Line(splineGeo, new THREE.LineBasicMaterial({ color: 0x00ff88 })));
+	// Spline visualization (hidden in production)
+	// const splinePoints = data.splinePoints.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+	// const splineGeo = new THREE.BufferGeometry().setFromPoints(splinePoints);
+	// group.add(new THREE.Line(splineGeo, new THREE.LineBasicMaterial({ color: 0x00ff88 })));
 
-	// Control points
-	const cpMat = new THREE.MeshLambertMaterial({ color: 0xff6600 });
-	for (const cp of data.controlPoints3D) {
-		const marker = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), cpMat);
-		marker.position.set(cp.x, cp.y + 2, cp.z);
-		group.add(marker);
-	}
+	// Control points (hidden in production)
+	// const cpMat = new THREE.MeshLambertMaterial({ color: 0xff6600 });
+	// for (const cp of data.controlPoints3D) {
+	// 	const marker = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), cpMat);
+	// 	marker.position.set(cp.x, cp.y + 2, cp.z);
+	// 	group.add(marker);
+	// }
 
 	return group;
 }
