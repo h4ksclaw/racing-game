@@ -834,7 +834,7 @@ export function generateScenery(
 	for (let li = 0; li < samples.length; li += spacing * 4) {
 		const ls = samples[li];
 		for (const side of [-1, 1]) {
-			const offset = side === -1 ? ls.grassLeft : ls.grassRight;
+			const offset = side === -1 ? ls.kerbLeft : ls.kerbRight;
 			// Orient light arm toward road center.
 			// Model arm extends in -Z; rotating by θ around Y makes arm point (-sinθ, 0, -cosθ).
 			// Left side: arm toward +binormal → θ = atan2(tx, tz) + π/2

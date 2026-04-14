@@ -521,7 +521,7 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 
 				// Orient light arm toward road using rotation from track generation
 				// item.rotation is pre-computed as tangentAngle ± π/2 so arm faces inward
-				model.rotation.y = (item.rotation ?? 0) + Math.PI;
+				model.rotation.y = item.rotation ?? 0;
 
 				group.add(model);
 
