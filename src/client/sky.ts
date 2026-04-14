@@ -258,13 +258,31 @@ export function applyTimeOfDay(hour: number): void {
 	if (!sc || !sun || !ambient) return;
 	const st = getTimeState(hour);
 
+	function getWeatherMult(type: string): { sun: number; ambient: number } {
+		switch (type) {
+			case "heavy_rain":
+				return { sun: 0.15, ambient: 0.4 };
+			case "rain":
+				return { sun: 0.4, ambient: 0.7 };
+			case "fog":
+				return { sun: 0.2, ambient: 0.4 };
+			case "cloudy":
+				return { sun: 0.6, ambient: 0.8 };
+			case "snow":
+				return { sun: 0.5, ambient: 0.8 };
+			default:
+				return { sun: 1.0, ambient: 1.0 };
+		}
+	}
+
 	sun.color.setRGB(...st.sunColor);
-	sun.intensity = st.sunIntensity;
+	const wm = getWeatherMult(state.currentWeather);
+	sun.intensity = st.sunIntensity * wm.sun;
 	const sunElev = THREE.MathUtils.degToRad(st.sunElevation);
 	sun.position.set(Math.cos(sunElev) * 300, Math.sin(sunElev) * 300, 100);
 
 	ambient.color.setRGB(...st.ambientColor);
-	ambient.intensity = st.ambientIntensity;
+	ambient.intensity = st.ambientIntensity * wm.ambient;
 
 	const fog = sc.fog as THREE.Fog;
 	fog.color.setRGB(...st.fogColor);

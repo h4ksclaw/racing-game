@@ -174,13 +174,6 @@ export function applyWeather(weather: WeatherType): void {
 	if (!rainSystem || !snowSystem) return;
 	state.currentWeather = weather;
 
-	// Save original intensities on first call so we can reset before multiplying
-	if (!state._baseSunIntensity && sun) state._baseSunIntensity = sun.intensity;
-	if (!state._baseAmbientIntensity && ambient) state._baseAmbientIntensity = ambient.intensity;
-	if (sun && state._baseSunIntensity !== undefined) sun.intensity = state._baseSunIntensity;
-	if (ambient && state._baseAmbientIntensity !== undefined)
-		ambient.intensity = state._baseAmbientIntensity;
-
 	const rainVisible = weather === "rain" || weather === "heavy_rain";
 	const snowVisible = weather === "snow";
 	rainSystem.visible = rainVisible;
@@ -205,14 +198,11 @@ export function applyWeather(weather: WeatherType): void {
 			if (skyUniforms) {
 				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 10);
 			}
-			sun.intensity *= 0.6;
 			break;
 		case "rain": {
 			if (skyUniforms) {
 				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 15);
 			}
-			sun.intensity *= 0.4;
-			ambient.intensity *= 0.7;
 			const fogR = sc.fog as THREE.Fog;
 			fogR.far = Math.min(fogR.far, 600);
 			fogR.near = Math.max(fogR.near, 100);
@@ -222,8 +212,6 @@ export function applyWeather(weather: WeatherType): void {
 			if (skyUniforms) {
 				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 20);
 			}
-			sun.intensity *= 0.15;
-			ambient.intensity *= 0.4;
 			const fogH = sc.fog as THREE.Fog;
 			fogH.far = 250;
 			fogH.near = 10;
@@ -235,8 +223,6 @@ export function applyWeather(weather: WeatherType): void {
 			if (skyUniforms) {
 				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 15);
 			}
-			sun.intensity *= 0.2;
-			ambient.intensity *= 0.4;
 			const fogF = sc.fog as THREE.Fog;
 			fogF.far = 120;
 			fogF.near = 1;
@@ -248,8 +234,6 @@ export function applyWeather(weather: WeatherType): void {
 			if (skyUniforms) {
 				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 8);
 			}
-			sun.intensity *= 0.5;
-			ambient.intensity *= 0.8;
 			const fogS = sc.fog as THREE.Fog;
 			fogS.far = Math.min(fogS.far, 500);
 			fogS.near = Math.max(fogS.near, 30);
