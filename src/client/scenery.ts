@@ -463,9 +463,9 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 						const box = new THREE.Box3().setFromObject(child);
 						if (box.max.y > lightWorldY) lightWorldY = box.max.y;
 					} else if (matName === "pylon") {
-						// Arm/bracket — slightly metallic
+						// Arm/bracket — white metallic to match housing
 						child.material = new THREE.MeshStandardMaterial({
-							color,
+							color: 0xcccccc,
 							metalness: 0.6,
 							roughness: 0.3,
 						});
