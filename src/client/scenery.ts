@@ -448,13 +448,13 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 						const box = new THREE.Box3().setFromObject(child);
 						if (box.max.y > lightWorldY) lightWorldY = box.max.y;
 					} else if (matName === "top") {
-						// Light housing — white/silver with emissive
+						// Light housing — dark metallic with emissive
 						child.material = new THREE.MeshStandardMaterial({
-							color: 0xe8e8e8,
+							color: 0x555555,
 							emissive: 0xffffcc,
 							emissiveIntensity: isAutumnWoods ? 0.15 : 0.6,
-							metalness: 0.5,
-							roughness: 0.2,
+							metalness: 0.7,
+							roughness: 0.3,
 						});
 						if (!isAutumnWoods) {
 							state.lightFixtures.push(child as THREE.Mesh);
