@@ -96,34 +96,17 @@ export function loadLightModel(loader: GLTFLoader, path: string): Promise<void> 
 			path,
 			(gltf) => {
 				const scene = gltf.scene;
-				scene.updateMatrixWorld(true);
 
-				// Kenney GLBs bake a node translation into the root node.
-				// Bake all world transforms into geometry so we can work with raw verts.
-				scene.traverse((child) => {
-					if (child instanceof THREE.Mesh && child.matrixWorld) {
-						child.geometry.applyMatrix4(child.matrixWorld);
-						child.position.set(0, 0, 0);
-						child.rotation.set(0, 0, 0);
-						child.scale.set(1, 1, 1);
-					}
-				});
-				scene.position.set(0, 0, 0);
-				scene.rotation.set(0, 0, 0);
-				scene.scale.set(1, 1, 1);
-
-				// Center on base: shift geometry so base-bottom-center = origin
-				const bbox = new THREE.Box3().setFromObject(scene);
-				const baseCenter = new THREE.Vector3(
-					(bbox.min.x + bbox.max.x) / 2,
-					bbox.min.y,
-					(bbox.min.z + bbox.max.z) / 2,
-				);
-				scene.traverse((child) => {
-					if (child instanceof THREE.Mesh) {
-						child.geometry.translate(-baseCenter.x, -baseCenter.y, -baseCenter.z);
-					}
-				});
+				// Kenney GLBs have a single root node with a baked translation (e.g. [-0.35, -0.01, -0.65]).
+				// The mesh geometry is in local space (Y: 0 to ~0.8, X centered at 0, arm extends in +Z).
+				// We do NOT bake transforms into geometry because GLTFLoader caches accessor buffers —
+				// all primitives sharing the same POSITION accessor would corrupt each other.
+				//
+				// Instead, we negate the root translation so the post base sits at origin.
+				// The model structure is: root Group → mesh children with their own local transforms.
+				// We adjust the root position to cancel the baked offset.
+				const bakedT = scene.position.clone();
+				scene.position.set(-bakedT.x, -bakedT.y, -bakedT.z);
 
 				lightModelCache.set(path, scene);
 				resolve();
@@ -519,9 +502,10 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 					}
 				});
 
-				// Orient light arm toward road using rotation from track generation
-				// item.rotation is pre-computed as tangentAngle ± π/2 so arm faces inward
-				model.rotation.y = item.rotation ?? 0;
+				// Orient: arm extends in +Z in local space.
+				// item.rotation = tangentAngle ± π/2 (from track.ts)
+				// Add π to flip arms inward
+				model.rotation.y = (item.rotation ?? 0) + Math.PI;
 
 				group.add(model);
 
