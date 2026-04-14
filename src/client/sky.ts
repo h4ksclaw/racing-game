@@ -293,7 +293,6 @@ export function applyTimeOfDay(hour: number): void {
 		const mat = fixture.material as THREE.MeshLambertMaterial;
 		const bloomMult = (fixture.userData.bloomMult as number) ?? 1.0;
 		mat.emissiveIntensity = 0.15 + nightFactor * 25 * bloomMult;
-		mat.emissiveIntensity = 0.15 + nightFactor * 25;
 	}
 
 	if (terrainMaterial) {

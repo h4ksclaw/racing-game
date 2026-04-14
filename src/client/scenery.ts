@@ -455,23 +455,30 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 						child.material = new THREE.MeshStandardMaterial({
 							color: 0xdddddd,
 							emissive: 0xffffcc,
-							emissiveIntensity: 0.6,
+							emissiveIntensity: isAutumnWoods ? 0.2 : 0.6,
 							metalness: 0.5,
 							roughness: 0.2,
 						});
-						// Tag with bloom multiplier (0.5 for Autumn Woods = half bloom)
-						child.userData.bloomMult = isAutumnWoods ? 0.5 : 1.0;
+						// Bloom multiplier: Autumn Woods gets much less bloom
+						child.userData.bloomMult = isAutumnWoods ? 0.25 : 1.0;
 						state.lightFixtures.push(child as THREE.Mesh);
 						// Track highest point for PointLight placement (in local coords)
 						const box = new THREE.Box3().setFromObject(child);
 						if (box.max.y > lightWorldY) lightWorldY = box.max.y;
 					} else if (matName === "pylon") {
-						// Arm/bracket — white metallic to match housing
+						// Arm/bracket — white metallic, slight glow for Autumn Woods
+						const isAutumnWoods = currentLightModel?.includes("lightPost_exclusive");
 						child.material = new THREE.MeshStandardMaterial({
 							color: 0xcccccc,
 							metalness: 0.6,
 							roughness: 0.3,
+							emissive: isAutumnWoods ? 0xffffcc : 0x000000,
+							emissiveIntensity: 0.8,
 						});
+						if (isAutumnWoods) {
+							child.userData.bloomMult = 0.5;
+							state.lightFixtures.push(child as THREE.Mesh);
+						}
 					} else if (matName === "road") {
 						// Base plate — dark matte
 						child.material = new THREE.MeshStandardMaterial({
