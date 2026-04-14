@@ -287,7 +287,9 @@ export function applyTimeOfDay(hour: number): void {
 
 	const nightFactor = Math.max(0, 1 - st.sunIntensity / 0.3);
 	for (const light of streetLights) {
-		light.intensity = nightFactor * 30;
+		// SpotLights need higher intensity to match PointLight coverage
+		const mult = light instanceof THREE.SpotLight ? 3 : 1;
+		light.intensity = nightFactor * 30 * mult;
 	}
 	for (const fixture of lightFixtures) {
 		const mat = fixture.material as THREE.MeshLambertMaterial;
