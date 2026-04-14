@@ -341,7 +341,7 @@ export async function buildTerrain(
 			uSunIntensity: { value: 1.0 },
 			uSunColor: { value: new THREE.Color(1.0, 0.95, 0.85) },
 			uAmbientColor: { value: new THREE.Color(0.4, 0.45, 0.5) },
-			uAmbientIntensity: { value: 0.8 },
+			uAmbientIntensity: { value: 0.6 },
 			uTexRepeat: { value: TERRAIN_TEX_REPEAT },
 			uFogColor: { value: new THREE.Color(...biome.fogColor) },
 			uFogNear: { value: biome.fogNear },
