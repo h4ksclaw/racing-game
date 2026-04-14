@@ -461,18 +461,12 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 						const box = new THREE.Box3().setFromObject(child);
 						if (box.max.y > lightWorldY) lightWorldY = box.max.y;
 					} else if (matName === "pylon") {
-						// Arm bracket — dark metallic, slight bloom for Autumn Woods
+						// Arm bracket — dark metallic
 						child.material = new THREE.MeshStandardMaterial({
 							color: new THREE.Color(0.35, 0.35, 0.37),
 							metalness: 0.7,
 							roughness: 0.25,
-							emissive: isAutumnWoods ? 0xffffcc : 0x000000,
-							emissiveIntensity: isAutumnWoods ? 0.4 : 0,
 						});
-						if (isAutumnWoods) {
-							child.userData.bloomMult = 0.3;
-							state.lightFixtures.push(child as THREE.Mesh);
-						}
 					} else if (matName === "light_direction") {
 						// Direction helper cone — extract direction vector, then hide
 						child.visible = false;
