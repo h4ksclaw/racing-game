@@ -474,7 +474,7 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 						const box = new THREE.Box3().setFromObject(child);
 						const center = new THREE.Vector3();
 						box.getCenter(center);
-						spotOrigin = center.clone();
+						spotOrigin = new THREE.Vector3(box.max.x, box.max.y, box.max.z);
 						spotDirection = new THREE.Vector3(
 							box.max.x - center.x,
 							box.max.y - center.y,
@@ -523,17 +523,18 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 					// SpotLight using direction from the cone helper in the model
 					// Cone tip = where light should aim; direction is center→tip
 					const dir = new THREE.Vector3().copy(spotDirection!);
-					const spot = new THREE.SpotLight(0xffeeaa, 0, 80, Math.PI / 2.4, 0.7, 1);
+					const spot = new THREE.SpotLight(0xffeeaa, 0, 80, Math.PI / 3, 0.6, 1.5);
 					// Place spotlight at cone center (arm tip), aim straight down
 					const s = LIGHT_MODEL_SCALE;
 					spot.position.set(spotOrigin!.x * s, spotOrigin!.y * s, spotOrigin!.z * s);
+					// Aim at ground directly below the cone tip
 					spot.target.position.set(spotOrigin!.x * s, 0, spotOrigin!.z * s);
 					group.add(spot);
 					group.add(spot.target);
 					light = spot;
 				} else if (isAutumnWoods) {
 					// Fallback: SpotLight straight down
-					const spot = new THREE.SpotLight(0xffeeaa, 0, 80, Math.PI / 2.4, 0.7, 1);
+					const spot = new THREE.SpotLight(0xffeeaa, 0, 80, Math.PI / 3, 0.6, 1.5);
 					spot.position.set(0, lightY, 0);
 					spot.target.position.set(0, 0, 0);
 					group.add(spot);
