@@ -41,6 +41,8 @@ void main() {
 
 const snowOverlayFrag = /* glsl */ `
 uniform float uSnowAmount;
+uniform float uSnowThreshold; // height at which snow begins (same as terrain)
+uniform float uAvgRoadY;      // average road Y (passed in)
 uniform vec3 uSnowColor;
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
@@ -83,11 +85,21 @@ void main() {
 	vec2 wp = vWorldPos.xz;
 	float snowPatch = snowNoise(wp);
 
+	// Height-based fade: snow only appears above snowThreshold
+	float aboveRoad = vWorldPos.y - uAvgRoadY;
+	float heightFade = smoothstep(uSnowThreshold, uSnowThreshold + 30.0, aboveRoad);
+	// At very high elevations, snow is solid regardless of noise
+	float heightSolid = smoothstep(uSnowThreshold + 60.0, uSnowThreshold + 100.0, aboveRoad);
+
 	// Snow patch mask
 	float threshold = 1.0 - uSnowAmount * 0.8;
 	float snowMask = smoothstep(threshold - 0.05, threshold + 0.05, snowPatch);
 	float edgeFade = smoothstep(threshold, threshold + 0.15, snowPatch);
 	float thickness = mix(0.3, 0.85, edgeFade);
+
+	// Apply height fade — low areas get no road snow
+	snowMask *= mix(heightFade, 1.0, heightSolid);
+	thickness *= mix(heightFade, 1.0, heightSolid);
 
 	// Tire tracks — clear strips at 32% and 68%
 	float u = vUv.x;
@@ -176,6 +188,7 @@ export async function buildMeshes(
 	data: TrackResponse,
 	rng: () => number,
 	biome?: BiomeConfig,
+	avgRoadY?: number,
 ): Promise<THREE.Group> {
 	const group = new THREE.Group();
 	const samples = data.samples;
@@ -450,6 +463,8 @@ export async function buildMeshes(
 			fragmentShader: snowOverlayFrag,
 			uniforms: {
 				uSnowAmount: { value: biome.roadSnowOverlay.amount },
+				uSnowThreshold: { value: biome.snowThreshold },
+				uAvgRoadY: { value: 0 }, // set below after terrain is built
 				uSnowColor: { value: new THREE.Color(...biome.roadSnowOverlay.color) },
 				uSunDir: { value: new THREE.Vector3(0, 1, 0) },
 				uSunColor: { value: new THREE.Color(1, 1, 1) },
@@ -476,6 +491,10 @@ export async function buildMeshes(
 		overlayMesh.receiveShadow = true;
 		group.add(overlayMesh);
 		state.roadSnowOverlayMaterial = snowOverlayMat;
+		// Set avgRoadY so snow overlay fades with height
+		if (avgRoadY !== undefined) {
+			snowOverlayMat.uniforms.uAvgRoadY.value = avgRoadY;
+		}
 	}
 
 	if (kerbVerts.length > 0) {

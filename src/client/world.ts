@@ -186,7 +186,7 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 
 	// ── Road meshes ──
 	const rng = mulberry32(trackData.seed);
-	scene.add(await buildMeshes(trackData, rng, biome));
+	scene.add(await buildMeshes(trackData, rng, biome, terrain.avgRoadY));
 
 	// ── Scenery ──
 	setFallbackBiome(biome.name);
@@ -229,6 +229,7 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 	const dispose = () => {
 		if (disposed) return;
 		disposed = true;
+		renderer.domElement.remove();
 		scene.traverse((child) => {
 			if (child instanceof THREE.Mesh) {
 				child.geometry.dispose();

@@ -387,26 +387,34 @@ void main() {
 	// Add Voronoi-driven rock patches on moderate slopes
 	wRock = max(wRock, smoothstep(0.55, 0.7, terrainNoise) * slopeBias * 0.5);
 
-	float wSnowRaw = smoothstep(uSnowThreshold, uSnowThreshold + 30.0, aboveRoad);
+	float wSnowRaw = smoothstep(uSnowThreshold, uSnowThreshold + 20.0, aboveRoad);
+	// Noisy transition band — patchy snow only in a narrow height range
 	float snowBreakup = smoothstep(0.3, 0.7, terrainNoise);
-	float heightFactor = smoothstep(uSnowThreshold, uSnowThreshold + 60.0, aboveRoad);
-	float wSnow = wSnowRaw * mix(snowBreakup, 1.0, heightFactor);
+	// Below the solid line: patchy. Above: fully solid.
+	float solidLine = smoothstep(uSnowThreshold + 20.0, uSnowThreshold + 50.0, aboveRoad);
+	float wSnow = wSnowRaw * mix(snowBreakup, 1.0, solidLine);
+
+	// Rock fades out at high elevations — mountains become pure snow
+	float rockHeightFade = 1.0 - solidLine;
+	wRock *= rockHeightFade;
 
 	float wNearMoss = smoothstep(0.0, 1.0, smoothstep(uMossRange, 0.0, dist)) * (0.5 + 0.5 * noise1);
 	float wBelowDirt = smoothstep(uDirtNearDist, uDirtFarDist, aboveRoad);
-	// Steep slopes punch through snow — rock faces show on cliffs
-	float slopeBreak = smoothstep(0.35, 0.55, slope) * (1.0 - heightFactor * 0.5);
-	wSnow *= (1.0 - slopeBreak * 0.7);
-	wRock = max(wRock, slopeBreak * 0.5);
+	// Steep slopes show rock — but only at low/mid elevations
+	float slopeBreak = smoothstep(0.35, 0.55, slope) * rockHeightFade * 0.7;
+	wRock = max(wRock, slopeBreak);
 
 	float wFarDirt = smoothstep(uFarDirtStart, uFarDirtEnd, dist) * (1.0 - uPatchNoiseStrength + uPatchNoiseStrength * terrainNoise);
+
+	// Grass patches blend with dirt texture (lowlands) or snow texture (highlands)
+	float patchSnowMix = smoothstep(uSnowThreshold, uSnowThreshold + 30.0, aboveRoad);
 
 	// Grass starts at 1.0 and gets subtracted
 	float wGrass = 1.0;
 
 	// Voronoi-driven gravel/soil patches within grass — influenced by terrain
-	float patchThreshold = 0.5 + slopeBias * 0.15 + lowBias * 0.1 + distBias;
-	float wGrassPatch = smoothstep(patchThreshold, patchThreshold + 0.15, terrainNoise) * 0.35;
+	float patchThreshold = 0.45 + slopeBias * 0.15 + lowBias * 0.1 + distBias;
+	float wGrassPatch = smoothstep(patchThreshold, patchThreshold + 0.2, terrainNoise) * 0.5;
 
 	wGrass -= wRock;
 	wGrass -= wSnow;
@@ -478,19 +486,20 @@ void main() {
 		(tbn * grassNormal) * wGrass +
 		(tbn * dirtNormal) * (wBelowDirt + wFarDirt) +
 		(tbn * rockNormal) * wRock +
-		(tbn * snowNormal) * (wSnow + wGrassPatch) +
+		(tbn * dirtNormal) * wGrassPatch * (1.0 - patchSnowMix) +
+		(tbn * snowNormal) * (wSnow + wGrassPatch * patchSnowMix) +
 		(tbn * mossNormal) * wNearMoss
 	);
 
 	// Blend roughness and AO same as colors
-	float blendedRough = grassR * wGrass + dirtR * (wBelowDirt + wFarDirt) + rockR * wRock + snowR * (wSnow + wGrassPatch) + mossR * wNearMoss;
-	float blendedAO = grassAO * wGrass + dirtAO * (wBelowDirt + wFarDirt) + rockAO * wRock + snowAO * (wSnow + wGrassPatch) + mossAO * wNearMoss;
+	float blendedRough = grassR * wGrass + dirtR * (wBelowDirt + wFarDirt + wGrassPatch * (1.0 - patchSnowMix)) + rockR * wRock + snowR * (wSnow + wGrassPatch * patchSnowMix) + mossR * wNearMoss;
+	float blendedAO = grassAO * wGrass + dirtAO * (wBelowDirt + wFarDirt + wGrassPatch * (1.0 - patchSnowMix)) + rockAO * wRock + snowAO * (wSnow + wGrassPatch * patchSnowMix) + mossAO * wNearMoss;
 	blendedRough = clamp(blendedRough, 0.0, 1.0);
 	blendedAO = clamp(blendedAO, 0.0, 1.0);
 	// Gentle AO — blend 70% full brightness with 30% actual AO to avoid over-darkening
 	blendedAO = mix(1.0, blendedAO, 0.3);
 
-	vec3 baseColor = grass * uGrassTint * wGrass + dirt * uDirtTint * (wBelowDirt + wFarDirt) + rock * uRockTint * wRock + snow * (wSnow + wGrassPatch) + moss * uGrassTint * wNearMoss;
+	vec3 baseColor = grass * uGrassTint * wGrass + dirt * uDirtTint * (wBelowDirt + wFarDirt + wGrassPatch * (1.0 - patchSnowMix)) + rock * uRockTint * wRock + snow * (wSnow + wGrassPatch * patchSnowMix) + moss * uGrassTint * wNearMoss;
 
 	vec3 N = normalize(normalMap);
 	vec3 sunDir = normalize(uSunDir);
@@ -538,7 +547,8 @@ void main() {
 			+ vec3(0.0, 0.2, 0.8) * wNearMoss
 			+ vec3(1.0, 0.5, 0.0) * wBelowDirt
 			+ vec3(1.0, 1.0, 0.0) * wFarDirt
-			+ vec3(0.8, 0.0, 0.8) * wGrassPatch;
+			+ vec3(0.8, 0.5, 0.0) * wGrassPatch * (1.0 - patchSnowMix) // dirt patches (lowlands)
+			+ vec3(1.0, 1.0, 1.0) * wGrassPatch * patchSnowMix; // snow patches (highlands)
 	}
 
 	gl_FragColor = vec4(color, 1.0);

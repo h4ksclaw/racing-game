@@ -877,5 +877,42 @@ export function generateScenery(
 		}
 	}
 
-	return scenery;
+	// Filter out any objects that ended up inside the road/guardrail zone
+	// Clearance: road half-width (6) + kerb (0.8) + shoulder (2) + 1m buffer = ~10m
+	return filterSceneryFromRoad(scenery, samples, 10);
+}
+
+/**
+ * Remove any scenery items that are too close to the track centerline.
+ * Uses point-to-segment distance for accurate curve handling.
+ * The clearance zone extends past the grass edge (where guardrails sit).
+ */
+function filterSceneryFromRoad(
+	scenery: SceneryItem[],
+	samples: TrackSample[],
+	clearance: number,
+): SceneryItem[] {
+	const step = Math.max(1, Math.floor(samples.length / 500)); // check every Nth sample for perf
+	return scenery.filter((item) => {
+		for (let si = 0; si < samples.length; si += step) {
+			const a = samples[si].point;
+			const b = samples[Math.min(si + step, samples.length - 1)].point;
+			// Point-to-segment distance (XZ only)
+			const dx = b.x - a.x;
+			const dz = b.z - a.z;
+			const lenSq = dx * dx + dz * dz;
+			let t = 0;
+			if (lenSq > 0) {
+				t = Math.max(
+					0,
+					Math.min(1, ((item.position.x - a.x) * dx + (item.position.z - a.z) * dz) / lenSq),
+				);
+			}
+			const nearX = a.x + t * dx;
+			const nearZ = a.z + t * dz;
+			const distSq = (item.position.x - nearX) ** 2 + (item.position.z - nearZ) ** 2;
+			if (distSq < clearance * clearance) return false;
+		}
+		return true;
+	});
 }
