@@ -1,203 +1,34 @@
-import { generateScenery, generateTrack, mulberry32 } from "@shared/track.ts";
+/**
+ * Track viewer — thin shell on top of buildWorld().
+ *
+ * Adds: OrbitControls, seed/weather/time UI, flyover preview.
+ * ALL world building is in world.ts — nothing duplicated here.
+ */
+
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { getBiomeForSeed } from "./biomes.ts";
-import { initBloom, updateBloomSize } from "./effects.ts";
-import { buildGuardrails, buildMeshes } from "./road.ts";
+import { updateBloomSize } from "./effects.ts";
 import { state } from "./scene.ts";
-import {
-	buildInstancedScenery,
-	loadDecorations,
-	loadLightModel,
-	setFallbackBiome,
-	setLightModel,
-} from "./scenery.ts";
-import { applyTimeOfDay, buildStars, setupSky } from "./sky.ts";
-import { buildTerrain, TerrainSampler } from "./terrain.ts";
-import type { TrackResponse, WeatherType } from "./utils.ts";
-import {
-	applyWeather,
-	buildRainSystem,
-	buildSnowSystem,
-	setRainVelocities,
-	setSnowDrifts,
-	updateWeather,
-} from "./weather.ts";
+import { applyTimeOfDay } from "./sky.ts";
+import type { WeatherType } from "./utils.ts";
+import { applyWeather, updateWeather } from "./weather.ts";
+import { buildWorld, type WorldResult } from "./world.ts";
 
-// ── Renderer setup ──────────────────────────────────────────────────────
+// ── State ───────────────────────────────────────────────────────────────
 
 const infoEl = document.getElementById("info");
-
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap;
-document.body.appendChild(renderer.domElement);
-state.renderer = renderer;
-
-let dispose: () => void = () => {};
-
-function clearScene() {
-	dispose();
-	if (state.controls) state.controls.dispose();
-	state.scene = null;
-	state.camera = null;
-	state.controls = null;
-	state.sun = null;
-	state.ambient = null;
-	state.skyUniforms = null;
-	state.stars = null;
-	state.streetLights = [];
-	state.lightFixtures = [];
-	state.rainSystem = null;
-	state.snowSystem = null;
-	state.terrainMaterial = null;
-	state.roadMaterial = null;
-	state.composer = null;
-}
-
-async function buildScene(data: TrackResponse) {
-	clearScene();
-	state.trackSamples = data.samples;
-
-	const scene = new THREE.Scene();
-
-	// Biome
-	const biome = getBiomeForSeed(data.seed);
-	state.currentBiome = biome;
-
-	scene.background = new THREE.Color(0x87ceeb);
-	scene.fog = new THREE.Fog(
-		new THREE.Color(...biome.fogColor).getHex(),
-		biome.fogNear,
-		biome.fogFar,
-	);
-	state.scene = scene;
-
-	// Sky
-	state.skyUniforms = setupSky(scene);
-	state.skyUniforms.turbidity.value = biome.skyTurbidity;
-	state.skyUniforms.rayleigh.value = biome.skyRayleigh;
-
-	// Lights
-	scene.add(new THREE.HemisphereLight(0x88bbff, 0x445511, 0.6));
-	state.ambient = scene.children[scene.children.length - 1] as THREE.HemisphereLight;
-
-	const sun = new THREE.DirectionalLight(0xffffcc, 1.2);
-	sun.position.set(200, 300, 100);
-	sun.castShadow = true;
-	sun.shadow.mapSize.width = 1024;
-	sun.shadow.mapSize.height = 1024;
-	sun.shadow.camera.near = 10;
-	sun.shadow.camera.far = 500;
-	sun.shadow.camera.left = -200;
-	sun.shadow.camera.right = 200;
-	sun.shadow.camera.top = 200;
-	sun.shadow.camera.bottom = -200;
-	scene.add(sun);
-	state.sun = sun;
-
-	// Stars
-	state.stars = buildStars();
-	scene.add(state.stars);
-
-	// Weather particles
-	const rain = buildRainSystem();
-	state.rainSystem = rain.points;
-	setRainVelocities(rain.velocities);
-	rain.points.visible = false;
-	scene.add(rain.points);
-
-	const snow = buildSnowSystem();
-	state.snowSystem = snow.points;
-	setSnowDrifts(snow.drifts);
-	snow.points.visible = false;
-	scene.add(snow.points);
-
-	// Terrain
-	const trackMax = data.maxExtent ?? 800;
-	// World must contain the full track (±trackMax) + padding
-	const worldSize = Math.max(1600, Math.ceil((trackMax * 2 + 200) / 200) * 200);
-	const terrain = new TerrainSampler(data.seed, data.samples, {
-		noiseAmp: biome.noiseAmp,
-		mountainAmp: biome.mountainAmplifier,
-		worldRadius: worldSize / 2,
-	});
-	scene.add(await buildTerrain(data, terrain, biome, worldSize));
-
-	// Track meshes
-	const rng = mulberry32(data.seed);
-	scene.add(await buildMeshes(data, rng, biome));
-
-	// Scenery
-	const scenery = generateScenery(data.seed, data.samples, {
-		treeTypes: biome.treeTypes,
-		grassTypes: biome.grassTypes,
-		treeDensity: biome.treeDensity,
-		grassDensity: biome.grassDensity,
-		rockDensity: biome.rockDensity,
-	});
-	setFallbackBiome(biome.name);
-	setLightModel(biome.lightModel);
-	await loadDecorations();
-	if (biome.lightModel) {
-		const loader = new (await import("three/addons/loaders/GLTFLoader.js")).GLTFLoader();
-		await loadLightModel(loader, biome.lightModel);
-	}
-	scene.add(buildInstancedScenery(scenery, terrain));
-
-	// Guardrails
-	scene.add(buildGuardrails(data.samples, terrain));
-
-	// Camera
-	const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1200);
-	camera.position.set(
-		data.samples[0].point.x + 50,
-		data.samples[0].point.y + 80,
-		data.samples[0].point.z + 50,
-	);
-	state.camera = camera;
-
-	// Controls
-	const controls = new OrbitControls(camera, renderer.domElement);
-	controls.enableDamping = true;
-	controls.dampingFactor = 0.1;
-	controls.target.set(data.samples[0].point.x, data.samples[0].point.y, data.samples[0].point.z);
-	state.controls = controls;
-
-	// Post-processing (bloom)
-	initBloom(renderer, scene, camera);
-
-	dispose = () => {
-		scene.traverse((child) => {
-			if (child instanceof THREE.Mesh) {
-				child.geometry.dispose();
-				if (Array.isArray(child.material)) {
-					for (const m of child.material) m.dispose();
-				} else {
-					child.material.dispose();
-				}
-			}
-		});
-	};
-
-	if (infoEl) {
-		infoEl.textContent = `Seed: ${data.seed} | Biome: ${biome.name} | Length: ${data.length.toFixed(0)}m | Samples: ${data.numSamples} | Scenery: ${scenery.length}`;
-	}
-
-	applyTimeOfDay(state.currentTime);
-	applyWeather(state.currentWeather);
-}
+let world: WorldResult | null = null;
+let controls: OrbitControls | null = null;
 
 // ── Generate ────────────────────────────────────────────────────────────
 
-async function generate() {
+async function generate(): Promise<void> {
 	const urlParams = new URLSearchParams(window.location.search);
 	const seed = Number(urlParams.get("seed")) || 42;
 	const hour = Number(urlParams.get("hour")) || 12;
 	const weather = (urlParams.get("weather") as WeatherType) || "clear";
 
+	// Sync UI
 	const seedDisplay = document.getElementById("seedDisplay") as HTMLElement | null;
 	if (seedDisplay) seedDisplay.textContent = String(seed);
 	const timeSliderEl = document.getElementById("timeSlider") as HTMLInputElement | null;
@@ -206,29 +37,47 @@ async function generate() {
 	const weatherEl = document.getElementById("weatherSelect") as HTMLSelectElement | null;
 	if (weatherEl) weatherEl.value = weather;
 
-	state.currentTime = hour;
-	state.currentWeather = weather;
+	// Dispose previous world
+	if (world) {
+		world.dispose();
+		if (controls) {
+			controls.dispose();
+			controls = null;
+		}
+	}
 
-	const params = new URLSearchParams({ seed: String(seed) });
+	// Build the world (single source of truth)
+	world = await buildWorld({ seed, hour, weather });
 
-	try {
-		const resp = await fetch(`/api/track?${params}`);
-		if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-		const data: TrackResponse = await resp.json();
-		await buildScene(data);
-	} catch (_err) {
-		const data = generateTrack(seed);
-		await buildScene({ ...data, seed });
+	// OrbitControls (page-specific)
+	controls = new OrbitControls(world.camera, world.renderer.domElement);
+	controls.enableDamping = true;
+	controls.dampingFactor = 0.1;
+	controls.target.set(
+		world.trackData.samples[0].point.x,
+		world.trackData.samples[0].point.y,
+		world.trackData.samples[0].point.z,
+	);
+	state.controls = controls;
+
+	// Reset flyover
+	state.flyover.active = false;
+	state.flyover.distance = 0;
+
+	if (infoEl) {
+		infoEl.textContent = `Seed: ${seed} | Biome: ${world.biome.name} | Length: ${world.trackData.length.toFixed(0)}m | Samples: ${world.trackData.numSamples} | Scenery: ${world.sceneryCount}`;
 	}
 }
 
-function setURLParam(key: string, value: string) {
+// ── URL helpers ─────────────────────────────────────────────────────────
+
+function setURLParam(key: string, value: string): void {
 	const url = new URL(window.location.href);
 	url.searchParams.set(key, value);
 	history.replaceState(null, "", url);
 }
 
-function updateTimeLabel(hour: number) {
+function updateTimeLabel(hour: number): void {
 	const timeLabel = document.getElementById("timeLabel") as HTMLElement | null;
 	if (timeLabel) {
 		const h = Math.floor(hour);
@@ -237,7 +86,7 @@ function updateTimeLabel(hour: number) {
 	}
 }
 
-// ── UI ───────────────────────────────────────────────────────────────────
+// ── UI events ───────────────────────────────────────────────────────────
 
 document.getElementById("generateBtn")?.addEventListener("click", () => {
 	const seed = Math.floor(Math.random() * 100000);
@@ -252,7 +101,7 @@ document.getElementById("flyoverBtn")?.addEventListener("click", () => {
 		state.flyover.active = false;
 		state.flyover.distance = 0;
 		btn.textContent = "▶ Preview Track";
-		if (state.controls) state.controls.enabled = true;
+		if (controls) controls.enabled = true;
 	} else {
 		state.flyover.active = true;
 		state.flyover.distance = 0;
@@ -290,11 +139,9 @@ if (weatherSelect) {
 	});
 }
 
-// ── Render loop ──────────────────────────────────────────────────────────
+// ── Terrain street lights (viewer-specific rendering) ───────────────────
 
-let lastTime = performance.now();
-
-function updateTerrainStreetLights() {
+function updateTerrainStreetLights(): void {
 	const { camera, terrainMaterial, streetLights } = state;
 	if (!camera || !terrainMaterial || streetLights.length === 0) return;
 	const camPos = camera.position;
@@ -309,18 +156,16 @@ function updateTerrainStreetLights() {
 	terrainMaterial.uniforms.uStreetLightCount.value = Math.min(sorted.length, 4);
 }
 
-// ── Track Flyover ───────────────────────────────────────────────────────
+// ── Flyover ─────────────────────────────────────────────────────────────
 
-function updateFlyover(delta: number) {
+function updateFlyover(delta: number): void {
 	const { flyover, camera, controls, trackSamples } = state;
 	if (!flyover.active || !camera || !trackSamples.length) return;
-
 	if (controls) controls.enabled = false;
 
 	const speedMs = (flyover.speed / 3.6) * delta;
 	flyover.distance += speedMs;
 
-	// Walk samples to find current segment
 	let walked = 0;
 	let idx = 0;
 	let segLen = 0;
@@ -335,8 +180,6 @@ function updateFlyover(delta: number) {
 		}
 		walked += segLen;
 	}
-
-	// Loop when reaching end
 	if (idx === 0) {
 		flyover.distance = 0;
 		idx = 1;
@@ -346,12 +189,10 @@ function updateFlyover(delta: number) {
 	const prev = trackSamples[idx - 1];
 	const t = segLen > 0 ? (flyover.distance - walked) / segLen : 0;
 
-	// Interpolate position (5m above road center)
 	const px = prev.point.x + (s.point.x - prev.point.x) * t;
 	const py = prev.point.y + (s.point.y - prev.point.y) * t + 5;
 	const pz = prev.point.z + (s.point.z - prev.point.z) * t;
 
-	// Interpolate tangent for look direction
 	const tx = prev.tangent.x + (s.tangent.x - prev.tangent.x) * t;
 	const ty = prev.tangent.y + (s.tangent.y - prev.tangent.y) * t;
 	const tz = prev.tangent.z + (s.tangent.z - prev.tangent.z) * t;
@@ -361,12 +202,16 @@ function updateFlyover(delta: number) {
 	camera.lookAt(px + (tx / tLen) * 10, py + (ty / tLen) * 10, pz + (tz / tLen) * 10);
 }
 
-function animate() {
+// ── Render loop ─────────────────────────────────────────────────────────
+
+let lastTime = performance.now();
+
+function animate(): void {
 	requestAnimationFrame(animate);
 	const now = performance.now();
 	const delta = Math.min((now - lastTime) / 1000, 0.1);
 	lastTime = now;
-	if (state.controls) state.controls.update();
+	if (controls) controls.update();
 	updateWeather(delta);
 	updateTerrainStreetLights();
 	updateFlyover(delta);
@@ -374,21 +219,23 @@ function animate() {
 		if (state.composer) {
 			state.composer.render();
 		} else {
-			renderer.render(state.scene, state.camera);
+			world?.renderer.render(state.scene, state.camera);
 		}
 	}
 }
 
+// ── Resize ──────────────────────────────────────────────────────────────
+
 window.addEventListener("resize", () => {
-	if (state.camera) {
-		state.camera.aspect = window.innerWidth / window.innerHeight;
-		state.camera.updateProjectionMatrix();
-	}
-	renderer.setSize(window.innerWidth, window.innerHeight);
+	if (!world) return;
+	world.camera.aspect = window.innerWidth / window.innerHeight;
+	world.camera.updateProjectionMatrix();
+	world.renderer.setSize(window.innerWidth, window.innerHeight);
 	updateBloomSize();
 });
 
-// Debug: press 'D' to toggle terrain blend weight visualization
+// ── Debug ───────────────────────────────────────────────────────────────
+
 window.addEventListener("keydown", (e) => {
 	if (e.key === "d" || e.key === "D") {
 		const m = state.terrainMaterial;
@@ -399,5 +246,6 @@ window.addEventListener("keydown", (e) => {
 	}
 });
 
-generate();
-animate();
+// ── Boot ────────────────────────────────────────────────────────────────
+
+generate().then(animate);

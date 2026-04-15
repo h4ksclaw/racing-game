@@ -125,8 +125,16 @@ const distPath = path.join(projectRoot, "dist");
 // In dev, Vite proxies /api here and serves frontend itself.
 // In production, Express serves both.
 app.use(express.static(distPath));
+
+// Clean URL routing: /track → track.html, /practice → practice.html
+app.get("/track", (_req, res) => {
+	res.sendFile(path.join(distPath, "track.html"));
+});
+app.get("/practice", (_req, res) => {
+	res.sendFile(path.join(distPath, "practice.html"));
+});
 app.get("*path", (_req, res) => {
-	res.sendFile(path.join(distPath, "index.html"));
+	res.sendFile(path.join(distPath, "track.html"));
 });
 
 const PORT = Number(process.env.PORT ?? 3001);

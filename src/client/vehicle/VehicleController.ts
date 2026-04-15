@@ -1,29 +1,26 @@
 /**
- * VehicleController — proper bicycle-model car physics.
+ * VehicleController — arcade/bicycle-model car physics.
  *
- * Uses the dynamic bicycle model from vehicle dynamics:
- * - Slip angles computed at front and rear axles from local velocities
- * - Tire lateral forces via linear cornering stiffness, clamped to grip circle
- * - Yaw torque from front/rear lateral force differential × CG distances
- * - Weight transfer under longitudinal acceleration
- * - Real gravity with terrain slope interaction
- * - Car body tilts to match terrain surface normal
- * - Ground collision via terrain.getHeight() sampling
+ * Orchestrates modular subsystems:
+ *   Engine    → RPM, torque curve, rev limiter, engine braking
+ *   Gearbox   → automatic shifting with clutch simulation
+ *   Brakes    → g-based deceleration (foot + handbrake)
+ *   TireModel → slip angles, lateral forces, grip circle
+ *   DragModel → rolling resistance + aerodynamic drag
+ *
+ * Ground collision via terrain.getHeight() sampling.
+ * Car body tilts with terrain surface normal.
  *
  * Coordinate convention:
  * - heading=0 → car faces +Z (matching GLTF model forward)
  * - +heading → CCW turn from top (left turn)
- * - local frame: X=forward, Y=lateral (right-positive in car frame)
- *
- * References:
- * - Marco Monster "Car Physics for Games" (tut05.pdf)
- * - Gillespie "Fundamentals of Vehicle Dynamics"
- * - https://www.xarg.org/book/vehicle-physics/
+ * - local frame: X=forward, Y=lateral (right-positive)
  */
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { buildCarModel, type CarModel } from "./CarModel.ts";
 import type { CarConfig, VehicleInput, VehicleState } from "./types.ts";
-import { DEFAULT_INPUT, RACE_CAR } from "./types.ts";
+import { RACE_CAR } from "./types.ts";
 
 export interface TerrainProvider {
 	getHeight(x: number, z: number): number;
@@ -38,61 +35,51 @@ export class VehicleController {
 	state: VehicleState = {
 		speed: 0,
 		rpm: 800,
-		gear: 0,
+		gear: 1,
 		steeringAngle: 0,
 		throttle: 0,
 		brake: 0,
 		onGround: true,
 	};
 
-	private config: CarConfig;
+	private car: CarModel;
+	readonly config: CarConfig;
 
 	// World-space state
 	private posX = 0;
 	private posY = 2;
 	private posZ = 0;
-	private heading = 0; // rad, 0 = +Z forward, positive = CCW from top
+	private heading = 0;
 
 	// Velocities
-	private localVelX = 0; // forward (along car heading) in m/s
-	private localVelY = 0; // lateral (right-positive in car frame) in m/s
-	private verticalVel = 0; // world Y velocity (gravity, jumps, hills)
-	private yawRate = 0; // rad/s
+	private localVelX = 0;
+	private localVelY = 0;
+	private verticalVel = 0;
+	private yawRate = 0;
 
-	// Car body orientation (for terrain tilting)
-	private pitch = 0; // nose up/down (radians)
-	private roll = 0; // body lean left/right (radians)
+	// Body orientation (terrain tilt)
+	private pitch = 0;
+	private roll = 0;
 
 	// Steering
 	private steerAngle = 0;
-	private readonly STEER_SPEED = 4.0; // rad/s interpolation rate
+	private readonly STEER_SPEED = 4.0;
 
-	// Gears
-	private gearIndex = 0;
-
-	// ── Derived geometry ──
-	private readonly cgToAxleFront: number;
-	private readonly cgToAxleRear: number;
+	// CG geometry (derived from config)
+	private readonly cgToFront: number;
+	private readonly cgToRear: number;
 	private readonly cgHeight: number;
 	private readonly yawInertia: number;
 
-	// ── Tire model ──
-	private readonly cfFront: number;
-	private readonly cfRear: number;
-
 	constructor(config: CarConfig = RACE_CAR) {
 		this.config = config;
+		this.car = buildCarModel(config);
 
-		const wb = config.wheelBase;
-		this.cgToAxleFront = wb * 0.55;
-		this.cgToAxleRear = wb * 0.45;
-		this.cgHeight = config.wheelRadius * 1.5;
-		this.yawInertia = config.mass * this.cgToAxleFront * this.cgToAxleRear;
-
-		// Cornering stiffness: tuned for arcade feel
-		const base = config.frictionSlip * 400;
-		this.cfFront = base;
-		this.cfRear = base * 0.92;
+		const wb = config.chassis.wheelBase;
+		this.cgToFront = wb * 0.55;
+		this.cgToRear = wb * 0.45;
+		this.cgHeight = config.chassis.cgHeight;
+		this.yawInertia = config.chassis.mass * this.cgToFront * this.cgToRear;
 	}
 
 	async loadModel(): Promise<THREE.Group> {
@@ -119,16 +106,19 @@ export class VehicleController {
 
 	update(input: VehicleInput, delta: number): void {
 		const dt = Math.min(delta, 1 / 30);
-		const { mass, wheelBase, wheelRadius } = this.config;
+		const { chassis, engine: engSpec } = this.config;
+		const mass = chassis.mass;
+		const wheelRadius = chassis.wheelRadius;
+		const wheelBase = chassis.wheelBase;
+		const { engine, gearbox, brakes, tires, drag } = this.car;
 
 		// ═══════════════════════════════════════════════════════════
 		// 1. STEERING
 		// ═══════════════════════════════════════════════════════════
 		const speedKmh = Math.abs(this.localVelX) * 3.6;
-		// At high speed, reduce max steer angle (realistic + prevents insane turns)
 		const speedReduction = Math.max(0.3, 1 - (speedKmh / 300) * 0.7);
 		const targetSteer =
-			((input.left ? 1 : 0) - (input.right ? 1 : 0)) * this.config.maxSteerAngle * speedReduction;
+			((input.left ? 1 : 0) - (input.right ? 1 : 0)) * chassis.maxSteerAngle * speedReduction;
 
 		const maxDelta = this.STEER_SPEED * dt;
 		const steerDiff = targetSteer - this.steerAngle;
@@ -144,103 +134,96 @@ export class VehicleController {
 		const g = 9.82;
 		const totalWeight = mass * g;
 		const longAccel = input.forward
-			? this.config.engineForce / mass
+			? engSpec.torqueNm / mass
 			: input.handbrake
-				? -(this.config.brakeForce * 2) / mass
+				? -(this.config.brakes.handbrakeG * 2) * g
 				: 0;
 		const weightTransfer = (mass * longAccel * this.cgHeight) / wheelBase;
 		const normalFront = Math.max(
 			totalWeight * 0.1,
-			(totalWeight * this.cgToAxleRear) / wheelBase - weightTransfer,
+			(totalWeight * this.cgToRear) / wheelBase - weightTransfer,
 		);
 		const normalRear = Math.max(
 			totalWeight * 0.1,
-			(totalWeight * this.cgToAxleFront) / wheelBase + weightTransfer,
+			(totalWeight * this.cgToFront) / wheelBase + weightTransfer,
 		);
 
 		// ═══════════════════════════════════════════════════════════
-		// 3. SLIP ANGLES
+		// 3. BRAKE INPUT
 		// ═══════════════════════════════════════════════════════════
-		const vFrontX = this.localVelX;
-		const vFrontY = this.localVelY + this.yawRate * this.cgToAxleFront;
-		const vRearX = this.localVelX;
-		const vRearY = this.localVelY - this.yawRate * this.cgToAxleRear;
+		brakes.isBraking = input.backward && this.localVelX > -0.1;
+		brakes.isHandbrake = !!input.handbrake;
 
-		let alphaFront = 0;
-		let alphaRear = 0;
-		if (Math.abs(this.localVelX) > 1.0) {
-			alphaFront = Math.atan2(vFrontY, Math.abs(vFrontX)) - this.steerAngle;
-			alphaRear = Math.atan2(vRearY, Math.abs(vRearX));
+		// ═══════════════════════════════════════════════════════════
+		// 4. TIRE FORCES (bicycle model — lateral)
+		// ═══════════════════════════════════════════════════════════
+		const tireForces = tires.compute(
+			this.localVelX,
+			this.localVelY,
+			this.yawRate,
+			this.steerAngle,
+			this.cgToFront,
+			this.cgToRear,
+			normalFront,
+			normalRear,
+			brakes.rearGripFactor,
+		);
+
+		// ═══════════════════════════════════════════════════════════
+		// 5. ENGINE + GEARBOX + DRIVETRAIN
+		// ═══════════════════════════════════════════════════════════
+		engine.throttle = input.forward ? 1 : input.backward && this.localVelX <= -0.5 ? 0.4 : 0;
+
+		// Gearbox first (determines gear ratio for this frame)
+		gearbox.update(dt, engine, this.localVelX, brakes.isBraking);
+
+		// Engine RPM from wheel speed
+		engine.update(this.localVelX, gearbox.effectiveRatio, wheelRadius, dt);
+
+		// Engine force at wheels (includes traction limit & rev limiter)
+		let engineForce = engine.getWheelForce(
+			gearbox.effectiveRatio,
+			wheelRadius,
+			tires.config.maxTraction,
+		);
+
+		// Reduce during shift (clutch disengaged)
+		if (gearbox.isShifting) engineForce *= 0.3;
+
+		// Reverse: only when nearly stopped and no forward input
+		if (input.backward && this.localVelX <= 0.1 && this.localVelX > -0.5 && !input.forward) {
+			engineForce = -engSpec.torqueNm * 0.3;
 		}
 
 		// ═══════════════════════════════════════════════════════════
-		// 4. TIRE LATERAL FORCES
+		// 6. BRAKES
 		// ═══════════════════════════════════════════════════════════
-		let fLatFront = -this.cfFront * alphaFront;
-		let fLatRear = -this.cfRear * alphaRear;
-
-		const mu = this.config.frictionSlip;
-		fLatFront = Math.max(-mu * normalFront, Math.min(mu * normalFront, fLatFront));
-		fLatRear = Math.max(-mu * normalRear, Math.min(mu * normalRear, fLatRear));
-
-		if (input.handbrake) {
-			fLatRear *= 0.2;
-		}
+		const brakeForce = brakes.getForce(mass);
 
 		// ═══════════════════════════════════════════════════════════
-		// 5. LONGITUDINAL FORCE
+		// 7. ENGINE BRAKING
 		// ═══════════════════════════════════════════════════════════
-		let fLong = 0;
-
-		if (input.forward) {
-			fLong = this.config.engineForce;
-			const ratio = Math.abs(this.localVelX) / this.config.maxSpeed;
-			if (ratio > 0.8) fLong *= 1 - (ratio - 0.8) / 0.2;
-		} else if (input.backward) {
-			if (this.localVelX > 0.5) {
-				// S key = foot brake: 0.8g deceleration
-				// F = m × a = mass × 0.8 × 9.82
-				fLong = -mass * 0.8 * g;
-			} else if (this.localVelX > -0.5) {
-				// Holding S at near-stop: clamp to zero (don't reverse)
-				fLong = -this.localVelX * mass * 10; // strong damping to zero
-			} else {
-				// Reverse at half power
-				fLong = this.config.engineForce * 0.4;
-			}
-		}
-
-		if (input.handbrake) {
-			// Handbrake: 1.0g (rear wheels locked, aggressive)
-			fLong -= mass * 1.0 * g;
-		}
-
-		// Rolling resistance + aero drag
-		fLong -= this.localVelX * (8 + Math.abs(this.localVelX) * 0.08);
-
-		// Prevent brake from pushing speed negative (no engine reverse from braking)
-		if (fLong < 0 && !input.forward && !input.backward) {
-			const maxBrakeDecel = this.localVelX / dt; // can only remove existing speed
-			fLong = Math.max(fLong, -maxBrakeDecel);
-		}
+		const engineBrake = -engine.getEngineBraking(this.localVelX, mass);
 
 		// ═══════════════════════════════════════════════════════════
-		// 6. YAW TORQUE
+		// 8. AERO + ROLLING DRAG
 		// ═══════════════════════════════════════════════════════════
-		const yawTorque =
-			fLatFront * Math.cos(this.steerAngle) * this.cgToAxleFront - fLatRear * this.cgToAxleRear;
+		const dragForce = -drag.getForce(this.localVelX);
 
 		// ═══════════════════════════════════════════════════════════
-		// 7. INTEGRATE (local frame for X/Y, world for Z)
+		// 9. INTEGRATE
 		// ═══════════════════════════════════════════════════════════
-		this.localVelX += (fLong / mass) * dt;
+		const totalLongForce = engineForce + brakeForce + engineBrake + dragForce;
+		this.localVelX += (totalLongForce / mass) * dt;
 
-		const fLatTotal = fLatFront * Math.cos(this.steerAngle) + fLatRear;
-		this.localVelY += (fLatTotal / mass) * dt;
+		// Snap to zero if brakes would reverse velocity
+		this.localVelX = brakes.applyResult(this.localVelX);
 
-		this.yawRate += (yawTorque / this.yawInertia) * dt;
+		// Lateral (from tire model)
+		this.localVelY += (tireForces.lateral / mass) * dt;
 
-		// Yaw damping (only — no artificial lateral damping, tire model handles it)
+		// Yaw
+		this.yawRate += (tireForces.yawTorque / this.yawInertia) * dt;
 		this.yawRate *= 1 - 5.0 * dt;
 
 		// Kill tiny values
@@ -249,103 +232,63 @@ export class VehicleController {
 		if (Math.abs(this.yawRate) < 0.0005) this.yawRate = 0;
 
 		// ═══════════════════════════════════════════════════════════
-		// 8. LOCAL → WORLD + POSITION
+		// 10. LOCAL → WORLD + POSITION
 		// ═══════════════════════════════════════════════════════════
 		const sh = Math.sin(this.heading);
 		const ch = Math.cos(this.heading);
-		const worldVx = this.localVelX * sh + this.localVelY * ch;
-		const worldVz = this.localVelX * ch - this.localVelY * sh;
-
-		this.posX += worldVx * dt;
-		this.posZ += worldVz * dt;
+		this.posX += (this.localVelX * sh + this.localVelY * ch) * dt;
+		this.posZ += (this.localVelX * ch - this.localVelY * sh) * dt;
 
 		// ═══════════════════════════════════════════════════════════
-		// 9. GRAVITY + TERRAIN COLLISION
+		// 11. GRAVITY + TERRAIN
 		// ═══════════════════════════════════════════════════════════
 		this.verticalVel -= g * dt;
 		this.posY += this.verticalVel * dt;
 
 		if (this.terrain) {
 			const groundY = this.terrain.getHeight(this.posX, this.posZ);
-			const restH = wheelRadius + this.config.suspensionRestLength;
+			const restH = wheelRadius + chassis.suspensionRestLength;
 
 			if (this.posY <= groundY + restH) {
 				this.posY = groundY + restH;
-
-				// Landing impact: dampen downward velocity
-				if (this.verticalVel < -1.0) {
-					this.verticalVel *= -0.2; // bounce slightly
-				} else {
-					this.verticalVel = 0;
-				}
+				this.verticalVel = this.verticalVel < -1.0 ? this.verticalVel * -0.2 : 0;
 				this.state.onGround = true;
 			} else {
 				this.state.onGround = false;
 			}
 
-			// ── Terrain slope → pitch/roll ──
 			if (this.terrain.getNormal) {
 				const normal = this.terrain.getNormal(this.posX, this.posZ);
 				if (normal) {
-					// Surface normal gives us the terrain orientation
-					// Project car's heading onto the surface to get pitch and roll
-					const nx = normal.x;
-					const ny = normal.y;
-					const nz = normal.z;
-
-					// Pitch: how much the terrain slopes along the car's heading
-					// terrain slope in heading direction = -dot(normal, forward_on_ground)
-					const fwdSlope = -(nx * sh + nz * ch);
-					const targetPitch = Math.atan2(fwdSlope, ny);
-
-					// Roll: how much the terrain slopes perpendicular to heading
-					const rightSlope = -(nx * ch - nz * sh);
-					const targetRoll = Math.atan2(rightSlope, ny);
-
-					// Smooth interpolation (suspension feel)
+					const fwdSlope = -(normal.x * sh + normal.z * ch);
+					const rightSlope = -(normal.x * ch - normal.z * sh);
 					const tiltSpeed = 5.0;
-					this.pitch += (targetPitch - this.pitch) * Math.min(1, tiltSpeed * dt);
-					this.roll += (targetRoll - this.roll) * Math.min(1, tiltSpeed * dt);
-
-					// Slope affects speed: uphill slows, downhill accelerates
-					const slopeForce = -g * Math.sin(this.pitch);
-					this.localVelX += slopeForce * dt;
+					this.pitch += (Math.atan2(fwdSlope, normal.y) - this.pitch) * Math.min(1, tiltSpeed * dt);
+					this.roll += (Math.atan2(rightSlope, normal.y) - this.roll) * Math.min(1, tiltSpeed * dt);
+					this.localVelX += -g * Math.sin(this.pitch) * dt;
 				}
 			}
 		}
 
 		// ═══════════════════════════════════════════════════════════
-		// 10. UPDATE HEADING
+		// 12. HEADING
 		// ═══════════════════════════════════════════════════════════
 		this.heading += this.yawRate * dt;
 
 		// ═══════════════════════════════════════════════════════════
-		// 11. OUTPUT STATE
+		// 13. OUTPUT STATE
 		// ═══════════════════════════════════════════════════════════
 		this.state.speed = this.localVelX;
-		this.state.throttle = input.forward ? 1 : input.backward ? 0.5 : 0;
-		this.state.brake = (input.backward && this.localVelX > 0.5) || input.handbrake ? 1 : 0;
-
-		this.updateGear();
-
-		const wheelHz = Math.abs(this.localVelX) / (wheelRadius * 2 * Math.PI);
-		const gearRatio = this.config.gearRatios[this.gearIndex] || 1;
-		this.state.rpm = Math.max(
-			this.config.idleRPM,
-			Math.min(wheelHz * 60 * gearRatio * 3.5, this.config.maxRPM),
-		);
-		if (this.state.throttle > 0 && Math.abs(this.localVelX) < 1) {
-			this.state.rpm =
-				this.config.idleRPM +
-				this.state.throttle * (this.config.maxRPM - this.config.idleRPM) * 0.5;
-		}
+		this.state.rpm = engine.rpm;
+		this.state.gear = gearbox.currentGear + 1;
+		this.state.throttle = engine.throttle;
+		this.state.brake = brakes.brakePressure;
 	}
 
 	syncVisuals(): void {
 		if (!this.model) return;
 
 		this.model.position.set(this.posX, this.posY, this.posZ);
-		// Apply heading (yaw) + terrain pitch + terrain roll
 		this.model.rotation.set(this.pitch, this.heading, this.roll);
 
 		for (let i = 0; i < 4; i++) {
@@ -358,7 +301,7 @@ export class VehicleController {
 				mesh.quaternion.setFromEuler(new THREE.Euler(0, 0, 0));
 			}
 
-			const spinAngle = (this.state.speed / this.config.wheelRadius) * 0.016;
+			const spinAngle = (this.state.speed / this.config.chassis.wheelRadius) * 0.016;
 			const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), spinAngle);
 			mesh.quaternion.multiply(spinQ);
 		}
@@ -369,11 +312,7 @@ export class VehicleController {
 	}
 
 	getForward(): { x: number; y: number; z: number } {
-		return {
-			x: Math.sin(this.heading),
-			y: 0,
-			z: Math.cos(this.heading),
-		};
+		return { x: Math.sin(this.heading), y: 0, z: Math.cos(this.heading) };
 	}
 
 	reset(x: number, y: number, z: number, rotation = 0): void {
@@ -386,28 +325,18 @@ export class VehicleController {
 		this.verticalVel = 0;
 		this.yawRate = 0;
 		this.steerAngle = 0;
-		this.gearIndex = 0;
 		this.pitch = 0;
 		this.roll = 0;
+		this.car.gearbox.currentGear = 0;
+		this.car.gearbox.isShifting = false;
+		this.car.engine.rpm = this.config.engine.idleRPM;
 		this.state.speed = 0;
-		this.state.rpm = this.config.idleRPM;
+		this.state.rpm = this.config.engine.idleRPM;
 		this.state.steeringAngle = 0;
 		this.state.throttle = 0;
 		this.state.brake = 0;
+		this.state.gear = 1;
 	}
 
 	dispose(): void {}
-
-	private updateGear(): void {
-		if (this.state.speed < 0) {
-			this.gearIndex = 0;
-			return;
-		}
-		const ratios = this.config.gearRatios;
-		if (this.state.rpm > this.config.maxRPM * 0.85 && this.gearIndex < ratios.length - 1) {
-			this.gearIndex++;
-		} else if (this.state.rpm < this.config.maxRPM * 0.3 && this.gearIndex > 0) {
-			this.gearIndex--;
-		}
-	}
 }

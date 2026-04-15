@@ -14,6 +14,7 @@ export default defineConfig({
 		rollupOptions: {
 			input: {
 				track: resolve(__dirname, "track.html"),
+				practice: resolve(__dirname, "practice.html"),
 			},
 		},
 	},
