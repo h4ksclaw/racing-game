@@ -191,19 +191,38 @@ export class VehicleController {
 		// 5. LONGITUDINAL FORCE
 		// ═══════════════════════════════════════════════════════════
 		let fLong = 0;
+
 		if (input.forward) {
 			fLong = this.config.engineForce;
 			const ratio = Math.abs(this.localVelX) / this.config.maxSpeed;
 			if (ratio > 0.8) fLong *= 1 - (ratio - 0.8) / 0.2;
 		} else if (input.backward) {
-			fLong = this.localVelX > 1 ? -this.config.brakeForce : this.config.engineForce * 0.4;
+			if (this.localVelX > 0.5) {
+				// S key = foot brake: 0.8g deceleration
+				// F = m × a = mass × 0.8 × 9.82
+				fLong = -mass * 0.8 * g;
+			} else if (this.localVelX > -0.5) {
+				// Holding S at near-stop: clamp to zero (don't reverse)
+				fLong = -this.localVelX * mass * 10; // strong damping to zero
+			} else {
+				// Reverse at half power
+				fLong = this.config.engineForce * 0.4;
+			}
 		}
+
 		if (input.handbrake) {
-			fLong -= this.config.brakeForce * 1.5;
+			// Handbrake: 1.0g (rear wheels locked, aggressive)
+			fLong -= mass * 1.0 * g;
 		}
 
 		// Rolling resistance + aero drag
 		fLong -= this.localVelX * (8 + Math.abs(this.localVelX) * 0.08);
+
+		// Prevent brake from pushing speed negative (no engine reverse from braking)
+		if (fLong < 0 && !input.forward && !input.backward) {
+			const maxBrakeDecel = this.localVelX / dt; // can only remove existing speed
+			fLong = Math.max(fLong, -maxBrakeDecel);
+		}
 
 		// ═══════════════════════════════════════════════════════════
 		// 6. YAW TORQUE
@@ -305,7 +324,7 @@ export class VehicleController {
 		// ═══════════════════════════════════════════════════════════
 		this.state.speed = this.localVelX;
 		this.state.throttle = input.forward ? 1 : input.backward ? 0.5 : 0;
-		this.state.brake = (input.backward && this.localVelX > 1) || input.handbrake ? 1 : 0;
+		this.state.brake = (input.backward && this.localVelX > 0.5) || input.handbrake ? 1 : 0;
 
 		this.updateGear();
 
