@@ -248,7 +248,7 @@ export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData 
 	const cp2d: V3[] = [];
 	for (let i = 0; i < numBase; i++) {
 		const baseAngle = (i / numBase) * Math.PI * 2;
-		const rFactor = 0.2 + rng() * 2.6; // 20%-280% — big variation
+		const rFactor = 0.4 + rng() * 2.4; // 40%-280% — reduced tight bends
 		const angleJitter = (rng() - 0.5) * ((Math.PI * 2) / numBase) * 0.8;
 		const r = baseRadius * rFactor;
 		const a = baseAngle + angleJitter;
@@ -264,7 +264,7 @@ export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData 
 			const cur = cp2d[i];
 			const next = cp2d[(i + 1) % n];
 			smoothed.push(
-				v3(cur.x * 0.6 + (prev.x + next.x) * 0.2, 0, cur.z * 0.6 + (prev.z + next.z) * 0.2),
+				v3(cur.x * 0.58 + (prev.x + next.x) * 0.21, 0, cur.z * 0.58 + (prev.z + next.z) * 0.21),
 			);
 		}
 		for (let i = 0; i < n; i++) cp2d[i] = smoothed[i];

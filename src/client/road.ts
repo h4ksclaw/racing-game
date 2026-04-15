@@ -1,6 +1,7 @@
 import type { TrackSample } from "@shared/track.ts";
 import * as THREE from "three";
-import type { BiomeConfig } from "./biomes.ts";
+import type { BiomeConfig, GuardrailConfig } from "./biomes.ts";
+import { DEFAULT_GUARDRAIL_CONFIG } from "./biomes.ts";
 import { state } from "./scene.ts";
 import type { TerrainSampler } from "./terrain.ts";
 import type { TrackResponse } from "./utils.ts";
@@ -644,45 +645,117 @@ export async function buildMeshes(
 
 // ── Guardrails ──────────────────────────────────────────────────────────
 
-export function buildGuardrails(samples: TrackSample[], terrain: TerrainSampler): THREE.Group {
+export function buildGuardrails(
+	samples: TrackSample[],
+	terrain: TerrainSampler,
+	config?: GuardrailConfig,
+): THREE.Group {
 	const group = new THREE.Group();
-	const postMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-	const railMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
+	const cfg = config ?? DEFAULT_GUARDRAIL_CONFIG;
+	const n = samples.length;
 
-	const postSpacing = 10;
-	const postGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.2, 6);
-	const railGeo = new THREE.BoxGeometry(0.06, 0.06, 1);
+	if (cfg.style === "none" || cfg.railCount === 0) return group;
 
-	const leftPosts: THREE.Vector3[] = [];
-	const rightPosts: THREE.Vector3[] = [];
+	// ── Materials ──
+	const postMat = new THREE.MeshStandardMaterial({
+		color: new THREE.Color(...cfg.postColor),
+		roughness: cfg.style === "metal" ? 0.8 : 0.9,
+		metalness: cfg.style === "metal" ? 0.3 : 0.0,
+	});
+	const railMats = cfg.rails.map((r) => {
+		const mat = new THREE.MeshStandardMaterial({
+			color: new THREE.Color(...r.color),
+			roughness: r.roughness,
+			metalness: r.metalness,
+		});
+		// Reflective top rail gets a subtle emissive
+		if (r.roughness <= 0.2 && r.metalness >= 0.85) {
+			mat.emissive = new THREE.Color(0.22, 0.22, 0.3);
+			mat.emissiveIntensity = 0.1;
+		}
+		return mat;
+	});
 
-	for (let i = 0; i < samples.length; i += postSpacing) {
-		const s = samples[i];
-		const left = new THREE.Vector3(s.grassLeft.x, s.grassLeft.y, s.grassLeft.z);
-		const right = new THREE.Vector3(s.grassRight.x, s.grassRight.y, s.grassRight.z);
-		leftPosts.push(left);
-		rightPosts.push(right);
-	}
+	// ── Geometries ──
+	const topRadius = cfg.postRadius * 0.75;
+	const postGeo = new THREE.CylinderGeometry(topRadius, cfg.postRadius, cfg.postHeight, 6);
+	const basePlateGeo = new THREE.CylinderGeometry(0.15, 0.18, 0.06, 8);
+	const postCapGeo = new THREE.SphereGeometry(topRadius * 1.0, 6, 4);
+	const flatCapGeo = new THREE.CylinderGeometry(topRadius * 1.2, topRadius * 1.2, 0.03, 6);
 
-	for (const posts of [leftPosts, rightPosts]) {
-		for (let i = 0; i < posts.length; i++) {
-			const post = posts[i];
-			const next = posts[(i + 1) % posts.length];
+	for (const side of ["left", "right"] as const) {
+		const pts: THREE.Vector3[] = [];
+		for (let i = 0; i < n; i++) {
+			const s = samples[i];
+			const p = side === "left" ? s.grassLeft : s.grassRight;
+			pts.push(new THREE.Vector3(p.x, terrain.getHeight(p.x, p.z), p.z));
+		}
 
-			const postMesh = new THREE.Mesh(postGeo, postMat);
-			postMesh.position.set(post.x, terrain.getHeight(post.x, post.z) + 0.6, post.z);
-			group.add(postMesh);
+		// ── Rail ribbons driven by config ──
+		for (let ri = 0; ri < cfg.railCount; ri++) {
+			const rail = cfg.rails[ri];
+			const positions: number[] = [];
+			const normals: number[] = [];
+			const indices: number[] = [];
 
-			for (const railY of [0.4, 0.9]) {
-				const dir = new THREE.Vector3().subVectors(next, post);
-				const len = dir.length();
-				dir.normalize();
+			for (let i = 0; i < n; i++) {
+				const p = pts[i];
+				const prev = pts[(i - 1 + n) % n];
+				const next = pts[(i + 1) % n];
 
-				const rail = new THREE.Mesh(railGeo, railMat);
-				rail.scale.z = len;
-				rail.position.set(post.x, terrain.getHeight(post.x, post.z) + railY, post.z);
-				rail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
-				group.add(rail);
+				const tx = next.x - prev.x;
+				const tz = next.z - prev.z;
+				const tl = Math.sqrt(tx * tx + tz * tz) || 1;
+
+				const nx = -tz / tl;
+				const nz = tx / tl;
+
+				const y = p.y + rail.y;
+				positions.push(p.x + nx * rail.halfWidth, y, p.z + nz * rail.halfWidth);
+				positions.push(p.x - nx * rail.halfWidth, y, p.z - nz * rail.halfWidth);
+				normals.push(0, 1, 0, 0, 1, 0);
+
+				const nextRow = (i + 1) % n;
+				const rb = i * 2;
+				const nb = nextRow * 2;
+				if (nextRow > i) {
+					indices.push(rb, nb, rb + 1, rb + 1, nb, nb + 1);
+				}
+			}
+
+			const last = (n - 1) * 2;
+			indices.push(last, 0, last + 1, last + 1, 0, 1);
+
+			const geo = new THREE.BufferGeometry();
+			geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+			geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+			geo.setIndex(indices);
+			group.add(new THREE.Mesh(geo, railMats[ri]));
+		}
+
+		// ── Posts ──
+		for (let i = 0; i < n; i += cfg.postSpacing) {
+			const p = pts[i];
+			const baseY = p.y;
+
+			if (cfg.basePlate) {
+				const basePlate = new THREE.Mesh(basePlateGeo, postMat);
+				basePlate.position.set(p.x, baseY + 0.03, p.z);
+				group.add(basePlate);
+			}
+
+			const post = new THREE.Mesh(postGeo, postMat);
+			post.position.set(p.x, baseY + cfg.postHeight / 2, p.z);
+			group.add(post);
+
+			if (cfg.postCap === "sphere") {
+				const cap = new THREE.Mesh(postCapGeo, postMat);
+				cap.position.set(p.x, baseY + cfg.postHeight + topRadius * 0.5, p.z);
+				group.add(cap);
+			} else if (cfg.postCap === "flat") {
+				const cap = new THREE.Mesh(flatCapGeo, postMat);
+				cap.position.set(p.x, baseY + cfg.postHeight + 0.015, p.z);
+				group.add(cap);
 			}
 		}
 	}

@@ -1,5 +1,64 @@
 import type { SceneryType } from "@shared/track.ts";
 
+// ── Guardrail configuration ─────────────────────────────────────────────
+
+export interface GuardrailConfig {
+	style: "metal" | "wood" | "cable" | "hedge" | "stone" | "none";
+	postSpacing: number; // samples between posts (default 7)
+	postHeight: number; // meters (default 1.4)
+	postRadius: number; // meters (default 0.06-0.08 tapered)
+	postColor: [number, number, number];
+	railCount: number; // 1-3 rails
+	rails: Array<{
+		y: number; // height offset
+		halfWidth: number; // ribbon half-width
+		color: [number, number, number];
+		metalness: number;
+		roughness: number;
+	}>;
+	basePlate?: boolean;
+	postCap?: "sphere" | "flat" | "none";
+}
+
+/** Default guardrail config matching the original Alpine metal style */
+export const DEFAULT_GUARDRAIL_CONFIG: GuardrailConfig = {
+	style: "metal",
+	postSpacing: 7,
+	postHeight: 1.4,
+	postRadius: 0.08,
+	postColor: [0.47, 0.47, 0.47], // ~0x777777
+	railCount: 3,
+	rails: [
+		{ y: 0.35, halfWidth: 0.035, color: [0.73, 0.73, 0.8], metalness: 0.8, roughness: 0.3 },
+		{ y: 0.7, halfWidth: 0.025, color: [0.73, 0.73, 0.8], metalness: 0.8, roughness: 0.3 },
+		{ y: 1.05, halfWidth: 0.02, color: [0.93, 0.93, 1.0], metalness: 0.9, roughness: 0.15 },
+	],
+	basePlate: true,
+	postCap: "sphere",
+};
+
+export function validateGuardrailConfig(config: GuardrailConfig): string | null {
+	if (config.postSpacing <= 0) return "postSpacing must be > 0";
+	if (config.postHeight <= 0) return "postHeight must be > 0";
+	if (config.postRadius <= 0) return "postRadius must be > 0";
+	if (config.railCount < 0 || config.railCount > 3) return "railCount must be 0-3";
+	if (config.rails.length !== config.railCount) return "rails.length must match railCount";
+	for (const rail of config.rails) {
+		if (rail.y <= 0) return "rail y must be > 0";
+		if (rail.y >= config.postHeight) return "rail y must be < postHeight";
+		if (rail.halfWidth <= 0) return "rail halfWidth must be > 0";
+		if (rail.metalness < 0 || rail.metalness > 1) return "rail metalness must be 0-1";
+		if (rail.roughness < 0 || rail.roughness > 1) return "rail roughness must be 0-1";
+		for (const c of rail.color) {
+			if (c < 0 || c > 1) return "rail color values must be 0-1";
+		}
+	}
+	for (const c of config.postColor) {
+		if (c < 0 || c > 1) return "postColor values must be 0-1";
+	}
+	return null;
+}
+
 // ── Biome configuration ────────────────────────────────────────────────
 
 export interface BiomeTextureSet {
@@ -68,6 +127,9 @@ export interface BiomeConfig {
 	farDirtEnd?: number; // farDirt blend end distance from road (default 80)
 	patchNoiseStrength?: number; // how strongly noise2 breaks up farDirt (default 0.7)
 	lightModel?: string; // GLB path for light post model (default: procedural)
+
+	// Guardrail style per biome
+	guardrail?: GuardrailConfig;
 }
 
 // ── Biome definitions ──────────────────────────────────────────────────
@@ -114,6 +176,21 @@ const BIOMES: BiomeConfig[] = [
 		noiseAmp: 60,
 		mountainAmplifier: 3,
 		lightModel: "/assets/kenney-racing-kit/Models/GLTF format/lightPostModern.glb",
+		guardrail: {
+			style: "metal",
+			postSpacing: 7,
+			postHeight: 1.3,
+			postRadius: 0.07,
+			postColor: [0.4, 0.55, 0.4], // green-tinted posts
+			railCount: 3,
+			rails: [
+				{ y: 0.35, halfWidth: 0.035, color: [0.5, 0.65, 0.5], metalness: 0.7, roughness: 0.4 },
+				{ y: 0.7, halfWidth: 0.025, color: [0.5, 0.65, 0.5], metalness: 0.7, roughness: 0.4 },
+				{ y: 1.0, halfWidth: 0.02, color: [0.6, 0.75, 0.6], metalness: 0.8, roughness: 0.3 },
+			],
+			basePlate: true,
+			postCap: "flat",
+		},
 	},
 	{
 		name: "Autumn Woods",
@@ -150,6 +227,20 @@ const BIOMES: BiomeConfig[] = [
 		noiseAmp: 55,
 		mountainAmplifier: 3,
 		lightModel: "/assets/kenney-racing-kit/Models/GLTF format/lightPost_exclusive.glb",
+		guardrail: {
+			style: "wood",
+			postSpacing: 8,
+			postHeight: 1.2,
+			postRadius: 0.07,
+			postColor: [0.55, 0.35, 0.2], // warm brown
+			railCount: 2,
+			rails: [
+				{ y: 0.35, halfWidth: 0.05, color: [0.6, 0.4, 0.25], metalness: 0.0, roughness: 0.9 },
+				{ y: 0.85, halfWidth: 0.04, color: [0.65, 0.42, 0.27], metalness: 0.0, roughness: 0.85 },
+			],
+			basePlate: false,
+			postCap: "flat",
+		},
 	},
 	{
 		name: "Desert Canyon",
@@ -186,6 +277,21 @@ const BIOMES: BiomeConfig[] = [
 		noiseAmp: 80,
 		mountainAmplifier: 5,
 		lightModel: "/assets/kenney-racing-kit/Models/GLTF format/lightRedDouble.glb",
+		guardrail: {
+			style: "cable",
+			postSpacing: 12,
+			postHeight: 1.0,
+			postRadius: 0.05,
+			postColor: [0.6, 0.55, 0.45], // sandy
+			railCount: 3,
+			rails: [
+				{ y: 0.25, halfWidth: 0.008, color: [0.5, 0.5, 0.5], metalness: 0.9, roughness: 0.4 },
+				{ y: 0.5, halfWidth: 0.008, color: [0.5, 0.5, 0.5], metalness: 0.9, roughness: 0.4 },
+				{ y: 0.75, halfWidth: 0.008, color: [0.5, 0.5, 0.5], metalness: 0.9, roughness: 0.4 },
+			],
+			basePlate: false,
+			postCap: "flat",
+		},
 	},
 	{
 		name: "Alpine Meadow",
@@ -240,6 +346,21 @@ const BIOMES: BiomeConfig[] = [
 		farDirtEnd: 200,
 		patchNoiseStrength: 0.7,
 		lightModel: "/assets/kenney-racing-kit/Models/GLTF format/lightPostLarge.glb",
+		guardrail: {
+			style: "metal",
+			postSpacing: 7,
+			postHeight: 1.4,
+			postRadius: 0.08,
+			postColor: [0.47, 0.47, 0.47],
+			railCount: 3,
+			rails: [
+				{ y: 0.35, halfWidth: 0.035, color: [0.73, 0.73, 0.8], metalness: 0.8, roughness: 0.3 },
+				{ y: 0.7, halfWidth: 0.025, color: [0.73, 0.73, 0.8], metalness: 0.8, roughness: 0.3 },
+				{ y: 1.05, halfWidth: 0.02, color: [0.93, 0.93, 1.0], metalness: 0.9, roughness: 0.15 },
+			],
+			basePlate: true,
+			postCap: "sphere",
+		},
 	},
 	{
 		name: "Tropical Jungle",
@@ -276,6 +397,20 @@ const BIOMES: BiomeConfig[] = [
 		noiseAmp: 45,
 		mountainAmplifier: 3,
 		lightModel: "/assets/kenney-racing-kit/Models/GLTF format/lightColored.glb",
+		guardrail: {
+			style: "hedge",
+			postSpacing: 10,
+			postHeight: 1.3,
+			postRadius: 0.08,
+			postColor: [0.35, 0.25, 0.15], // dark wood
+			railCount: 2,
+			rails: [
+				{ y: 0.25, halfWidth: 0.12, color: [0.2, 0.45, 0.15], metalness: 0.0, roughness: 1.0 },
+				{ y: 0.8, halfWidth: 0.14, color: [0.25, 0.5, 0.18], metalness: 0.0, roughness: 1.0 },
+			],
+			basePlate: false,
+			postCap: "flat",
+		},
 	},
 	{
 		name: "Rural Countryside",
@@ -322,6 +457,21 @@ const BIOMES: BiomeConfig[] = [
 		farDirtEnd: 400, // gradual fade to far dirt
 		patchNoiseStrength: 0.9, // strong noise breakup on far dirt
 		lightModel: "/assets/kenney-racing-kit/Models/GLTF format/lightColored.glb",
+		guardrail: {
+			style: "wood",
+			postSpacing: 8,
+			postHeight: 1.1,
+			postRadius: 0.07,
+			postColor: [0.5, 0.38, 0.22], // farm wood
+			railCount: 3,
+			rails: [
+				{ y: 0.25, halfWidth: 0.04, color: [0.55, 0.4, 0.25], metalness: 0.0, roughness: 0.95 },
+				{ y: 0.55, halfWidth: 0.035, color: [0.55, 0.4, 0.25], metalness: 0.0, roughness: 0.95 },
+				{ y: 0.85, halfWidth: 0.03, color: [0.6, 0.43, 0.27], metalness: 0.0, roughness: 0.9 },
+			],
+			basePlate: false,
+			postCap: "flat",
+		},
 	},
 ];
 

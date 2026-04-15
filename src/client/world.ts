@@ -206,7 +206,7 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 	scene.add(buildInstancedScenery(scenery, terrain));
 
 	// ── Guardrails ──
-	scene.add(buildGuardrails(trackData.samples, terrain));
+	scene.add(buildGuardrails(trackData.samples, terrain, biome.guardrail));
 
 	// ── Camera ──
 	const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1200);
