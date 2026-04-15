@@ -58,12 +58,12 @@ export const DEFAULT_INPUT: VehicleInput = {
 export const RACE_CAR: CarConfig = {
 	name: "Race Car",
 	modelPath: "/assets/kenney-car-kit/Models/GLB format/race.glb",
-	mass: 800,
+	mass: 150,
 	chassisHalfExtents: [0.6, 0.3, 1.2],
-	engineForce: 2800,
-	brakeForce: 80,
+	engineForce: 1200,
+	brakeForce: 50,
 	maxSteerAngle: 0.5,
-	maxSpeed: 80, // m/s (~288 km/h)
+	maxSpeed: 55, // m/s (~200 km/h)
 	gearRatios: [2.9, 2.1, 1.6, 1.2, 0.9, 0.7],
 	maxRPM: 8500,
 	idleRPM: 1000,
@@ -75,24 +75,24 @@ export const RACE_CAR: CarConfig = {
 		{ x: -0.35, y: -0.1, z: -0.88 }, // rear-right
 	],
 	wheelBase: 1.52,
-	suspensionStiffness: 35,
-	suspensionRestLength: 0.35,
-	dampingRelaxation: 2.5,
-	dampingCompression: 4.5,
-	frictionSlip: 3.5,
-	rollInfluence: 0.01,
+	suspensionStiffness: 30,
+	suspensionRestLength: 0.3,
+	dampingRelaxation: 2.0,
+	dampingCompression: 2.0,
+	frictionSlip: 1.4,
+	rollInfluence: 0.4,
 	maxSuspensionTravel: 0.3,
 };
 
 export const SEDAN_CAR: CarConfig = {
 	name: "Sedan",
 	modelPath: "/assets/kenney-car-kit/Models/GLB format/sedan.glb",
-	mass: 1400,
+	mass: 200,
 	chassisHalfExtents: [0.7, 0.35, 1.3],
-	engineForce: 2200,
-	brakeForce: 60,
+	engineForce: 1000,
+	brakeForce: 45,
 	maxSteerAngle: 0.45,
-	maxSpeed: 55, // m/s (~200 km/h)
+	maxSpeed: 45, // m/s (~160 km/h)
 	gearRatios: [3.5, 2.5, 1.8, 1.3, 1.0, 0.8],
 	maxRPM: 6500,
 	idleRPM: 800,
@@ -104,13 +104,13 @@ export const SEDAN_CAR: CarConfig = {
 		{ x: -0.35, y: -0.1, z: -0.8 },
 	],
 	wheelBase: 1.5,
-	suspensionStiffness: 30,
-	suspensionRestLength: 0.35,
-	dampingRelaxation: 2.3,
-	dampingCompression: 4.0,
-	frictionSlip: 2.5,
-	rollInfluence: 0.05,
-	maxSuspensionTravel: 0.25,
+	suspensionStiffness: 25,
+	suspensionRestLength: 0.3,
+	dampingRelaxation: 2.0,
+	dampingCompression: 2.0,
+	frictionSlip: 1.2,
+	rollInfluence: 0.5,
+	maxSuspensionTravel: 0.3,
 };
 
 export interface WheelVisual {
