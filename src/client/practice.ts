@@ -1,8 +1,7 @@
 /**
  * Practice mode — single-player free roam on procedural tracks.
  *
- * Uses arcade physics (no physics engine) for smooth, predictable driving.
- * Car raycasts against TerrainSampler for ground contact.
+ * Uses cannon-es RaycastVehicle (based on official example pattern).
  */
 
 import { generateTrack, mulberry32 } from "@shared/track.ts";
@@ -15,7 +14,7 @@ import { buildInstancedScenery, loadDecorations, setFallbackBiome } from "./scen
 import { applyTimeOfDay, setupSky } from "./sky.ts";
 import { buildTerrain, TerrainSampler } from "./terrain.ts";
 import type { TrackResponse, WeatherType } from "./utils.ts";
-import { ArcadeCarController, DEFAULT_INPUT, type VehicleInput } from "./vehicle/index.ts";
+import { DEFAULT_INPUT, VehicleController, type VehicleInput } from "./vehicle/index.ts";
 import { applyWeather, buildRainSystem, buildSnowSystem, updateWeather } from "./weather.ts";
 
 // ── Config from URL ────────────────────────────────────────────────────
@@ -136,14 +135,14 @@ window.addEventListener("keyup", (e) => {
 });
 
 // ── Vehicle ────────────────────────────────────────────────────────────
-let car: ArcadeCarController;
+let vehicle: VehicleController;
 let terrain: TerrainSampler | null = null;
 let trackData: TrackResponse | null = null;
 
 function resetCar(): void {
-	if (!trackData || !car) return;
+	if (!trackData || !vehicle) return;
 	const samples = trackData.samples;
-	const pos = car.getPosition();
+	const pos = vehicle.getPosition();
 	let nearestIdx = 0;
 	let nearestDist = Number.POSITIVE_INFINITY;
 	for (let i = 0; i < samples.length; i += 10) {
@@ -158,7 +157,7 @@ function resetCar(): void {
 	const s = samples[nearestIdx];
 	const tangentAngle = Math.atan2(s.tangent.x, s.tangent.z);
 	const groundY = terrain ? terrain.getHeight(s.point.x, s.point.z) : s.point.y;
-	car.reset(s.point.x, groundY + 1, s.point.z, tangentAngle);
+	vehicle.reset(s.point.x, groundY + 2, s.point.z, tangentAngle);
 }
 
 // ── Chase Camera ───────────────────────────────────────────────────────
@@ -167,9 +166,9 @@ const CAM_DIST = 8;
 const CAM_LOOK_AHEAD = 4;
 
 function updateChaseCamera(): void {
-	if (!car) return;
-	const pos = car.getPosition();
-	const fwd = car.getForward();
+	if (!vehicle) return;
+	const pos = vehicle.getPosition();
+	const fwd = vehicle.getForward();
 
 	const targetX = pos.x - fwd.x * CAM_DIST;
 	const targetY = pos.y + CAM_HEIGHT;
@@ -190,15 +189,19 @@ const hudEl = document.getElementById("hud");
 const loadingEl = document.getElementById("loading");
 
 function updateHUD(): void {
-	if (!car || !speedEl) return;
-	const kmh = Math.abs(Math.round(car.state.speed * 3.6));
+	if (!vehicle || !speedEl) return;
+	const kmh = Math.abs(Math.round(vehicle.state.speed * 3.6));
 	speedEl.innerHTML = `${kmh} <span class="unit">km/h</span>`;
 
 	const gear =
-		car.state.speed < -0.5 ? "R" : car.state.speed < 0.5 ? "N" : String(car.state.gear + 1);
+		vehicle.state.speed < -0.5
+			? "R"
+			: vehicle.state.speed < 0.5
+				? "N"
+				: String(vehicle.state.gear + 1);
 	if (gearEl) gearEl.textContent = gear;
 
-	const rpmPct = ((car.state.rpm - 1000) / 7500) * 100;
+	const rpmPct = ((vehicle.state.rpm - 1000) / 7500) * 100;
 	if (rpmBar) rpmBar.style.width = `${Math.max(0, Math.min(100, rpmPct))}%`;
 }
 
@@ -251,10 +254,9 @@ async function buildPractice(): Promise<void> {
 	await loadDecorations();
 	scene.add(buildInstancedScenery(scenery, terrain));
 
-	// Car (arcade physics — no cannon-es)
-	car = new ArcadeCarController();
-	car.setTerrain(terrain);
-	const carModel = await car.loadModel();
+	// Car (cannon-es RaycastVehicle)
+	vehicle = new VehicleController();
+	const carModel = await vehicle.loadModel();
 	carModel.castShadow = true;
 	carModel.traverse((child) => {
 		if (child instanceof THREE.Mesh) {
@@ -263,6 +265,9 @@ async function buildPractice(): Promise<void> {
 		}
 	});
 	scene.add(carModel);
+
+	// Terrain collider
+	vehicle.setTerrain(terrain, worldSize, 128);
 
 	// Spawn at track start
 	resetCar();
@@ -291,9 +296,9 @@ function animate(): void {
 	const delta = Math.min((now - lastTime) / 1000, 0.1);
 	lastTime = now;
 
-	if (car) {
-		car.update(input, delta);
-		car.syncVisuals();
+	if (vehicle) {
+		vehicle.update(input, delta);
+		vehicle.syncVisuals();
 		updateChaseCamera();
 		updateHUD();
 	}
