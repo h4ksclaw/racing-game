@@ -1,3 +1,4 @@
+export { ArcadeCarController } from "./ArcadeCarController.ts";
 export {
 	type CarConfig,
 	DEFAULT_INPUT,
@@ -7,4 +8,3 @@ export {
 	type VehicleState,
 	type WheelVisual,
 } from "./types.ts";
-export { VehicleController } from "./VehicleController.ts";

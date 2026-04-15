@@ -15,6 +15,7 @@ export interface CarConfig {
 	idleRPM: number;
 	wheelRadius: number;
 	wheelPositions: { x: number; y: number; z: number }[];
+	wheelBase: number; // distance between front and rear axle
 	suspensionStiffness: number;
 	suspensionRestLength: number;
 	dampingRelaxation: number;
@@ -73,6 +74,7 @@ export const RACE_CAR: CarConfig = {
 		{ x: 0.35, y: -0.1, z: -0.88 }, // rear-left
 		{ x: -0.35, y: -0.1, z: -0.88 }, // rear-right
 	],
+	wheelBase: 1.52,
 	suspensionStiffness: 35,
 	suspensionRestLength: 0.35,
 	dampingRelaxation: 2.5,
@@ -101,6 +103,7 @@ export const SEDAN_CAR: CarConfig = {
 		{ x: 0.35, y: -0.1, z: -0.8 },
 		{ x: -0.35, y: -0.1, z: -0.8 },
 	],
+	wheelBase: 1.5,
 	suspensionStiffness: 30,
 	suspensionRestLength: 0.35,
 	dampingRelaxation: 2.3,
