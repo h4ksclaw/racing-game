@@ -49,11 +49,6 @@ export class VehicleController {
 	private currentSteeringAngle = 0;
 	private steeringSpeed = 3.0; // rad/s — time-based, not per-frame
 
-	// Manual yaw torque (cannon-es RaycastVehicle doesn't generate lateral
-	// steering force without a chassis collision shape. We skip the chassis
-	// shape to avoid trimesh/heightfield fighting, and apply yaw manually.)
-	private yawFactor = 0.05;
-
 	constructor(config: CarConfig = RACE_CAR) {
 		this.config = config;
 
@@ -305,11 +300,32 @@ export class VehicleController {
 		// ── Auto gears ──
 		this.updateGear();
 
-		// ── Manual yaw torque ──
-		// cannon-es RaycastVehicle without a chassis collision shape doesn't
-		// generate lateral steering force. Apply yaw proportional to speed × steering.
-		const speed = Math.sqrt(this.chassisBody.velocity.x ** 2 + this.chassisBody.velocity.z ** 2);
-		this.chassisBody.angularVelocity.y += speed * this.currentSteeringAngle * this.yawFactor * dt;
+		// ── Bicycle-model steering ──
+		// cannon-es RaycastVehicle without a chassis shape doesn't generate lateral
+		// steering force. Instead of torque (which causes sliding), rotate the
+		// velocity vector to match the steering angle — true bicycle physics.
+		if (Math.abs(this.currentSteeringAngle) > 0.001) {
+			const speed = Math.sqrt(this.chassisBody.velocity.x ** 2 + this.chassisBody.velocity.z ** 2);
+			if (speed > 0.5) {
+				// Turn rate: speed / wheelbase (bicycle model)
+				const turnRate = (speed * Math.tan(this.currentSteeringAngle)) / this.config.wheelBase;
+				const yawDelta = turnRate * dt;
+
+				// Rotate velocity vector (not angular velocity — prevents sliding)
+				const cos = Math.cos(yawDelta);
+				const sin = Math.sin(yawDelta);
+				const vx = this.chassisBody.velocity.x;
+				const vz = this.chassisBody.velocity.z;
+				this.chassisBody.velocity.x = vx * cos - vz * sin;
+				this.chassisBody.velocity.z = vx * sin + vz * cos;
+
+				// Rotate body to match
+				const q = this.chassisBody.quaternion;
+				const yawQ = new CANNON.Quaternion();
+				yawQ.setFromEuler(0, yawDelta, 0);
+				q.mult(yawQ, q);
+			}
+		}
 
 		// ── Physics step ──
 		this.world.step(1 / 60, dt, 3);
