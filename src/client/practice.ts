@@ -7,7 +7,6 @@
 
 import { generateTrack, mulberry32 } from "@shared/track.ts";
 import * as THREE from "three";
-import type { BiomeConfig } from "./biomes.ts";
 import { getBiomeForSeed } from "./biomes.ts";
 import { initBloom } from "./effects.ts";
 import { buildMeshes } from "./road.ts";
@@ -33,7 +32,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
@@ -275,7 +274,11 @@ async function buildPractice(): Promise<void> {
 	scene.add(carModel);
 
 	// Set terrain collider for physics (128x128 heightfield)
-	vehicle.setTerrainSampler((x: number, z: number) => terrain!.getHeight(x, z), worldSize, 128);
+	vehicle.setTerrainSampler(
+		(x: number, z: number) => terrain?.getHeight(x, z) ?? 0,
+		worldSize,
+		128,
+	);
 
 	// Reset car to start of track
 	resetCar();

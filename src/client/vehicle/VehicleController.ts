@@ -43,7 +43,6 @@ export class VehicleController {
 	private terrainSampler: ((x: number, z: number) => number) | null = null;
 	private groundBodies: CANNON.Body[] = [];
 	private lastGroundY = 0;
-	private fallFrames = 0;
 
 	constructor(config: CarConfig = RACE_CAR) {
 		this.config = config;
@@ -163,11 +162,13 @@ export class VehicleController {
 			elementSize,
 		});
 
-		// Heightfield origin is at the first data point corner (-halfSize, 0, -halfSize)
-		// then rotated by -PI/2 around X to make it horizontal
+		// Heightfield data[i][j] at local (j*el, h, i*el).
+		// After -PI/2 rotation around X: world (j*el, h, -i*el).
+		// Offset (-halfSize, 0, +halfSize) centers it at origin.
 		const hfBody = new CANNON.Body({
-			mass: 0, // static
-			position: new CANNON.Vec3(-halfSize, 0, -halfSize),
+			mass: 0,
+			type: CANNON.Body.STATIC,
+			position: new CANNON.Vec3(-halfSize, 0, halfSize),
 		});
 		hfBody.addShape(hfShape);
 		hfBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
@@ -179,8 +180,8 @@ export class VehicleController {
 	update(input: VehicleInput, delta: number): void {
 		const dt = Math.min(delta, 1 / 30);
 
-		// Per-frame terrain correction: if cannon's heightfield misses (too coarse),
-		// snap the car to the terrain sampler height to prevent falling through
+		// Per-frame terrain safety net: only correct if cannon completely misses
+		// (heightfield gaps or car launched far below terrain)
 		if (this.terrainSampler) {
 			const px = this.chassisBody.position.x;
 			const pz = this.chassisBody.position.z;
@@ -190,17 +191,14 @@ export class VehicleController {
 				this.config.suspensionRestLength * 0.5;
 			this.lastGroundY = groundY;
 
-			// If car is below terrain, push it up
-			if (this.chassisBody.position.y < groundY) {
+			// Only snap up if significantly below terrain (>1m below expected)
+			if (this.chassisBody.position.y < groundY - 1) {
 				this.chassisBody.position.y = groundY;
-				// Kill downward velocity
 				if (this.chassisBody.velocity.y < 0) {
-					this.chassisBody.velocity.y *= 0.1;
+					this.chassisBody.velocity.y = 0;
 				}
-				this.fallFrames = 0;
 			}
-
-			// If car is way above terrain and falling, it's probably spawned wrong — teleport down
+			// Teleport down if spawned way above
 			if (this.chassisBody.position.y > groundY + 50) {
 				this.chassisBody.position.y = groundY + 2;
 				this.chassisBody.velocity.setZero();
@@ -362,7 +360,7 @@ export class VehicleController {
 			return;
 		}
 
-		const wheelRPM = ((Math.abs(this.state.speed) / this.config.wheelRadius) * 60) / (2 * Math.PI);
+		const _wheelRPM = ((Math.abs(this.state.speed) / this.config.wheelRadius) * 60) / (2 * Math.PI);
 
 		if (this.state.rpm > this.config.maxRPM * 0.85 && this.currentGearIndex < ratios.length - 1) {
 			this.currentGearIndex++;
