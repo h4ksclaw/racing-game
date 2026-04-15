@@ -47,7 +47,7 @@ export class VehicleController {
 
 	// Steering (smooth interpolation like offroadJS)
 	private currentSteeringAngle = 0;
-	private steeringSpeed = 0.04;
+	private steeringSpeed = 3.0; // rad/s — time-based, not per-frame
 
 	constructor(config: CarConfig = RACE_CAR) {
 		this.config = config;
@@ -71,15 +71,13 @@ export class VehicleController {
 		);
 
 		// ── Chassis ──
-		const [hw, hh, hd] = config.chassisHalfExtents;
+		// NOTE: No collision shape on chassis body.
+		// RaycastVehicle uses wheel raycasts for ground contact.
+		// A chassis Box shape fights with the trimesh terrain, causing the car
+		// to clip through the ground (cannon-es trimesh vs box is unreliable).
 		this.chassisBody = new CANNON.Body({ mass: config.mass });
-		// Lower center of mass (Mario Kart demo pattern)
-		this.chassisBody.addShape(
-			new CANNON.Box(new CANNON.Vec3(hw, hh, hd)),
-			new CANNON.Vec3(0, -0.1, 0),
-		);
 		this.chassisBody.angularDamping = 0.5; // prevent uncontrollable spin
-		this.chassisBody.linearDamping = 0.01;
+		this.chassisBody.linearDamping = 0.1; // air resistance — helps coast to stop
 		this.chassisBody.allowSleep = false;
 		this.world.addBody(this.chassisBody);
 
@@ -166,39 +164,47 @@ export class VehicleController {
 		return group;
 	}
 
-	/** Build terrain heightfield collider. */
-	setTerrain(terrain: TerrainProvider, worldSize: number, resolution = 128): void {
+	/** Build terrain collider as a Trimesh.
+	 *
+	 * NOTE: cannon-es RaycastVehicle cannot raycast against Heightfield shapes.
+	 * Trimesh works correctly with wheel raycasts.
+	 */
+	setTerrain(terrain: TerrainProvider, worldSize: number, resolution = 64): void {
 		this.terrain = terrain;
 
 		for (const b of this.groundBodies) this.world.removeBody(b);
 		this.groundBodies = [];
 
-		const halfSize = worldSize / 2;
-		const elSize = worldSize / (resolution - 1);
+		// Build triangle mesh from terrain heights
+		const spacing = worldSize / resolution;
+		const vertices: number[] = [];
+		const indices: number[] = [];
 
-		const matrix: number[][] = [];
-		for (let i = 0; i < resolution; i++) {
-			const row: number[] = [];
-			for (let j = 0; j < resolution; j++) {
-				const x = (j / (resolution - 1) - 0.5) * worldSize;
-				const z = (i / (resolution - 1) - 0.5) * worldSize;
-				row.push(terrain.getHeight(x, z));
+		// Vertices: (resolution+1) x (resolution+1) grid
+		for (let j = 0; j <= resolution; j++) {
+			for (let i = 0; i <= resolution; i++) {
+				const x = i * spacing - worldSize / 2;
+				const z = j * spacing - worldSize / 2;
+				vertices.push(x, terrain.getHeight(x, z), z);
 			}
-			matrix.push(row);
 		}
 
-		const hfShape = new CANNON.Heightfield(matrix, { elementSize: elSize });
+		// Indices: two triangles per grid cell
+		for (let j = 0; j < resolution; j++) {
+			for (let i = 0; i < resolution; i++) {
+				const a = j * (resolution + 1) + i;
+				const b = a + 1;
+				const c = a + (resolution + 1);
+				const d = c + 1;
+				indices.push(a, c, b, b, c, d);
+			}
+		}
 
-		const hfBody = new CANNON.Body({
-			mass: 0,
-			material: this.groundMaterial,
-		});
-		hfBody.addShape(hfShape);
-		// Official example pattern
-		hfBody.position.set(-halfSize, 0, halfSize);
-		hfBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-		this.world.addBody(hfBody);
-		this.groundBodies.push(hfBody);
+		const trimesh = new CANNON.Trimesh(vertices, indices);
+		const groundBody = new CANNON.Body({ mass: 0, material: this.groundMaterial });
+		groundBody.addShape(trimesh);
+		this.world.addBody(groundBody);
+		this.groundBodies.push(groundBody);
 	}
 
 	update(input: VehicleInput, delta: number): void {
@@ -209,32 +215,35 @@ export class VehicleController {
 		const targetSteer =
 			((input.left ? 1 : 0) - (input.right ? 1 : 0)) * this.config.maxSteerAngle * speedFactor;
 
-		// Smooth steering (offroadJS pattern)
+		// Smooth steering (offroadJS pattern, time-based)
+		const steerDelta = this.steeringSpeed * dt;
 		if (this.currentSteeringAngle < targetSteer) {
-			this.currentSteeringAngle = Math.min(
-				targetSteer,
-				this.currentSteeringAngle + this.steeringSpeed,
-			);
+			this.currentSteeringAngle = Math.min(targetSteer, this.currentSteeringAngle + steerDelta);
 		} else if (this.currentSteeringAngle > targetSteer) {
-			this.currentSteeringAngle = Math.max(
-				targetSteer,
-				this.currentSteeringAngle - this.steeringSpeed,
-			);
+			this.currentSteeringAngle = Math.max(targetSteer, this.currentSteeringAngle - steerDelta);
 		}
 
-		// Ackermann steering (offroadJS pattern)
+		// Ackermann steering
+		// Critical angle: atan(tw / (2*wb)) ≈ 13°. Beyond this, the inner
+		// wheel denominator goes negative and the formula breaks down.
 		const wb = this.config.wheelBase;
 		const tw = Math.abs(this.config.wheelPositions[0].x - this.config.wheelPositions[1].x);
 		const sa = this.currentSteeringAngle;
 		const sin = Math.sin(sa);
 		const cos = Math.cos(sa);
 		const wb2 = wb * 2;
+		const ackermannLimit = Math.atan(tw / wb2);
 
-		if (Math.abs(sa) > 0.001) {
+		if (Math.abs(sa) > 0.001 && Math.abs(sa) < ackermannLimit) {
+			// Ackermann: inner wheel turns more than outer
 			const steerLeft = Math.atan((wb2 * sin) / (wb2 * cos - tw * sin));
 			const steerRight = Math.atan((wb2 * sin) / (wb2 * cos + tw * sin));
 			this.vehicle.setSteeringValue(steerLeft, 0); // front-left
 			this.vehicle.setSteeringValue(steerRight, 1); // front-right
+		} else if (Math.abs(sa) >= ackermannLimit) {
+			// Past Ackermann limit: equal steering (avoid NaN)
+			this.vehicle.setSteeringValue(sa, 0);
+			this.vehicle.setSteeringValue(sa, 1);
 		} else {
 			this.vehicle.setSteeringValue(0, 0);
 			this.vehicle.setSteeringValue(0, 1);
@@ -244,8 +253,11 @@ export class VehicleController {
 		// ── Engine (official: negative = forward) ──
 		const ef = this.config.engineForce;
 		if (input.forward) {
-			this.vehicle.applyEngineForce(-ef, 2);
-			this.vehicle.applyEngineForce(-ef, 3);
+			// Speed limiter: reduce engine force as speed approaches maxSpeed
+			const speedRatio = Math.abs(this.state.speed) / this.config.maxSpeed;
+			const limitedForce = speedRatio > 0.8 ? ef * (1 - (speedRatio - 0.8) / 0.2) : ef;
+			this.vehicle.applyEngineForce(-limitedForce, 2);
+			this.vehicle.applyEngineForce(-limitedForce, 3);
 			this.state.throttle = 1;
 			this.state.brake = 0;
 			this.vehicle.setBrake(0, 0);
@@ -254,7 +266,7 @@ export class VehicleController {
 			this.vehicle.setBrake(0, 3);
 		} else if (input.backward) {
 			if (this.state.speed > 2) {
-				// Brake (offroadJS: brake rear wheels only)
+				// Brake (rear wheels only, offroadJS pattern)
 				this.vehicle.applyEngineForce(0, 2);
 				this.vehicle.applyEngineForce(0, 3);
 				this.vehicle.setBrake(this.config.brakeForce, 2);
@@ -294,12 +306,10 @@ export class VehicleController {
 			const px = this.chassisBody.position.x;
 			const pz = this.chassisBody.position.z;
 			const groundY = this.terrain.getHeight(px, pz) + this.config.wheelRadius + 1;
-			// Fell way below terrain → teleport back
 			if (this.chassisBody.position.y < groundY - 5) {
 				this.chassisBody.position.y = groundY + 2;
 				if (this.chassisBody.velocity.y < 0) this.chassisBody.velocity.y = 0;
 			}
-			// Flew way too high → bring back down
 			if (this.chassisBody.position.y > groundY + 100) {
 				this.chassisBody.position.y = groundY + 5;
 				this.chassisBody.velocity.setZero();
@@ -337,7 +347,6 @@ export class VehicleController {
 		this.model.position.set(pos.x, pos.y, pos.z);
 		this.model.quaternion.set(quat.x, quat.y, quat.z, quat.w);
 
-		// Wheels from kinematic bodies (already synced in postStep)
 		for (let i = 0; i < 4; i++) {
 			if (!this.wheelMeshes[i]) continue;
 			const wb = this.wheelBodies[i];
@@ -372,6 +381,9 @@ export class VehicleController {
 		this.chassisBody.angularVelocity.setZero();
 		this.state.speed = 0;
 		this.state.rpm = this.config.idleRPM;
+		this.state.steeringAngle = 0;
+		this.state.throttle = 0;
+		this.state.brake = 0;
 		this.currentGearIndex = 0;
 		this.currentSteeringAngle = 0;
 		for (let i = 0; i < 4; i++) {
