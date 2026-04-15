@@ -19,6 +19,7 @@ export default defineConfig({
 	},
 	server: {
 		port: 3000,
+		allowedHosts: true,
 		watch: {
 			ignored: ["_archive/**", "**/node_modules/**", "**/.venv/**", "**/__pycache__/**"],
 		},
@@ -28,7 +29,6 @@ export default defineConfig({
 				changeOrigin: true,
 			},
 		},
-		allowedHosts: true,
 	},
 	resolve: {
 		alias: {

@@ -158,7 +158,9 @@ function resetCar(): void {
 	}
 	const s = samples[nearestIdx];
 	const tangentAngle = Math.atan2(s.tangent.x, s.tangent.z);
-	vehicle.reset(s.point.x, s.point.y + 1, s.point.z, tangentAngle);
+	// Spawn at terrain height, not road center height
+	const groundY = terrain ? terrain.getHeight(s.point.x, s.point.z) : s.point.y;
+	vehicle.reset(s.point.x, groundY + 1.5, s.point.z, tangentAngle);
 }
 
 // ── Chase Camera ───────────────────────────────────────────────────────
@@ -272,12 +274,8 @@ async function buildPractice(): Promise<void> {
 	});
 	scene.add(carModel);
 
-	// Set terrain collider for physics
-	vehicle.setTerrainSampler(
-		(x: number, z: number) => terrain!.getHeight(x, z),
-		{ width: worldSize, depth: worldSize, offsetX: 0, offsetZ: 0 },
-		64,
-	);
+	// Set terrain collider for physics (128x128 heightfield)
+	vehicle.setTerrainSampler((x: number, z: number) => terrain!.getHeight(x, z), worldSize, 128);
 
 	// Reset car to start of track
 	resetCar();

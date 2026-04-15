@@ -40,9 +40,10 @@ export class VehicleController {
 	// Internal
 	private config: CarConfig;
 	private currentGearIndex = 0;
-	private wheelRotations = [0, 0, 0, 0];
 	private terrainSampler: ((x: number, z: number) => number) | null = null;
 	private groundBodies: CANNON.Body[] = [];
+	private lastGroundY = 0;
+	private fallFrames = 0;
 
 	constructor(config: CarConfig = RACE_CAR) {
 		this.config = config;
@@ -128,10 +129,11 @@ export class VehicleController {
 		return group;
 	}
 
-	/** Set a terrain height sampler for ground collision */
+	/** Set a terrain height sampler for ground collision.
+	 *  Creates a heightfield collider AND keeps the sampler for per-frame correction. */
 	setTerrainSampler(
 		sampler: (x: number, z: number) => number,
-		size: { width: number; depth: number; offsetX: number; offsetZ: number },
+		worldSize: number,
 		resolution: number,
 	): void {
 		this.terrainSampler = sampler;
@@ -142,28 +144,33 @@ export class VehicleController {
 		}
 		this.groundBodies = [];
 
-		// Create heightfield collider
+		// Create heightfield collider — centered at origin like the terrain mesh
+		const halfSize = worldSize / 2;
+		const elementSize = worldSize / (resolution - 1);
 		const matrix: number[][] = [];
 		for (let i = 0; i < resolution; i++) {
 			const row: number[] = [];
 			for (let j = 0; j < resolution; j++) {
-				const x = (i / (resolution - 1) - 0.5) * size.width + size.offsetX;
-				const z = (j / (resolution - 1) - 0.5) * size.depth + size.offsetZ;
+				// Heightfield data goes from -halfSize to +halfSize
+				const x = (i / (resolution - 1) - 0.5) * worldSize;
+				const z = (j / (resolution - 1) - 0.5) * worldSize;
 				row.push(sampler(x, z));
 			}
 			matrix.push(row);
 		}
 
 		const hfShape = new CANNON.Heightfield(matrix, {
-			elementSize: Math.max(size.width, size.depth) / (resolution - 1),
+			elementSize,
 		});
 
+		// Heightfield origin is at the first data point corner (-halfSize, 0, -halfSize)
+		// then rotated by -PI/2 around X to make it horizontal
 		const hfBody = new CANNON.Body({
 			mass: 0, // static
-			position: new CANNON.Vec3(size.offsetX, 0, size.offsetZ),
+			position: new CANNON.Vec3(-halfSize, 0, -halfSize),
 		});
 		hfBody.addShape(hfShape);
-		hfBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0); // rotate heightfield to be horizontal
+		hfBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
 		this.world.addBody(hfBody);
 		this.groundBodies.push(hfBody);
 	}
@@ -171,6 +178,34 @@ export class VehicleController {
 	/** Process input and update physics */
 	update(input: VehicleInput, delta: number): void {
 		const dt = Math.min(delta, 1 / 30);
+
+		// Per-frame terrain correction: if cannon's heightfield misses (too coarse),
+		// snap the car to the terrain sampler height to prevent falling through
+		if (this.terrainSampler) {
+			const px = this.chassisBody.position.x;
+			const pz = this.chassisBody.position.z;
+			const groundY =
+				this.terrainSampler(px, pz) +
+				this.config.wheelRadius +
+				this.config.suspensionRestLength * 0.5;
+			this.lastGroundY = groundY;
+
+			// If car is below terrain, push it up
+			if (this.chassisBody.position.y < groundY) {
+				this.chassisBody.position.y = groundY;
+				// Kill downward velocity
+				if (this.chassisBody.velocity.y < 0) {
+					this.chassisBody.velocity.y *= 0.1;
+				}
+				this.fallFrames = 0;
+			}
+
+			// If car is way above terrain and falling, it's probably spawned wrong — teleport down
+			if (this.chassisBody.position.y > groundY + 50) {
+				this.chassisBody.position.y = groundY + 2;
+				this.chassisBody.velocity.setZero();
+			}
+		}
 
 		// Steering (speed-dependent: less at high speed)
 		const speedFactor = 1 - (Math.abs(this.state.speed) / this.config.maxSpeed) * 0.5;
@@ -237,7 +272,7 @@ export class VehicleController {
 		const fwd = new CANNON.Vec3();
 		this.chassisBody.vectorToWorldFrame(new CANNON.Vec3(0, 0, 1), fwd);
 		this.state.speed = vel.dot(fwd);
-		this.state.onGround = this.chassisBody.position.y < 5; // rough check
+		this.state.onGround = this.chassisBody.position.y < this.lastGroundY + 1.5;
 
 		// Update RPM from wheel speed
 		const wheelSpeed = Math.abs(this.state.speed) / this.config.wheelRadius;
@@ -264,7 +299,7 @@ export class VehicleController {
 		this.model.position.set(pos.x, pos.y, pos.z);
 		this.model.quaternion.set(quat.x, quat.y, quat.z, quat.w);
 
-		// Sync wheels — get transform info from cannon
+		// Sync wheels
 		for (let i = 0; i < 4; i++) {
 			this.vehicle.updateWheelTransform(i);
 			const t = this.vehicle.wheelInfos[i].worldTransform;
@@ -317,27 +352,21 @@ export class VehicleController {
 
 	private getGearMultiplier(): number {
 		const ratio = this.config.gearRatios[this.currentGearIndex] || 1;
-		// Higher gears = less force
 		return 1 / (ratio * 0.8 + 0.5);
 	}
 
 	private updateGear(): void {
 		const ratios = this.config.gearRatios;
 		if (this.state.speed < 0) {
-			// Reverse — keep in first gear for braking
 			this.currentGearIndex = 0;
 			return;
 		}
 
-		// Simple RPM-based shifting
 		const wheelRPM = ((Math.abs(this.state.speed) / this.config.wheelRadius) * 60) / (2 * Math.PI);
 
-		// Upshift
 		if (this.state.rpm > this.config.maxRPM * 0.85 && this.currentGearIndex < ratios.length - 1) {
 			this.currentGearIndex++;
-		}
-		// Downshift
-		else if (this.state.rpm < this.config.maxRPM * 0.3 && this.currentGearIndex > 0) {
+		} else if (this.state.rpm < this.config.maxRPM * 0.3 && this.currentGearIndex > 0) {
 			this.currentGearIndex--;
 		}
 	}
