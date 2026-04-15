@@ -314,45 +314,43 @@ export async function buildMeshes(
 		for (let j = 0; j < slabSteps; j++) concreteUVs.push(j / (slabSteps - 1), roadDist / 3);
 		for (let j = 0; j < slabSteps; j++) concreteUVs.push(j / (slabSteps - 1), roadDist / 3);
 
-		if (i >= samples.length - 1) break;
-
+		// Closed loop: build quads connecting to next row (or row 0 for last)
+		const next = (i + 1) % samples.length;
 		const rb = i * 2;
-		roadIndices.push(rb, rb + 1, rb + 2, rb + 1, rb + 3, rb + 2);
+		const nb = next * 2;
+		roadIndices.push(rb, rb + 1, nb, rb + 1, nb + 1, nb);
 
 		const kb = i * 4;
-		kerbIndices.push(kb, kb + 1, kb + 4, kb + 1, kb + 5, kb + 4);
-		kerbIndices.push(kb + 2, kb + 6, kb + 3, kb + 3, kb + 6, kb + 7);
+		const nkb = next * 4;
+		kerbIndices.push(kb, kb + 1, nkb, kb + 1, nkb + 1, nkb);
+		kerbIndices.push(kb + 2, nkb + 2, kb + 3, kb + 3, nkb + 2, nkb + 3);
 
 		// Grass shoulder indices (4 verts per sample, 2 per side)
 		const gb = i * 4;
-		grassIndices.push(gb, gb + 1, gb + 4, gb + 1, gb + 5, gb + 4);
-		grassIndices.push(gb + 2, gb + 6, gb + 3, gb + 3, gb + 6, gb + 7);
+		const ngb = next * 4;
+		grassIndices.push(gb, gb + 1, ngb, gb + 1, ngb + 1, ngb);
+		grassIndices.push(gb + 2, ngb + 2, gb + 3, gb + 3, ngb + 2, ngb + 3);
 
 		// Concrete slab indices: 10 verts per sample (5 left + 5 right)
 		const slabN = 5;
 		const stride = slabN * 2; // total verts per sample
 		const cb = i * stride;
+		const ncb = next * stride;
 		// Left side: 4 quads between current and next sample (reversed winding)
 		for (let j = 0; j < slabN - 1; j++) {
-			concreteIndices.push(
-				cb + j,
-				cb + stride + j,
-				cb + j + 1,
-				cb + stride + j,
-				cb + stride + j + 1,
-				cb + j + 1,
-			);
+			concreteIndices.push(cb + j, ncb + j, cb + j + 1, ncb + j, ncb + j + 1, cb + j + 1);
 		}
 		// Right side: 4 quads (normal winding)
 		const slabRb = cb + slabN;
+		const nslabRb = ncb + slabN;
 		for (let j = 0; j < slabN - 1; j++) {
 			concreteIndices.push(
 				slabRb + j,
 				slabRb + j + 1,
-				slabRb + stride + j,
+				nslabRb + j,
 				slabRb + j + 1,
-				slabRb + stride + j + 1,
-				slabRb + stride + j,
+				nslabRb + j + 1,
+				nslabRb + j,
 			);
 		}
 	}

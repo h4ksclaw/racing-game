@@ -304,9 +304,11 @@ export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData 
 	const splinePoints = sampleSpline(cp3d, true, numSamples);
 
 	// ── Cross-section offsets ─────────────────────────────────────────────
+	// Remove last sample (near-duplicate of first for closed loop)
+	const splineClean = splinePoints.slice(0, -1);
 	const up = v3(0, 1, 0);
-	const samples: TrackSample[] = splinePoints.map((point, i) => {
-		const t = i / splinePoints.length;
+	const samples: TrackSample[] = splineClean.map((point, i) => {
+		const t = i / splineClean.length;
 		const tangent = splineTangent(cp3d, true, t);
 		let binormal = v3Cross(tangent, up);
 		if (v3Len(binormal) < 0.001) binormal = v3(1, 0, 0);
@@ -385,19 +387,21 @@ export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData 
 		const gv = 0.3 + Math.sin(roadDist * 0.3) * 0.04 + (rng() - 0.5) * 0.03;
 		grassColors.push(0.28, gv + 0.04, 0.2, 0.28, gv, 0.2, 0.28, gv + 0.04, 0.2, 0.28, gv, 0.2);
 
-		// Closed loop: skip last row's quads
-		if (i >= samples.length - 1) break;
-
+		// Closed loop: build quads connecting to next row (or row 0 for last)
+		const next = (i + 1) % samples.length;
 		const rb = i * 2;
-		roadIndices.push(rb, rb + 1, rb + 2, rb + 1, rb + 3, rb + 2);
+		const nb = next * 2;
+		roadIndices.push(rb, rb + 1, nb, rb + 1, nb + 1, nb);
 
 		const kb = i * 4;
-		kerbIndices.push(kb, kb + 1, kb + 4, kb + 1, kb + 5, kb + 4);
-		kerbIndices.push(kb + 2, kb + 6, kb + 3, kb + 3, kb + 6, kb + 7);
+		const nkb = next * 4;
+		kerbIndices.push(kb, kb + 1, nkb, kb + 1, nkb + 1, nkb);
+		kerbIndices.push(kb + 2, nkb + 2, kb + 3, kb + 3, nkb + 2, nkb + 3);
 
 		const gb = i * 4;
-		grassIndices.push(gb, gb + 1, gb + 4, gb + 1, gb + 5, gb + 4);
-		grassIndices.push(gb + 2, gb + 6, gb + 3, gb + 3, gb + 6, gb + 7);
+		const ngb = next * 4;
+		grassIndices.push(gb, gb + 1, ngb, gb + 1, ngb + 1, ngb);
+		grassIndices.push(gb + 2, ngb + 2, gb + 3, gb + 3, ngb + 2, ngb + 3);
 	}
 
 	// ── Center-line dashes ────────────────────────────────────────────────
