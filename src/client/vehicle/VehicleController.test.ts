@@ -92,7 +92,7 @@ type VC = InstanceType<typeof VehicleController>;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-const flatTerrain = { getHeight: () => 0 };
+const flatTerrain = { getHeight: () => 0, getNormal: () => ({ x: 0, y: 1, z: 0 }) };
 
 function simulate(vc: VC, input: VehicleInput, seconds: number): void {
 	const dt = 1 / 60;

@@ -1,9 +1,9 @@
 /**
  * Practice mode — single-player free roam on procedural tracks.
  *
- * Uses cannon-es RaycastVehicle (based on official example pattern).
+ * Arcade bicycle-model car physics with terrain following.
+ * Orbit camera: drag to spin around car, click to snap back to chase.
  */
-
 import { generateTrack, mulberry32 } from "@shared/track.ts";
 import * as THREE from "three";
 import { getBiomeForSeed } from "./biomes.ts";
@@ -17,7 +17,7 @@ import type { TrackResponse, WeatherType } from "./utils.ts";
 import { DEFAULT_INPUT, VehicleController, type VehicleInput } from "./vehicle/index.ts";
 import { applyWeather, buildRainSystem, buildSnowSystem, updateWeather } from "./weather.ts";
 
-// ── Config from URL ────────────────────────────────────────────────────
+// ── Config ──────────────────────────────────────────────────────────────
 const urlParams = new URLSearchParams(window.location.search);
 const seed = Number(urlParams.get("seed")) || 42;
 const hour = Number(urlParams.get("hour")) || 14;
@@ -26,7 +26,7 @@ const weather = (urlParams.get("weather") as WeatherType) || "clear";
 state.currentTime = hour;
 state.currentWeather = weather;
 
-// ── Renderer ───────────────────────────────────────────────────────────
+// ── Renderer ────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -158,27 +158,124 @@ function resetCar(): void {
 	const tangentAngle = Math.atan2(s.tangent.x, s.tangent.z);
 	const groundY = terrain ? terrain.getHeight(s.point.x, s.point.z) : s.point.y;
 	vehicle.reset(s.point.x, groundY + 2, s.point.z, tangentAngle);
+	// Reset camera to chase mode
+	camMode = "chase";
 }
 
-// ── Chase Camera ───────────────────────────────────────────────────────
-const CAM_HEIGHT = 4;
-const CAM_DIST = 8;
-const CAM_LOOK_AHEAD = 4;
+// ── Camera: Chase + Orbit (GTA-style) ──────────────────────────────────
+type CameraMode = "chase" | "orbit";
+let camMode: CameraMode = "chase";
 
-function updateChaseCamera(): void {
+// Orbit state
+let orbitYaw = 0; // angle around car (0 = behind)
+let orbitPitch = 0.3; // elevation angle (0 = level, PI/2 = top-down)
+let orbitDist = 10; // distance from car
+const orbitTarget = new THREE.Vector3();
+const orbitSpherical = new THREE.Spherical();
+
+// Chase camera params
+const CHASE_HEIGHT = 4;
+const CHASE_DIST = 8;
+const CHASE_LOOK_AHEAD = 5;
+const CHASE_SMOOTH = 0.08;
+
+// Mouse drag for orbit
+let isDragging = false;
+let lastMouseX = 0;
+let lastMouseY = 0;
+
+renderer.domElement.addEventListener("mousedown", (e) => {
+	// Left click = snap back to chase
+	if (e.button === 0 && !isDragging) {
+		camMode = "chase";
+		return;
+	}
+});
+
+renderer.domElement.addEventListener("contextmenu", (e) => {
+	e.preventDefault();
+});
+
+// Right-click drag to orbit
+renderer.domElement.addEventListener("mousedown", (e) => {
+	if (e.button === 2) {
+		isDragging = true;
+		lastMouseX = e.clientX;
+		lastMouseY = e.clientY;
+		camMode = "orbit";
+	}
+});
+
+window.addEventListener("mouseup", () => {
+	isDragging = false;
+});
+
+window.addEventListener("mousemove", (e) => {
+	if (!isDragging) return;
+
+	const dx = e.clientX - lastMouseX;
+	const dy = e.clientY - lastMouseY;
+	lastMouseX = e.clientX;
+	lastMouseY = e.clientY;
+
+	// Yaw: horizontal mouse movement
+	orbitYaw -= dx * 0.005;
+	// Pitch: vertical mouse movement, clamped
+	orbitPitch = Math.max(-0.5, Math.min(1.2, orbitPitch + dy * 0.005));
+});
+
+// Scroll to zoom
+renderer.domElement.addEventListener("wheel", (e) => {
+	if (camMode === "orbit") {
+		orbitDist = Math.max(3, Math.min(30, orbitDist + e.deltaY * 0.01));
+	}
+});
+
+function updateCamera(): void {
 	if (!vehicle) return;
+
 	const pos = vehicle.getPosition();
 	const fwd = vehicle.getForward();
+	orbitTarget.set(pos.x, pos.y + 1, pos.z);
 
-	const targetX = pos.x - fwd.x * CAM_DIST;
-	const targetY = pos.y + CAM_HEIGHT;
-	const targetZ = pos.z - fwd.z * CAM_DIST;
+	if (camMode === "chase") {
+		// ── Chase camera: follows behind car ──
+		const targetX = pos.x - fwd.x * CHASE_DIST;
+		const targetY = pos.y + CHASE_HEIGHT;
+		const targetZ = pos.z - fwd.z * CHASE_DIST;
 
-	camera.position.x += (targetX - camera.position.x) * 0.06;
-	camera.position.y += (targetY - camera.position.y) * 0.05;
-	camera.position.z += (targetZ - camera.position.z) * 0.06;
+		camera.position.x += (targetX - camera.position.x) * CHASE_SMOOTH;
+		camera.position.y += (targetY - camera.position.y) * CHASE_SMOOTH;
+		camera.position.z += (targetZ - camera.position.z) * CHASE_SMOOTH;
 
-	camera.lookAt(pos.x + fwd.x * CAM_LOOK_AHEAD, pos.y + 1, pos.z + fwd.z * CAM_LOOK_AHEAD);
+		// Look ahead of car
+		const lookX = pos.x + fwd.x * CHASE_LOOK_AHEAD;
+		const lookZ = pos.z + fwd.z * CHASE_LOOK_AHEAD;
+		camera.lookAt(lookX, pos.y + 1, lookZ);
+
+		// Sync orbit state from chase so transition is smooth
+		orbitYaw = Math.atan2(camera.position.x - pos.x, camera.position.z - pos.z);
+		orbitDist = camera.position.distanceTo(orbitTarget);
+		orbitPitch = Math.atan2(
+			camera.position.y - pos.y - 1,
+			Math.sqrt((camera.position.x - pos.x) ** 2 + (camera.position.z - pos.z) ** 2),
+		);
+	} else {
+		// ── Orbit camera: free rotation around car ──
+		// Blend orbitYaw with car heading so camera follows car turns
+		const carYaw = Math.atan2(fwd.x, fwd.z);
+		orbitYaw += ((carYaw - orbitYaw + Math.PI) % (2 * Math.PI)) - Math.PI;
+
+		// Spherical coordinates
+		orbitSpherical.set(orbitDist, Math.PI / 2 - orbitPitch, orbitYaw);
+
+		const targetPos = new THREE.Vector3().setFromSpherical(orbitSpherical);
+		targetPos.add(orbitTarget);
+
+		// Smooth follow
+		camera.position.lerp(targetPos, 0.1);
+		camera.lookAt(orbitTarget);
+	}
 }
 
 // ── HUD ────────────────────────────────────────────────────────────────
@@ -254,7 +351,7 @@ async function buildPractice(): Promise<void> {
 	await loadDecorations();
 	scene.add(buildInstancedScenery(scenery, terrain));
 
-	// Car (cannon-es RaycastVehicle)
+	// Car
 	vehicle = new VehicleController();
 	const carModel = await vehicle.loadModel();
 	carModel.castShadow = true;
@@ -266,7 +363,7 @@ async function buildPractice(): Promise<void> {
 	});
 	scene.add(carModel);
 
-	// Terrain collider
+	// Terrain collider (provides getHeight + getNormal)
 	vehicle.setTerrain(terrain);
 
 	// Spawn at track start
@@ -299,7 +396,7 @@ function animate(): void {
 	if (vehicle) {
 		vehicle.update(input, delta);
 		vehicle.syncVisuals();
-		updateChaseCamera();
+		updateCamera();
 		updateHUD();
 	}
 

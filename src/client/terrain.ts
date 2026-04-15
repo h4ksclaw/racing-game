@@ -140,6 +140,19 @@ export class TerrainSampler {
 		this.heightCache.set(cacheKey, result);
 		return result;
 	}
+
+	getNormal(x: number, z: number): { x: number; y: number; z: number } {
+		const eps = 0.5;
+		const hL = this.getHeight(x - eps, z);
+		const hR = this.getHeight(x + eps, z);
+		const hD = this.getHeight(x, z - eps);
+		const hU = this.getHeight(x, z + eps);
+		const nx = hL - hR;
+		const ny = 2 * eps;
+		const nz = hD - hU;
+		const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+		return { x: nx / len, y: ny / len, z: nz / len };
+	}
 }
 
 // ── Terrain textures ────────────────────────────────────────────────────
