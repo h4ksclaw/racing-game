@@ -10,7 +10,7 @@
  * See RESEARCH_CAR_PHYSICS_V2.md for full research notes.
  */
 import * as CANNON from "cannon-es";
-import type * as THREE from "three";
+import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import type { CarConfig, VehicleInput, VehicleState } from "./types.ts";
 import { DEFAULT_INPUT, RACE_CAR } from "./types.ts";
@@ -171,23 +171,45 @@ export class VehicleController {
 
 	/** Build ground collider.
 	 *
-	 * Uses a simple Plane for physics (wheel raycasts work reliably).
-	 * Visual terrain height is applied via terrain.getHeight() in the safety net.
+	 * Uses a Trimesh built from terrain heights.
 	 *
 	 * NOTE: cannon-es RaycastVehicle CANNOT raycast against Heightfield shapes.
-	 * Trimesh works but the car can't steer (no lateral force without chassis shape,
-	 * and chassis shape + trimesh creates drag). Plane + manual yaw torque is the fix.
+	 * Trimesh works for wheel raycasts. Steering uses manual yaw torque
+	 * (RaycastVehicle doesn't generate lateral force without a chassis collision
+	 * shape, and chassis shape + trimesh creates massive drag).
 	 */
-	setTerrain(terrain: TerrainProvider, _worldSize?: number, _resolution?: number): void {
+	setTerrain(terrain: TerrainProvider, worldSize: number, resolution = 128): void {
 		this.terrain = terrain;
 
 		for (const b of this.groundBodies) this.world.removeBody(b);
 		this.groundBodies = [];
 
-		// Infinite flat plane at y=0
+		// Build triangle mesh from terrain heights
+		const spacing = worldSize / resolution;
+		const vertices: number[] = [];
+		const indices: number[] = [];
+
+		for (let j = 0; j <= resolution; j++) {
+			for (let i = 0; i <= resolution; i++) {
+				const x = i * spacing - worldSize / 2;
+				const z = j * spacing - worldSize / 2;
+				vertices.push(x, terrain.getHeight(x, z), z);
+			}
+		}
+
+		for (let j = 0; j < resolution; j++) {
+			for (let i = 0; i < resolution; i++) {
+				const a = j * (resolution + 1) + i;
+				const b = a + 1;
+				const c = a + (resolution + 1);
+				const d = c + 1;
+				indices.push(a, c, b, b, c, d);
+			}
+		}
+
+		const trimesh = new CANNON.Trimesh(vertices, indices);
 		const groundBody = new CANNON.Body({ mass: 0, material: this.groundMaterial });
-		groundBody.addShape(new CANNON.Plane());
-		groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+		groundBody.addShape(trimesh);
 		this.world.addBody(groundBody);
 		this.groundBodies.push(groundBody);
 	}
@@ -289,28 +311,20 @@ export class VehicleController {
 		const speed = Math.sqrt(this.chassisBody.velocity.x ** 2 + this.chassisBody.velocity.z ** 2);
 		this.chassisBody.angularVelocity.y += speed * this.currentSteeringAngle * this.yawFactor * dt;
 
-		// ── Physics step (120Hz like offroadJS) ──
-		this.world.step(1 / 120, dt, 5);
+		// ── Physics step ──
+		this.world.step(1 / 60, dt, 3);
 
-		// ── Terrain height sync ──
-		// Physics uses a flat plane at y=0. Snap chassis to actual terrain height
-		// so the car follows hills. Only adjust Y — X/Z come from physics.
+		// ── Safety net ──
 		if (this.terrain) {
 			const px = this.chassisBody.position.x;
 			const pz = this.chassisBody.position.z;
-			const groundY = this.terrain.getHeight(px, pz);
-			const targetY = groundY + this.config.suspensionRestLength + this.config.wheelRadius * 0.8;
-
-			// Smooth Y interpolation (don't snap instantly over bumps)
-			this.chassisBody.position.y += (targetY - this.chassisBody.position.y) * 0.3;
-
-			// Safety net: teleport if way off
-			if (this.chassisBody.position.y < groundY - 5) {
-				this.chassisBody.position.y = groundY + 2;
+			const terrainY = this.terrain.getHeight(px, pz);
+			if (this.chassisBody.position.y < terrainY - 3) {
+				this.chassisBody.position.y = terrainY + 2;
 				if (this.chassisBody.velocity.y < 0) this.chassisBody.velocity.y = 0;
 			}
-			if (this.chassisBody.position.y > groundY + 100) {
-				this.chassisBody.position.y = groundY + 5;
+			if (this.chassisBody.position.y > terrainY + 50) {
+				this.chassisBody.position.y = terrainY + 5;
 				this.chassisBody.velocity.setZero();
 			}
 		}
@@ -346,16 +360,29 @@ export class VehicleController {
 		this.model.position.set(pos.x, pos.y, pos.z);
 		this.model.quaternion.set(quat.x, quat.y, quat.z, quat.w);
 
+		// Wheels are children of the model group but cannon gives us world-space
+		// positions. Convert to model-local space by inverse-transforming.
+		this.model.updateMatrixWorld(true);
+		const invQ = this.model.quaternion.clone().invert();
+		const invP = this.model.position.clone();
+
 		for (let i = 0; i < 4; i++) {
 			if (!this.wheelMeshes[i]) continue;
 			const wb = this.wheelBodies[i];
-			this.wheelMeshes[i].position.set(wb.position.x, wb.position.y, wb.position.z);
-			this.wheelMeshes[i].quaternion.set(
+			// World pos → model-local pos
+			const wx = wb.position.x - invP.x;
+			const wy = wb.position.y - invP.y;
+			const wz = wb.position.z - invP.z;
+			this.wheelMeshes[i].position.set(wx, wy, wz).applyQuaternion(invQ);
+			// World quat → model-local quat
+			const wq = new THREE.Quaternion(
 				wb.quaternion.x,
 				wb.quaternion.y,
 				wb.quaternion.z,
 				wb.quaternion.w,
 			);
+			wq.premultiply(invQ);
+			this.wheelMeshes[i].quaternion.copy(wq);
 		}
 	}
 
