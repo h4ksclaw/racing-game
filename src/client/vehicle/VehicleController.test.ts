@@ -190,8 +190,8 @@ describe("VehicleController — arcade physics", () => {
 			simulate(vc, DEFAULT_INPUT, 1);
 			const z0 = vc.getPosition().z;
 			simulate(vc, { ...DEFAULT_INPUT, forward: true }, 5);
-			// Car moves forward (heading=0 → -Z direction)
-			expect(vc.getPosition().z).toBeLessThan(z0);
+			// Car moves forward (heading=0 → +Z direction)
+			expect(vc.getPosition().z).toBeGreaterThan(z0);
 			expect(vc.state.speed).toBeGreaterThan(5);
 			vc.dispose();
 		});

@@ -125,26 +125,26 @@ export class VehicleController {
 		if (input.forward) {
 			const speedRatio = Math.abs(this.state.speed) / this.config.maxSpeed;
 			const limitedAccel = speedRatio > 0.8 ? ef * (1 - (speedRatio - 0.8) / 0.2) : ef;
-			this.velocity.x -= fwdX * limitedAccel * dt;
-			this.velocity.z -= fwdZ * limitedAccel * dt;
+			this.velocity.x += fwdX * limitedAccel * dt;
+			this.velocity.z += fwdZ * limitedAccel * dt;
 			this.state.throttle = 1;
 			this.state.brake = 0;
 		} else if (input.backward) {
 			if (this.state.speed > 2) {
 				// Brake
 				const brakeDecel = this.config.brakeForce / this.config.mass;
-				const fwdSpeed = this.velocity.x * -fwdX + this.velocity.z * -fwdZ;
+				const fwdSpeed = this.velocity.x * fwdX + this.velocity.z * fwdZ;
 				if (fwdSpeed > 0) {
 					const brakeAmount = Math.min(brakeDecel * dt, fwdSpeed);
-					this.velocity.x += fwdX * brakeAmount;
-					this.velocity.z += fwdZ * brakeAmount;
+					this.velocity.x -= fwdX * brakeAmount;
+					this.velocity.z -= fwdZ * brakeAmount;
 				}
 				this.state.brake = 1;
 				this.state.throttle = 0;
 			} else {
 				// Reverse
-				this.velocity.x += fwdX * ef * 0.5 * dt;
-				this.velocity.z += fwdZ * ef * 0.5 * dt;
+				this.velocity.x -= fwdX * ef * 0.5 * dt;
+				this.velocity.z -= fwdZ * ef * 0.5 * dt;
 				this.state.throttle = 0.5;
 				this.state.brake = 0;
 			}
@@ -156,11 +156,11 @@ export class VehicleController {
 		// Handbrake
 		if (input.handbrake) {
 			const brakeDecel = (this.config.brakeForce * 2) / this.config.mass;
-			const fwdSpeed = this.velocity.x * -fwdX + this.velocity.z * -fwdZ;
+			const fwdSpeed = this.velocity.x * fwdX + this.velocity.z * fwdZ;
 			if (fwdSpeed > 0) {
 				const brakeAmount = Math.min(brakeDecel * dt, fwdSpeed);
-				this.velocity.x += fwdX * brakeAmount;
-				this.velocity.z += fwdZ * brakeAmount;
+				this.velocity.x -= fwdX * brakeAmount;
+				this.velocity.z -= fwdZ * brakeAmount;
 			}
 		}
 
@@ -211,7 +211,7 @@ export class VehicleController {
 
 		// ── Update derived state ──
 		// Speed = component of velocity along forward direction
-		this.state.speed = -(this.velocity.x * fwdX + this.velocity.z * fwdZ);
+		this.state.speed = this.velocity.x * fwdX + this.velocity.z * fwdZ;
 
 		// Auto gears
 		this.updateGear();
