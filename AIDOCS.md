@@ -197,6 +197,133 @@ npm run check        # tsc + biome + knip (full check)
 - **Knip**: dead code / unused dependency detection
 - **Husky + lint-staged**: pre-commit formatting
 
+## Car Physics
+
+### Practice Mode
+`/practice.html?seed=N` — single-player free roam with arcade car physics.
+
+### Architecture
+- **Engine**: cannon-es `RaycastVehicle` (not `RigidVehicle` — RaycastVehicle is better for racing)
+- **World**: SAPBroadphase, 120Hz physics step, solver.iterations=10
+- **Terrain**: `CANNON.Heightfield` built from `TerrainSampler.getHeight()` at 128×128 resolution
+- **Chassis**: Single `Box` shape with lowered center of mass (shape offset -0.1 on Y)
+- **Wheels**: KINEMATIC bodies with `collisionFilterGroup=0`, synced via `postStep` listener
+- **Steering**: Ackermann geometry (left/right wheels at different angles), smooth interpolation
+- **Engine**: Negative force = forward (cannon-es Z-forward convention), rear-wheel drive only
+- **Materials**: `wheelMaterial` + `groundMaterial` via `ContactMaterial` (friction 0.5)
+
+### Files
+| File | Description |
+|------|-------------|
+| `src/client/vehicle/types.ts` | `CarConfig`, `VehicleState`, `VehicleInput`, presets (RACE_CAR, SEDAN_CAR) |
+| `src/client/vehicle/VehicleController.ts` | cannon-es physics, input handling, visual sync |
+| `src/client/vehicle/index.ts` | barrel export |
+| `src/client/practice.ts` | Scene setup, keyboard input, chase camera, main loop |
+| `practice.html` | HUD (speed/gear/RPM), entry point |
+
+### Car Configs
+| Preset | Mass | Engine Force | Max Speed | Wheel Radius | Friction Slip | Roll Influence |
+|--------|------|-------------|-----------|-------------|-------------|----------------|
+| RACE_CAR | 150 | 1200 | 55 m/s (~200 km/h) | 0.3 | 1.4 | 0.4 |
+| SEDAN_CAR | 200 | 1000 | 45 m/s (~160 km/h) | 0.3 | 1.2 | 0.5 |
+
+### Controls
+| Key | Action |
+|-----|--------|
+| W / ↑ | Accelerate |
+| S / ↓ | Brake / Reverse |
+| A / ← | Steer left |
+| D / → | Steer right |
+| Space | Handbrake |
+| R | Reset car to spawn |
+
+### Cannon-es Gotchas
+- **Heightfield offset must be `(-halfSize, 0, +halfSize)`** after `-PI/2` X rotation
+- **`type: CANNON.Body.STATIC` must be set explicitly** for heightfield collision
+- **Engine force sign**: negative = forward with Z-forward axis convention
+- **Safety net threshold**: only teleport if >5m below expected terrain height
+- **solver.iterations**: accessed via `(world.solver as any).iterations = 10` due to missing type
+
+### Car Model Dimensions (`race.glb`)
+- Body: 1.2m wide × 0.63m tall × 2.56m long
+- Wheel radius: ~0.3m, track width: ~0.7m (±0.35m), wheelbase: ~1.5m
+- Separate wheel meshes named `wheel-front-left`, `wheel-front-right`, `wheel-back-left`, `wheel-back-right`
+
+### Future
+- [ ] Physics unit tests (sphere drop, stability, acceleration, steering response)
+- [ ] Engine sound via Web Audio API
+- [ ] Multiple car selection
+- [ ] Tuning/garage/upgrades system
+
+### Car Physics Research
+
+Based on analysis of 4 working implementations cloned to `/tmp/`:
+
+#### 1. pmndrs/cannon-es (official example)
+- `examples/raycast_vehicle.html` — the reference
+- RaycastVehicle + Heightfield (64×64), SAPBroadphase
+- mass:150, engineForce:±1000, frictionSlip:1.4, rollInfluence:0.01
+- KINEMATIC wheel bodies, ContactMaterial friction:0.3
+- Heightfield: `(-sizeX*elSize/2, -1, +sizeZ*elSize/2)`, rotation -PI/2
+
+#### 2. tomo0613/offroadJS_v2 (real offroad game)
+- `src/vehicle/Vehicle.ts` — the gold standard for RaycastVehicle tuning
+- mass:30, engineForce:220, frictionSlip:1.1, rollInfluence:0.6
+- **forwardAcceleration:0.5, sideAcceleration:1.0** (critical tire response)
+- **customSlidingRotationalSpeed:-30** (correct sliding wheel spin)
+- **maxSuspensionForce:MAX_VALUE** (never cap suspension)
+- Ackermann steering, torque vectoring, 120Hz physics
+- Brake rear wheels only, 50/50 torque split
+- Chassis: compound shapes with lowered CoM
+
+#### 3. cconsta1/threejs_car_demo (Mario Kart style)
+- Uses `RigidVehicle` (not RaycastVehicle) — simpler, good for arcade
+- mass:16, maxForce:65, solver.iterations:10, `world.fixedStep()`
+- Compound chassis: main box + nose + bumper + engine + wing
+- shapeOffsets[0] lowered 0.2 for CoM, allowSleep=false
+- linearDamping:0.25, angularDamping:0.7
+
+#### 4. mslee98/cannon_car (tutorial)
+- RigidVehicle + Heightfield (64×64, elSize~4.7m)
+- mass:150, wide axle (7 units)
+- Heightfield: `(-(sizeX-1)*elSize/2, -15, +(sizeZ-1)*elSize/2)`, -PI/2
+
+#### Why Our First Attempt Failed
+1. **Mass 800** — tank, not a car. force/mass ratio was 3.5 m/s² vs offroadJS's 7.3
+2. **frictionSlip 3.5** — wheels lost grip at slightest turn → wobbling
+3. **rollInfluence 0.01** — body didn't affect steering → disconnected feel
+4. **damping 4.5/2.5** — over-damped compression → oscillation
+5. **Missing forwardAcceleration/sideAcceleration** — tire response was wrong
+6. **Missing customSlidingRotationalSpeed** — erratic wheel behavior
+7. **60Hz physics** — too coarse for stable suspension
+8. **No solver.iterations** — sloppy collision resolution
+9. **No angularDamping** — uncontrollable spin
+10. **Safety net at 1m** — fought physics every frame
+
+#### The Correct Pattern
+```
+World: SAPBroadphase, gravity -9.82, defaultContactMaterial.friction 0.001,
+       solver.iterations 10, step at 120Hz
+
+RaycastVehicle: mass 30-150, angularDamping 0.5, linearDamping 0.01,
+               engineForce/mass ratio ~5-10 m/s² for arcade
+
+Wheel: stiffness 25-35, restLength 0.3, maxSuspensionForce MAX_VALUE,
+       frictionSlip 1.0-1.5, damping 2/2, rollInfluence 0.3-0.6,
+       forwardAcceleration 0.5, sideAcceleration 1.0,
+       customSlidingRotationalSpeed -30
+
+ContactMaterial (wheel↔ground): friction 0.3-1.0, restitution 0
+
+Engine: negative force = forward, rear-wheel drive only
+Steering: Ackermann geometry, smooth interpolation
+Visuals: postStep listener → updateWheelTransform → copy to KINEMATIC bodies
+```
+
+Full notes also in `RESEARCH_CAR_PHYSICS.md` (original) and `RESEARCH_CAR_PHYSICS_V2.md` (detailed).
+
+---
+
 ## Tech Debt & Notes
 
 - `road.ts` and `scenery.ts` are large (~600+ lines) — could benefit from splitting mesh generation vs material setup
@@ -221,4 +348,4 @@ Goal: `/practice.html?seed=N&hour=H&weather=W` → single-player free roam
 - Terrain height sampling via existing `TerrainSampler`
 - Sound: Web Audio API for engine RPM, tire skids
 
-See `RESEARCH_CAR_PHYSICS.md` for detailed research.
+See [Car Physics Research](#car-physics-research) below for detailed analysis of working implementations.
