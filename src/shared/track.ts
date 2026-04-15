@@ -112,15 +112,6 @@ function sampleSpline(controlPoints: V3[], closed: boolean, numSamples: number):
 	return pts;
 }
 
-function splineTangent(controlPoints: V3[], closed: boolean, t: number): V3 {
-	const _n = controlPoints.length;
-	const eps = 0.001;
-	const a = sampleSpline(controlPoints, closed, 1000).at(Math.floor(t * 1000)) ?? controlPoints[0];
-	const b =
-		sampleSpline(controlPoints, closed, 1000).at(Math.min(Math.floor((t + eps) * 1000), 999)) ?? a;
-	return v3Normalize(v3Add(b, v3Scale(a, -1)));
-}
-
 // ── Public types ─────────────────────────────────────────────────────────
 
 export interface TrackSample {
