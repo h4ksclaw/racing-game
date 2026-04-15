@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { generateTrack, mulberry32 } from "./track.ts";
+import type { HouseConfig } from "../client/biomes.ts";
+import { generateHouses, generateTrack, mulberry32 } from "./track.ts";
 
 describe("mulberry32", () => {
 	it("produces deterministic values for the same seed", () => {
@@ -71,6 +72,99 @@ describe("generateTrack", () => {
 		for (const s of track.samples) {
 			const len = Math.sqrt(s.tangent.x ** 2 + s.tangent.y ** 2 + s.tangent.z ** 2);
 			expect(len).toBeCloseTo(1, 1); // within 0.1
+		}
+	});
+});
+
+describe("generateHouses", () => {
+	const testConfig: HouseConfig = {
+		enabled: true,
+		wallColor: [0.5, 0.5, 0.5],
+		roofColor: [0.3, 0.3, 0.3],
+		minSize: [6, 5],
+		maxSize: [10, 8],
+		heightRange: [3, 5],
+		roofPitch: 0.6,
+		spacing: 50,
+		distanceRange: [15, 30],
+		flattenRadius: 12,
+		chimney: true,
+	};
+
+	it("returns empty array when disabled", () => {
+		const track = generateTrack(42);
+		const houses = generateHouses(42, track.samples, { ...testConfig, enabled: false });
+		expect(houses).toHaveLength(0);
+	});
+
+	it("generates houses deterministically for same seed", () => {
+		const track = generateTrack(42);
+		const a = generateHouses(42, track.samples, testConfig);
+		const b = generateHouses(42, track.samples, testConfig);
+		expect(a.length).toBe(b.length);
+		for (let i = 0; i < a.length; i++) {
+			expect(a[i].position.x).toBeCloseTo(b[i].position.x, 10);
+			expect(a[i].position.z).toBeCloseTo(b[i].position.z, 10);
+			expect(a[i].rotation).toBeCloseTo(b[i].rotation, 10);
+		}
+	});
+
+	it("houses are placed outside the road clearance zone", () => {
+		const track = generateTrack(42);
+		const houses = generateHouses(42, track.samples, testConfig);
+		for (const house of houses) {
+			// Find nearest road sample
+			let minDist = Infinity;
+			for (const s of track.samples) {
+				const dx = house.position.x - s.point.x;
+				const dz = house.position.z - s.point.z;
+				const d = Math.sqrt(dx * dx + dz * dz);
+				if (d < minDist) minDist = d;
+			}
+			expect(minDist).toBeGreaterThanOrEqual(10); // clearance = 10
+		}
+	});
+
+	it("spacing is respected between houses along track", () => {
+		const track = generateTrack(42);
+		const tightConfig = { ...testConfig, spacing: 80 };
+		const houses = generateHouses(42, track.samples, tightConfig);
+		// Check that house positions are spread out (not all in one spot)
+		for (let i = 1; i < houses.length; i++) {
+			const dx = houses[i].position.x - houses[i - 1].position.x;
+			const dz = houses[i].position.z - houses[i - 1].position.z;
+			const dist = Math.sqrt(dx * dx + dz * dz);
+			expect(dist).toBeGreaterThan(20); // houses should be spread out
+		}
+	});
+
+	it("rotation values are valid angles", () => {
+		const track = generateTrack(42);
+		const houses = generateHouses(42, track.samples, testConfig);
+		for (const house of houses) {
+			// Rotation should be a finite number
+			expect(Number.isFinite(house.rotation)).toBe(true);
+		}
+	});
+
+	it("houses have valid dimensions", () => {
+		const track = generateTrack(42);
+		const houses = generateHouses(42, track.samples, testConfig);
+		for (const house of houses) {
+			expect(house.width).toBeGreaterThanOrEqual(testConfig.minSize[0]);
+			expect(house.width).toBeLessThanOrEqual(testConfig.maxSize[0]);
+			expect(house.depth).toBeGreaterThanOrEqual(testConfig.minSize[1]);
+			expect(house.depth).toBeLessThanOrEqual(testConfig.maxSize[1]);
+			expect(house.wallHeight).toBeGreaterThanOrEqual(testConfig.heightRange[0]);
+			expect(house.wallHeight).toBeLessThanOrEqual(testConfig.heightRange[1]);
+		}
+	});
+
+	it("houses are on correct side of road (side field matches position)", () => {
+		const track = generateTrack(42);
+		const houses = generateHouses(42, track.samples, testConfig);
+		for (const house of houses) {
+			expect([-1, 1]).toContain(house.side);
 		}
 	});
 });

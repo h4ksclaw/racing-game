@@ -56,6 +56,62 @@ function makeSnowTexture(): THREE.Texture {
 	return tex;
 }
 
+// ── Cloud layer ────────────────────────────────────────────────────────
+
+export function buildCloudLayer(): THREE.Group {
+	const group = new THREE.Group();
+	const cloudCount = 50;
+	const spread = 1200;
+	const height = 300;
+
+	// Reusable cloud material
+	const cloudMat = new THREE.MeshBasicMaterial({
+		color: new THREE.Color(0.92, 0.92, 0.95),
+		transparent: true,
+		opacity: 0.7,
+		depthWrite: false,
+		side: THREE.DoubleSide,
+	});
+
+	for (let i = 0; i < cloudCount; i++) {
+		const cloudGroup = new THREE.Group();
+
+		// Build puffy cloud from overlapping spheres
+		const blobCount = 4 + Math.floor(Math.random() * 6);
+		const baseSize = 30 + Math.random() * 50;
+
+		for (let b = 0; b < blobCount; b++) {
+			const isFlat = Math.random() < 0.4;
+			const w = baseSize * (0.5 + Math.random() * 1.0);
+			const h = isFlat
+				? baseSize * (0.15 + Math.random() * 0.2)
+				: baseSize * (0.4 + Math.random() * 0.6);
+			const d = baseSize * (0.4 + Math.random() * 0.8);
+			const geo = new THREE.SphereGeometry(1, 16, 12);
+			geo.scale(w, h, d);
+			const mesh = new THREE.Mesh(geo, cloudMat);
+			mesh.position.set(
+				(Math.random() - 0.5) * baseSize * 1.5,
+				(Math.random() - 0.5) * baseSize * 0.3,
+				(Math.random() - 0.5) * baseSize * 1.0,
+			);
+			cloudGroup.add(mesh);
+		}
+
+		cloudGroup.position.set(
+			(Math.random() - 0.5) * spread,
+			height + Math.random() * 150,
+			(Math.random() - 0.5) * spread,
+		);
+		cloudGroup.userData.baseOpacity = 0.5 + Math.random() * 0.4;
+		cloudGroup.userData.baseY = cloudGroup.position.y;
+		group.add(cloudGroup);
+	}
+
+	group.visible = false;
+	return group;
+}
+
 // ── Particle systems ────────────────────────────────────────────────────
 
 export function buildRainSystem(): { points: THREE.Points; velocities: Float32Array } {
@@ -169,8 +225,82 @@ export function updateWeather(delta: number): void {
 	}
 }
 
+// ── Cloud weather settings ─────────────────────────────────────────────
+
+interface CloudWeatherSetting {
+	visible: boolean;
+	opacity: number;
+	color: [number, number, number];
+	scale: number;
+	yOffset: number;
+}
+
+const CLOUD_SETTINGS: Record<string, CloudWeatherSetting> = {
+	clear: { visible: false, opacity: 0, color: [0.92, 0.92, 0.95], scale: 1, yOffset: 0 },
+	cloudy: { visible: true, opacity: 0.55, color: [0.85, 0.85, 0.88], scale: 1.3, yOffset: -20 },
+	rain: { visible: true, opacity: 0.75, color: [0.5, 0.5, 0.55], scale: 1.8, yOffset: -60 },
+	heavy_rain: { visible: true, opacity: 0.9, color: [0.3, 0.3, 0.35], scale: 2.5, yOffset: -100 },
+	snow: { visible: true, opacity: 0.65, color: [0.72, 0.73, 0.78], scale: 1.6, yOffset: -40 },
+	fog: { visible: true, opacity: 0.8, color: [0.65, 0.65, 0.68], scale: 2.0, yOffset: -80 },
+};
+
+function applyCloudWeather(weather: WeatherType, cloudLayer: THREE.Group): void {
+	const cs = CLOUD_SETTINGS[weather] ?? CLOUD_SETTINGS.clear;
+	cloudLayer.visible = cs.visible;
+
+	if (!cs.visible) return;
+
+	// Factor in time of day — clouds go dark at night
+	const hour = state.currentTime ?? 12;
+	const isNight = hour < 5 || hour > 21;
+	const isDusk = (hour >= 5 && hour < 7) || (hour >= 19 && hour <= 21);
+	let nightDim: number;
+	let nightTint: THREE.Color;
+	if (isNight) {
+		nightDim = 0.08;
+		nightTint = new THREE.Color(0.05, 0.05, 0.1);
+	} else if (isDusk) {
+		// Smooth transition at dawn/dusk
+		let t: number;
+		if (hour < 7) t = (hour - 5) / 2;
+		else t = (21 - hour) / 2;
+		nightDim = 0.08 + t * 0.92;
+		nightTint = new THREE.Color(0.05 + t * 0.85, 0.05 + t * 0.8, 0.1 + t * 0.85);
+	} else {
+		nightDim = 1.0;
+		nightTint = new THREE.Color(1, 1, 1);
+	}
+
+	const cloudColor = new THREE.Color(...cs.color);
+	cloudColor.multiply(nightTint);
+	cloudColor.multiplyScalar(nightDim);
+
+	for (const cloud of cloudLayer.children) {
+		cloud.scale.setScalar(cs.scale);
+		cloud.position.y = (cloud.userData.baseY ?? 375) + cs.yOffset;
+
+		for (const child of cloud.children) {
+			if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshBasicMaterial) {
+				child.material.opacity =
+					cs.opacity * (cloud.userData.baseOpacity ?? 0.6) * Math.max(nightDim, 0.15);
+				child.material.color.copy(cloudColor);
+			}
+		}
+	}
+}
+
 export function applyWeather(weather: WeatherType): void {
-	const { rainSystem, snowSystem, currentTime, sun, ambient, skyUniforms, scene: sc } = state;
+	const {
+		rainSystem,
+		snowSystem,
+		currentTime,
+		sun,
+		ambient,
+		skyUniforms,
+		scene: sc,
+		cloudLayer,
+		skyMesh,
+	} = state;
 	if (!rainSystem || !snowSystem) return;
 	state.currentWeather = weather;
 
@@ -178,6 +308,11 @@ export function applyWeather(weather: WeatherType): void {
 	const snowVisible = weather === "snow";
 	rainSystem.visible = rainVisible;
 	snowSystem.visible = snowVisible;
+
+	// Clouds
+	if (cloudLayer) {
+		applyCloudWeather(weather, cloudLayer);
+	}
 
 	const nightDim = currentTime > 20 || currentTime < 5 ? 0.3 : currentTime > 18 ? 0.6 : 1.0;
 	(rainSystem.material as THREE.PointsMaterial).color.setRGB(
@@ -187,7 +322,13 @@ export function applyWeather(weather: WeatherType): void {
 	);
 	(rainSystem.material as THREE.PointsMaterial).opacity =
 		(weather === "heavy_rain" ? 0.8 : 0.5) * nightDim;
-	(snowSystem.material as THREE.PointsMaterial).opacity = 0.9 * Math.max(0.4, nightDim);
+	// Snow: dim and blue-shift at night
+	(snowSystem.material as THREE.PointsMaterial).color.setRGB(
+		0.7 + 0.3 * nightDim,
+		0.7 + 0.3 * nightDim,
+		0.8 + 0.2 * nightDim,
+	);
+	(snowSystem.material as THREE.PointsMaterial).opacity = 0.9 * nightDim;
 
 	if (!sun || !ambient || !sc) return;
 
@@ -333,5 +474,17 @@ export function applyWeather(weather: WeatherType): void {
 		default:
 			state.roadRoughnessBase = 0.8;
 			state.roadWetness = 0.0;
+	}
+
+	// Hide sky dome in low-visibility weather so distant mountains aren't visible behind fog
+	if (sc) {
+		const fog = sc.fog as THREE.Fog;
+		if (weather === "heavy_rain" || weather === "fog" || weather === "rain" || weather === "snow") {
+			if (skyMesh) skyMesh.visible = false;
+			sc.background = fog.color.clone();
+		} else {
+			if (skyMesh) skyMesh.visible = true;
+			sc.background = new THREE.Color(0x87ceeb);
+		}
 	}
 }

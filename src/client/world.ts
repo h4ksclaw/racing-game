@@ -8,9 +8,11 @@
  * NO scene assembly logic lives in page-specific files.
  */
 
-import { generateScenery, mulberry32 } from "@shared/track.ts";
+import type { HouseItem } from "@shared/track.ts";
+import { generateHouses, generateScenery, mulberry32 } from "@shared/track.ts";
 import * as THREE from "three";
 import { getBiomeForSeed } from "./biomes.ts";
+import { buildHouses } from "./buildings.ts";
 import { initBloom } from "./effects.ts";
 import { buildGuardrails, buildMeshes } from "./road.ts";
 import { state } from "./scene.ts";
@@ -26,6 +28,7 @@ import { buildTerrain, TerrainSampler } from "./terrain.ts";
 import type { TrackResponse } from "./utils.ts";
 import {
 	applyWeather,
+	buildCloudLayer,
 	buildRainSystem,
 	buildSnowSystem,
 	setRainVelocities,
@@ -133,8 +136,9 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 	state.scene = scene;
 
 	// ── Sky ──
-	const skyUniforms = setupSky(scene);
+	const { uniforms: skyUniforms, mesh: skyMesh } = setupSky(scene);
 	state.skyUniforms = skyUniforms;
+	state.skyMesh = skyMesh;
 	skyUniforms.turbidity.value = biome.skyTurbidity;
 	skyUniforms.rayleigh.value = biome.skyRayleigh;
 
@@ -182,7 +186,28 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 		mountainAmp: biome.mountainAmplifier,
 		worldRadius: worldSize / 2,
 	});
+
+	// ── Houses (generate before terrain mesh so flatten zones apply) ──
+	let houseGroup: THREE.Group | null = null;
+	let houseItems: HouseItem[] = [];
+	if (biome.houses?.enabled) {
+		houseItems = generateHouses(trackData.seed, trackData.samples, biome.houses);
+		// Add flatten zones to terrain — use local road Y, not global average
+		for (const house of houseItems) {
+			const { sample } = terrain.nearestRoad(house.position.x, house.position.z);
+			const houseY = sample.point.y;
+			terrain.flattenZones.push({
+				x: house.position.x,
+				z: house.position.z,
+				radius: biome.houses.flattenRadius,
+				y: houseY,
+			});
+		}
+		houseGroup = buildHouses(houseItems, biome.houses, terrain);
+	}
+
 	scene.add(await buildTerrain(trackData, terrain, biome, worldSize));
+	if (houseGroup) scene.add(houseGroup);
 
 	// ── Road meshes ──
 	const rng = mulberry32(trackData.seed);
@@ -202,8 +227,22 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 		treeDensity: biome.treeDensity,
 		grassDensity: biome.grassDensity,
 		rockDensity: biome.rockDensity,
+		avoidZones:
+			houseItems.length > 0
+				? houseItems.map((h) => ({
+						x: h.position.x,
+						z: h.position.z,
+						radius: biome.houses!.flattenRadius + 2,
+					}))
+				: undefined,
 	});
 	scene.add(buildInstancedScenery(scenery, terrain));
+
+	// ── Cloud layer ──
+	const clouds = buildCloudLayer();
+	state.cloudLayer = clouds;
+	scene.add(clouds);
+	console.log("[world] cloud layer added to scene, children:", clouds.children.length);
 
 	// ── Guardrails ──
 	scene.add(buildGuardrails(trackData.samples, terrain, biome.guardrail));

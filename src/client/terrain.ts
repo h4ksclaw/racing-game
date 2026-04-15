@@ -41,6 +41,13 @@ function loadNormalTex(path: string): Promise<THREE.Texture> {
 
 // ── TerrainSampler ──────────────────────────────────────────────────────
 
+export interface FlattenZone {
+	x: number;
+	z: number;
+	radius: number;
+	y: number;
+}
+
 export class TerrainSampler {
 	private noise2D: (x: number, z: number) => number;
 	private grid: Map<string, TrackSample[]>;
@@ -54,6 +61,7 @@ export class TerrainSampler {
 	private heightCache = new Map<string, number>();
 	private readonly roadInfluence = 50;
 	private readonly blendStart = 20;
+	flattenZones: FlattenZone[] = [];
 
 	constructor(
 		seed: number,
@@ -137,8 +145,21 @@ export class TerrainSampler {
 		const maxSlope = dist * 0.4;
 		const result =
 			Math.max(sample.point.y - maxSlope, Math.min(sample.point.y + maxSlope, blendedY)) - 0.3;
-		this.heightCache.set(cacheKey, result);
-		return result;
+
+		// Apply flatten zones
+		let finalY = result;
+		for (const zone of this.flattenZones) {
+			const dx = x - zone.x;
+			const dz = z - zone.z;
+			const dist = Math.sqrt(dx * dx + dz * dz);
+			if (dist < zone.radius) {
+				const blend = smoothstep(zone.radius, 0, dist);
+				finalY = finalY * (1 - blend) + zone.y * blend;
+			}
+		}
+
+		this.heightCache.set(cacheKey, finalY);
+		return finalY;
 	}
 
 	getNormal(x: number, z: number): { x: number; y: number; z: number } {

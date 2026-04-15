@@ -547,6 +547,7 @@ export function generateScenery(
 		treeDensity?: number;
 		grassDensity?: number;
 		rockDensity?: number;
+		avoidZones?: Array<{ x: number; z: number; radius: number }>;
 	} = {},
 ): SceneryItem[] {
 	const rng = mulberry32(seed);
@@ -906,7 +907,136 @@ export function generateScenery(
 
 	// Filter out any objects that ended up inside the road/guardrail zone
 	// Clearance: road half-width (6) + kerb (0.8) + shoulder (2) + 1m buffer = ~10m
-	return filterSceneryFromRoad(scenery, samples, 10);
+	let filtered = filterSceneryFromRoad(scenery, samples, 10);
+
+	// Filter out items inside avoid zones (e.g., house footprints)
+	const avoidZones = opts.avoidZones;
+	if (avoidZones && avoidZones.length > 0) {
+		filtered = filtered.filter((item) => {
+			for (const zone of avoidZones) {
+				const dx = item.position.x - zone.x;
+				const dz = item.position.z - zone.z;
+				if (dx * dx + dz * dz < zone.radius * zone.radius) return false;
+			}
+			return true;
+		});
+	}
+
+	return filtered;
+}
+
+// ── House generation (client-side, deterministic from seed) ─────────────
+
+export interface HouseItem {
+	position: V3;
+	rotation: number; // Y-axis rotation in radians (faces road)
+	width: number;
+	depth: number;
+	wallHeight: number;
+	roofPitch: number;
+	side: number; // -1 = left, 1 = right
+}
+
+export interface HouseConfig {
+	enabled: boolean;
+	wallColor: [number, number, number];
+	roofColor: [number, number, number];
+	minSize: [number, number];
+	maxSize: [number, number];
+	heightRange: [number, number];
+	roofPitch: number;
+	spacing: number;
+	distanceRange: [number, number];
+	flattenRadius: number;
+	chimney: boolean;
+}
+
+/**
+ * Generate house placement positions along the track.
+ * Similar pattern to generateScenery but much sparser.
+ */
+export function generateHouses(
+	seed: number,
+	samples: TrackSample[],
+	config: HouseConfig,
+): HouseItem[] {
+	if (!config.enabled) return [];
+
+	const rng = mulberry32(seed + 77777); // different stream from scenery
+	const houses: HouseItem[] = [];
+	let lastHouseIdx = -config.spacing;
+
+	let i = Math.floor(rng() * config.spacing * 0.5);
+	while (i < samples.length) {
+		// Spacing check
+		if (i - lastHouseIdx < config.spacing) {
+			i += Math.max(1, Math.floor(config.spacing * (0.5 + rng())));
+			continue;
+		}
+
+		const s = samples[i];
+		const side = rng() < 0.5 ? -1 : 1;
+		const edge = side === -1 ? s.grassLeft : s.grassRight;
+		const dist =
+			config.distanceRange[0] + rng() * (config.distanceRange[1] - config.distanceRange[0]);
+		const pos = v3Add(edge, v3Scale(s.binormal, side * dist));
+
+		// Width/depth with some randomization
+		const width = config.minSize[0] + rng() * (config.maxSize[0] - config.minSize[0]);
+		const depth = config.minSize[1] + rng() * (config.maxSize[1] - config.minSize[1]);
+		const wallHeight =
+			config.heightRange[0] + rng() * (config.heightRange[1] - config.heightRange[0]);
+
+		// Rotation: face the road. Tangent angle gives track direction;
+		// rotate 90° so the house front faces the road.
+		const tangentAngle = Math.atan2(s.tangent.x, s.tangent.z);
+		const rotation = tangentAngle + (side === -1 ? -Math.PI / 2 : Math.PI / 2);
+
+		houses.push({
+			position: pos,
+			rotation,
+			width,
+			depth,
+			wallHeight,
+			roofPitch: config.roofPitch,
+			side,
+		});
+		lastHouseIdx = i;
+
+		i += Math.max(1, Math.floor(config.spacing * (0.7 + rng() * 0.6)));
+	}
+
+	// Filter houses from road zone (same as scenery)
+	return filterHousesFromRoad(houses, samples, 10);
+}
+
+function filterHousesFromRoad(
+	houses: HouseItem[],
+	samples: TrackSample[],
+	clearance: number,
+): HouseItem[] {
+	const step = Math.max(1, Math.floor(samples.length / 500));
+	return houses.filter((house) => {
+		for (let si = 0; si < samples.length; si += step) {
+			const a = samples[si].point;
+			const b = samples[Math.min(si + step, samples.length - 1)].point;
+			const dx = b.x - a.x;
+			const dz = b.z - a.z;
+			const lenSq = dx * dx + dz * dz;
+			let t = 0;
+			if (lenSq > 0) {
+				t = Math.max(
+					0,
+					Math.min(1, ((house.position.x - a.x) * dx + (house.position.z - a.z) * dz) / lenSq),
+				);
+			}
+			const nearX = a.x + t * dx;
+			const nearZ = a.z + t * dz;
+			const distSq = (house.position.x - nearX) ** 2 + (house.position.z - nearZ) ** 2;
+			if (distSq < clearance * clearance) return false;
+		}
+		return true;
+	});
 }
 
 /**

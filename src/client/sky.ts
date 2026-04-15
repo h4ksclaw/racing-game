@@ -217,7 +217,10 @@ export function buildStars(): THREE.Points {
 	return new THREE.Points(geo, mat);
 }
 
-export function setupSky(scene: THREE.Scene): Record<string, THREE.IUniform> {
+export function setupSky(scene: THREE.Scene): {
+	uniforms: Record<string, THREE.IUniform>;
+	mesh: THREE.Mesh;
+} {
 	const sky = new Sky();
 	sky.scale.setScalar(10000);
 	// Exclude sky from bloom — clamp output below bloom threshold
@@ -238,7 +241,7 @@ export function setupSky(scene: THREE.Scene): Record<string, THREE.IUniform> {
 	const theta = THREE.MathUtils.degToRad(180);
 	sunPos.setFromSphericalCoords(1, phi, theta);
 	uniforms.sunPosition.value.copy(sunPos);
-	return uniforms;
+	return { uniforms, mesh: sky };
 }
 
 export function applyTimeOfDay(hour: number): void {
@@ -279,7 +282,14 @@ export function applyTimeOfDay(hour: number): void {
 	const wm = getWeatherMult(state.currentWeather);
 	sun.intensity = st.sunIntensity * wm.sun;
 	const sunElev = THREE.MathUtils.degToRad(st.sunElevation);
-	sun.position.set(Math.cos(sunElev) * 300, Math.sin(sunElev) * 300, 100);
+	// Sun arcs across the sky — azimuth rotates 180° from sunrise (6h) to sunset (18h)
+	const sunAzimuth = THREE.MathUtils.degToRad(((hour - 6) / 12) * 180);
+	const sunDist = 300;
+	sun.position.set(
+		Math.cos(sunElev) * Math.sin(sunAzimuth) * sunDist,
+		Math.sin(sunElev) * sunDist,
+		Math.cos(sunElev) * Math.cos(sunAzimuth) * sunDist,
+	);
 
 	ambient.color.setRGB(...st.ambientColor);
 	ambient.intensity = st.ambientIntensity * wm.ambient;
@@ -292,15 +302,29 @@ export function applyTimeOfDay(hour: number): void {
 	if (skyUniforms) {
 		skyUniforms.turbidity.value = st.turbidity;
 		skyUniforms.rayleigh.value = st.rayleigh;
-		const phi = THREE.MathUtils.degToRad(90 - st.sunElevation);
-		const theta = THREE.MathUtils.degToRad(180);
-		const sunPos = new THREE.Vector3();
-		sunPos.setFromSphericalCoords(1, phi, theta);
-		skyUniforms.sunPosition.value.copy(sunPos);
+		// Sky sun direction must match the directional light — use same azimuth + elevation
+		const sunAzimuth = THREE.MathUtils.degToRad(((hour - 6) / 12) * 180);
+		const sunElev = THREE.MathUtils.degToRad(st.sunElevation);
+		skyUniforms.sunPosition.value.set(
+			Math.cos(sunElev) * Math.sin(sunAzimuth),
+			Math.sin(sunElev),
+			Math.cos(sunElev) * Math.cos(sunAzimuth),
+		);
+		// Cloud coverage — higher turbidity for overcast (clouds aren't in the sky shader,
+		// so we fake it by making the sky hazier/whiter)
 	}
 
 	if (stars) {
-		(stars.material as THREE.PointsMaterial).opacity = st.starsOpacity;
+		// Stars less visible in bad weather
+		const weatherStarMult =
+			state.currentWeather === "clear"
+				? 1.0
+				: state.currentWeather === "cloudy"
+					? 0.4
+					: state.currentWeather === "fog"
+						? 0.1
+						: 0.0;
+		(stars.material as THREE.PointsMaterial).opacity = st.starsOpacity * weatherStarMult;
 	}
 
 	const nightFactor = Math.max(0, 1 - st.sunIntensity / 0.3);
@@ -313,6 +337,14 @@ export function applyTimeOfDay(hour: number): void {
 		const mat = fixture.material as THREE.MeshLambertMaterial;
 		const bloomMult = (fixture.userData.bloomMult as number) ?? 1.0;
 		mat.emissiveIntensity = 0.15 + nightFactor * 25 * bloomMult;
+	}
+
+	// House windows glow warmly at night
+	for (const win of state.houseWindows) {
+		const mat = win.material as THREE.MeshStandardMaterial;
+		const bloomMult = (win.userData.bloomMult as number) ?? 1.0;
+		mat.emissive = mat.emissive || new THREE.Color(0.9, 0.7, 0.3);
+		mat.emissiveIntensity = nightFactor * 2.5 * bloomMult;
 	}
 
 	if (terrainMaterial) {

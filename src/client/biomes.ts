@@ -69,6 +69,20 @@ export interface BiomeTextureSet {
 	moss: string;
 }
 
+export interface HouseConfig {
+	enabled: boolean;
+	wallColor: [number, number, number]; // 0-1
+	roofColor: [number, number, number]; // 0-1
+	minSize: [number, number]; // width, depth in meters
+	maxSize: [number, number]; // width, depth in meters
+	heightRange: [number, number]; // min/max wall height
+	roofPitch: number; // 0.3-1.0 steepness
+	spacing: number; // min samples between houses
+	distanceRange: [number, number]; // min/max distance from road edge
+	flattenRadius: number; // terrain flatten radius (default 12)
+	chimney: boolean;
+}
+
 export interface BiomeConfig {
 	name: string;
 
@@ -130,6 +144,9 @@ export interface BiomeConfig {
 
 	// Guardrail style per biome
 	guardrail?: GuardrailConfig;
+
+	// Roadside houses
+	houses?: HouseConfig;
 }
 
 // ── Biome definitions ──────────────────────────────────────────────────
@@ -191,6 +208,19 @@ const BIOMES: BiomeConfig[] = [
 			basePlate: true,
 			postCap: "flat",
 		},
+		houses: {
+			enabled: true,
+			wallColor: [0.55, 0.38, 0.25],
+			roofColor: [0.25, 0.2, 0.18],
+			minSize: [6, 5],
+			maxSize: [10, 8],
+			heightRange: [3, 5],
+			roofPitch: 0.6,
+			spacing: 160,
+			distanceRange: [8, 16],
+			flattenRadius: 22,
+			chimney: true,
+		},
 	},
 	{
 		name: "Autumn Woods",
@@ -240,6 +270,19 @@ const BIOMES: BiomeConfig[] = [
 			],
 			basePlate: false,
 			postCap: "flat",
+		},
+		houses: {
+			enabled: true,
+			wallColor: [0.5, 0.32, 0.2],
+			roofColor: [0.35, 0.22, 0.12],
+			minSize: [5, 4],
+			maxSize: [8, 7],
+			heightRange: [3, 4.5],
+			roofPitch: 0.8,
+			spacing: 240,
+			distanceRange: [8, 15],
+			flattenRadius: 20,
+			chimney: true,
 		},
 	},
 	{
@@ -291,6 +334,19 @@ const BIOMES: BiomeConfig[] = [
 			],
 			basePlate: false,
 			postCap: "flat",
+		},
+		houses: {
+			enabled: true,
+			wallColor: [0.85, 0.72, 0.55],
+			roofColor: [0.7, 0.6, 0.45],
+			minSize: [7, 6],
+			maxSize: [12, 10],
+			heightRange: [2.5, 3.5],
+			roofPitch: 0.2,
+			spacing: 300,
+			distanceRange: [10, 18],
+			flattenRadius: 22,
+			chimney: false,
 		},
 	},
 	{
@@ -361,6 +417,19 @@ const BIOMES: BiomeConfig[] = [
 			basePlate: true,
 			postCap: "sphere",
 		},
+		houses: {
+			enabled: true,
+			wallColor: [0.35, 0.25, 0.2],
+			roofColor: [0.7, 0.72, 0.75],
+			minSize: [6, 5],
+			maxSize: [9, 7],
+			heightRange: [3, 4.5],
+			roofPitch: 0.85,
+			spacing: 200,
+			distanceRange: [8, 16],
+			flattenRadius: 22,
+			chimney: true,
+		},
 	},
 	{
 		name: "Tropical Jungle",
@@ -410,6 +479,19 @@ const BIOMES: BiomeConfig[] = [
 			],
 			basePlate: false,
 			postCap: "flat",
+		},
+		houses: {
+			enabled: true,
+			wallColor: [0.6, 0.5, 0.35],
+			roofColor: [0.25, 0.45, 0.2],
+			minSize: [4, 4],
+			maxSize: [7, 6],
+			heightRange: [2.5, 3.5],
+			roofPitch: 0.7,
+			spacing: 200,
+			distanceRange: [8, 14],
+			flattenRadius: 18,
+			chimney: false,
 		},
 	},
 	{
@@ -471,6 +553,19 @@ const BIOMES: BiomeConfig[] = [
 			],
 			basePlate: false,
 			postCap: "flat",
+		},
+		houses: {
+			enabled: true,
+			wallColor: [0.9, 0.87, 0.8],
+			roofColor: [0.5, 0.25, 0.15],
+			minSize: [7, 6],
+			maxSize: [11, 9],
+			heightRange: [3, 5],
+			roofPitch: 0.55,
+			spacing: 180,
+			distanceRange: [8, 16],
+			flattenRadius: 22,
+			chimney: true,
 		},
 	},
 ];
