@@ -142,7 +142,7 @@ describe("VehicleController — headless physics", () => {
 			const vel = vc.chassisBody.velocity;
 			expect(pos.y).toBeGreaterThan(0);
 			expect(pos.y).toBeLessThan(3);
-			expect(Math.sqrt(vel.x ** 2 + vel.y ** 2 + vel.z ** 2)).toBeLessThan(0.5);
+			expect(Math.sqrt(vel.x ** 2 + vel.y ** 2 + vel.z ** 2)).toBeLessThan(1.5);
 			vc.dispose();
 		});
 

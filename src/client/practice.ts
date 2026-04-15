@@ -267,7 +267,7 @@ async function buildPractice(): Promise<void> {
 	scene.add(carModel);
 
 	// Terrain collider
-	vehicle.setTerrain(terrain, worldSize, 128);
+	vehicle.setTerrain(terrain, worldSize, 64);
 
 	// Spawn at track start
 	resetCar();

@@ -49,6 +49,11 @@ export class VehicleController {
 	private currentSteeringAngle = 0;
 	private steeringSpeed = 3.0; // rad/s — time-based, not per-frame
 
+	// Manual yaw torque (cannon-es RaycastVehicle doesn't generate lateral
+	// steering force without a chassis collision shape. We skip the chassis
+	// shape to avoid trimesh/heightfield fighting, and apply yaw manually.)
+	private yawFactor = 0.05;
+
 	constructor(config: CarConfig = RACE_CAR) {
 		this.config = config;
 
@@ -164,45 +169,25 @@ export class VehicleController {
 		return group;
 	}
 
-	/** Build terrain collider as a Trimesh.
+	/** Build ground collider.
 	 *
-	 * NOTE: cannon-es RaycastVehicle cannot raycast against Heightfield shapes.
-	 * Trimesh works correctly with wheel raycasts.
+	 * Uses a simple Plane for physics (wheel raycasts work reliably).
+	 * Visual terrain height is applied via terrain.getHeight() in the safety net.
+	 *
+	 * NOTE: cannon-es RaycastVehicle CANNOT raycast against Heightfield shapes.
+	 * Trimesh works but the car can't steer (no lateral force without chassis shape,
+	 * and chassis shape + trimesh creates drag). Plane + manual yaw torque is the fix.
 	 */
-	setTerrain(terrain: TerrainProvider, worldSize: number, resolution = 64): void {
+	setTerrain(terrain: TerrainProvider, _worldSize?: number, _resolution?: number): void {
 		this.terrain = terrain;
 
 		for (const b of this.groundBodies) this.world.removeBody(b);
 		this.groundBodies = [];
 
-		// Build triangle mesh from terrain heights
-		const spacing = worldSize / resolution;
-		const vertices: number[] = [];
-		const indices: number[] = [];
-
-		// Vertices: (resolution+1) x (resolution+1) grid
-		for (let j = 0; j <= resolution; j++) {
-			for (let i = 0; i <= resolution; i++) {
-				const x = i * spacing - worldSize / 2;
-				const z = j * spacing - worldSize / 2;
-				vertices.push(x, terrain.getHeight(x, z), z);
-			}
-		}
-
-		// Indices: two triangles per grid cell
-		for (let j = 0; j < resolution; j++) {
-			for (let i = 0; i < resolution; i++) {
-				const a = j * (resolution + 1) + i;
-				const b = a + 1;
-				const c = a + (resolution + 1);
-				const d = c + 1;
-				indices.push(a, c, b, b, c, d);
-			}
-		}
-
-		const trimesh = new CANNON.Trimesh(vertices, indices);
+		// Infinite flat plane at y=0
 		const groundBody = new CANNON.Body({ mass: 0, material: this.groundMaterial });
-		groundBody.addShape(trimesh);
+		groundBody.addShape(new CANNON.Plane());
+		groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
 		this.world.addBody(groundBody);
 		this.groundBodies.push(groundBody);
 	}
@@ -298,14 +283,28 @@ export class VehicleController {
 		// ── Auto gears ──
 		this.updateGear();
 
+		// ── Manual yaw torque ──
+		// cannon-es RaycastVehicle without a chassis collision shape doesn't
+		// generate lateral steering force. Apply yaw proportional to speed × steering.
+		const speed = Math.sqrt(this.chassisBody.velocity.x ** 2 + this.chassisBody.velocity.z ** 2);
+		this.chassisBody.angularVelocity.y += speed * this.currentSteeringAngle * this.yawFactor * dt;
+
 		// ── Physics step (120Hz like offroadJS) ──
 		this.world.step(1 / 120, dt, 5);
 
-		// ── Safety net (only extreme cases) ──
+		// ── Terrain height sync ──
+		// Physics uses a flat plane at y=0. Snap chassis to actual terrain height
+		// so the car follows hills. Only adjust Y — X/Z come from physics.
 		if (this.terrain) {
 			const px = this.chassisBody.position.x;
 			const pz = this.chassisBody.position.z;
-			const groundY = this.terrain.getHeight(px, pz) + this.config.wheelRadius + 1;
+			const groundY = this.terrain.getHeight(px, pz);
+			const targetY = groundY + this.config.suspensionRestLength + this.config.wheelRadius * 0.8;
+
+			// Smooth Y interpolation (don't snap instantly over bumps)
+			this.chassisBody.position.y += (targetY - this.chassisBody.position.y) * 0.3;
+
+			// Safety net: teleport if way off
 			if (this.chassisBody.position.y < groundY - 5) {
 				this.chassisBody.position.y = groundY + 2;
 				if (this.chassisBody.velocity.y < 0) this.chassisBody.velocity.y = 0;
