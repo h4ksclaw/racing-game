@@ -1,17 +1,22 @@
 /**
- * VehicleController — arcade/bicycle-model physics.
+ * VehicleController — proper bicycle-model car physics.
  *
- * Proper bicycle model with:
- * - Slip angles (front + rear computed from local velocities)
- * - Tire lateral forces with grip limit (tire circle)
- * - Weight transfer under acceleration/braking
- * - Yaw torque from tire force differentials
+ * Uses the dynamic bicycle model from vehicle dynamics:
+ * - Slip angles computed at front and rear axles from local velocities
+ * - Tire lateral forces via linear cornering stiffness, clamped to grip circle
+ * - Yaw torque from front/rear lateral force differential × CG distances
+ * - Weight transfer under longitudinal acceleration
  * - Ground collision via terrain.getHeight() sampling
  *
+ * Coordinate convention:
+ * - heading=0 → car faces +Z (matching GLTF model forward)
+ * - +heading → CCW turn from top (left turn)
+ * - local frame: X=forward, Y=lateral (right-positive)
+ *
  * References:
- * - Marco Monster "Car Physics for Games"
- * - https://www.xarg.org/book/vehicle-physics/
+ * - Marco Monster "Car Physics for Games" (tut05.pdf)
  * - Gillespie "Fundamentals of Vehicle Dynamics"
+ * - https://www.xarg.org/book/vehicle-physics/
  */
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -39,73 +44,71 @@ export class VehicleController {
 
 	private config: CarConfig;
 
-	// Position / orientation (world space)
+	// World-space state
 	private posX = 0;
 	private posY = 2;
 	private posZ = 0;
-	private heading = 0; // yaw radians (0 = facing +Z)
+	private heading = 0; // rad, 0 = +Z forward, positive = CCW from top
 
-	// Velocities in LOCAL frame (forward=lateral)
-	// localX = forward speed, localY = lateral speed (right-positive)
-	private localVelX = 0;
-	private localVelY = 0;
-	private angularVelocity = 0; // yaw rate rad/s
+	// Local-frame velocities
+	private localVelX = 0; // forward (along car heading)
+	private localVelY = 0; // lateral (right-positive in car frame)
+	private yawRate = 0; // rad/s
 
 	// Steering
-	private currentSteeringAngle = 0;
-	private steeringSpeed = 3.0; // rad/s interpolation
+	private steerAngle = 0; // current wheel angle (rad)
+	private readonly STEER_SPEED = 4.0; // rad/s interpolation rate
 
 	// Gears
-	private currentGearIndex = 0;
+	private gearIndex = 0;
 
-	// ── Derived car dimensions from config ──
-	private cgToFront: number;
-	private cgToRear: number;
-	private cgHeight: number;
-	private inertia: number; // rotational inertia about yaw axis
+	// ── Derived geometry ──
+	private readonly cgToAxleFront: number;
+	private readonly cgToAxleRear: number;
+	private readonly cgHeight: number;
+	private readonly yawInertia: number;
 
-	// ── Tire model parameters ──
-	private corneringStiffnessFront: number;
-	private corneringStiffnessRear: number;
+	// ── Tire model ──
+	private readonly cfFront: number; // cornering stiffness front (N/rad)
+	private readonly cfRear: number; // cornering stiffness rear (N/rad)
 
 	constructor(config: CarConfig = RACE_CAR) {
 		this.config = config;
 
-		// CG position: slightly forward of center (front-heavy for RWD)
+		// CG splits the wheelbase: 55% front, 45% rear
 		const wb = config.wheelBase;
-		this.cgToFront = wb * 0.55;
-		this.cgToRear = wb * 0.45;
+		this.cgToAxleFront = wb * 0.55;
+		this.cgToAxleRear = wb * 0.45;
 		this.cgHeight = config.wheelRadius * 1.5;
 
-		// Rotational inertia: I = m * a * b (simplified)
-		this.inertia = config.mass * this.cgToFront * this.cgToRear;
+		// Yaw inertia (simplified point-mass approximation)
+		this.yawInertia = config.mass * this.cgToAxleFront * this.cgToAxleRear;
 
-		// Cornering stiffness: higher = more grip, more responsive steering
-		// Scales with mass so heavier cars don't feel sluggish
-		const baseStiffness = config.frictionSlip * 50;
-		this.corneringStiffnessFront = baseStiffness;
-		this.corneringStiffnessRear = baseStiffness * 0.95; // slightly less rear grip
+		// Cornering stiffness: tuned for arcade feel
+		// Real cars: ~50000-100000 N/rad per tire (mass ~1500kg)
+		// Scaled down proportionally for our 150kg mass
+		// Higher stiffness = more responsive steering, higher grip before sliding
+		const base = config.frictionSlip * 400;
+		this.cfFront = base;
+		this.cfRear = base * 0.92; // slightly less rear grip → understeer bias
 	}
 
 	async loadModel(): Promise<THREE.Group> {
 		const loader = new GLTFLoader();
 		const gltf = await loader.loadAsync(this.config.modelPath);
-		const group = gltf.scene;
-		this.model = group;
+		this.model = gltf.scene;
 
 		this.wheelMeshes = [];
-		const wheelNames = [
+		for (const name of [
 			"wheel-front-left",
 			"wheel-front-right",
 			"wheel-back-left",
 			"wheel-back-right",
-		];
-		for (const name of wheelNames) {
-			const obj = group.getObjectByName(name);
+		]) {
+			const obj = this.model.getObjectByName(name);
 			if (obj) this.wheelMeshes.push(obj);
 		}
-
-		return group;
+		return this.model;
 	}
 
 	setTerrain(terrain: TerrainProvider): void {
@@ -114,161 +117,200 @@ export class VehicleController {
 
 	update(input: VehicleInput, delta: number): void {
 		const dt = Math.min(delta, 1 / 30);
-		const mass = this.config.mass;
+		const { mass, wheelBase, wheelRadius } = this.config;
 
-		// ── Steering input (smooth, speed-dependent) ──
-		const speedFactor = 1 - (Math.abs(this.localVelX) / this.config.maxSpeed) * 0.5;
+		// ═══════════════════════════════════════════════════════════
+		// 1. STEERING — smooth input with speed-dependent max angle
+		// ═══════════════════════════════════════════════════════════
+		const speedKmh = Math.abs(this.localVelX) * 3.6;
+		// Reduce max steer at high speed (realistic: less steering input needed)
+		const speedReduction = Math.max(0.3, 1 - (speedKmh / 300) * 0.7);
+		// Positive steerAngle = wheels point LEFT = car turns LEFT (CCW from top)
 		const targetSteer =
-			((input.left ? 1 : 0) - (input.right ? 1 : 0)) * this.config.maxSteerAngle * speedFactor;
+			((input.left ? 1 : 0) - (input.right ? 1 : 0)) * this.config.maxSteerAngle * speedReduction;
 
-		const steerDelta = this.steeringSpeed * dt;
-		if (this.currentSteeringAngle < targetSteer) {
-			this.currentSteeringAngle = Math.min(targetSteer, this.currentSteeringAngle + steerDelta);
-		} else if (this.currentSteeringAngle > targetSteer) {
-			this.currentSteeringAngle = Math.max(targetSteer, this.currentSteeringAngle - steerDelta);
+		// Smooth interpolation toward target
+		const maxDelta = this.STEER_SPEED * dt;
+		const steerDiff = targetSteer - this.steerAngle;
+		if (Math.abs(steerDiff) < maxDelta) {
+			this.steerAngle = targetSteer;
+		} else {
+			this.steerAngle += Math.sign(steerDiff) * maxDelta;
 		}
-		this.state.steeringAngle = this.currentSteeringAngle;
+		this.state.steeringAngle = this.steerAngle;
 
-		// ── Weight transfer ──
-		const weight = mass * 9.82;
-		const accelForce = input.forward ? this.config.engineForce : 0;
-		const brakeForce = input.backward && this.localVelX > 2 ? this.config.brakeForce : 0;
-		const weightTransfer =
-			(accelForce * this.config.wheelRadius - brakeForce * this.cgHeight) / this.config.wheelBase;
-		const weightFront = Math.max(weight * 0.1, weight * 0.5 - weightTransfer);
-		const weightRear = Math.max(weight * 0.1, weight * 0.5 + weightTransfer);
+		// ═══════════════════════════════════════════════════════════
+		// 2. WEIGHT DISTRIBUTION (static + transfer)
+		// ═══════════════════════════════════════════════════════════
+		const g = 9.82;
+		const totalWeight = mass * g;
+		// Longitudinal acceleration causes weight transfer
+		// Accelerating → weight shifts rear, braking → shifts front
+		const longAccel = input.forward
+			? this.config.engineForce / mass
+			: input.handbrake
+				? -(this.config.brakeForce * 2) / mass
+				: 0;
+		const weightTransfer = (mass * longAccel * this.cgHeight) / wheelBase;
+		const normalFront = Math.max(
+			totalWeight * 0.1,
+			(totalWeight * this.cgToAxleRear) / wheelBase - weightTransfer,
+		);
+		const normalRear = Math.max(
+			totalWeight * 0.1,
+			(totalWeight * this.cgToAxleFront) / wheelBase + weightTransfer,
+		);
 
-		// ── Slip angles ──
-		// Front axle velocity in local frame
-		const frontLocalX = this.localVelX;
-		const frontLocalY = this.localVelY + this.angularVelocity * this.cgToFront;
+		// ═══════════════════════════════════════════════════════════
+		// 3. SLIP ANGLES (bicycle model core)
+		// ═══════════════════════════════════════════════════════════
+		// Velocity at front axle in local frame
+		const vFrontX = this.localVelX;
+		const vFrontY = this.localVelY + this.yawRate * this.cgToAxleFront;
+		// Velocity at rear axle in local frame
+		const vRearX = this.localVelX;
+		const vRearY = this.localVelY - this.yawRate * this.cgToAxleRear;
 
-		let slipAngleFront = 0;
-		if (Math.abs(frontLocalX) > 0.5) {
-			slipAngleFront =
-				Math.atan2(frontLocalY, Math.abs(frontLocalX)) -
-				Math.sign(frontLocalX) * this.currentSteeringAngle;
+		// Slip angle = angle between tire heading and velocity vector
+		// Front tire is steered, so we subtract steer angle
+		// Only compute when car has meaningful forward speed
+		let alphaFront = 0;
+		if (Math.abs(this.localVelX) > 2.0) {
+			alphaFront = Math.atan2(vFrontY, Math.abs(vFrontX)) - this.steerAngle;
+		}
+		let alphaRear = 0;
+		if (Math.abs(this.localVelX) > 2.0) {
+			alphaRear = Math.atan2(vRearY, Math.abs(vRearX));
 		}
 
-		// Rear axle velocity in local frame
-		const rearLocalX = this.localVelX;
-		const rearLocalY = this.localVelY - this.angularVelocity * this.cgToRear;
+		// ═══════════════════════════════════════════════════════════
+		// 4. TIRE LATERAL FORCES
+		// ═══════════════════════════════════════════════════════════
+		// Linear model: F = -Cα × α (force opposes slip)
+		// The sign: positive alpha → tire pushed right → force acts LEFT → negative
+		let fLatFront = -this.cfFront * alphaFront;
+		let fLatRear = -this.cfRear * alphaRear;
 
-		let slipAngleRear = 0;
-		if (Math.abs(rearLocalX) > 0.5) {
-			slipAngleRear = Math.atan2(rearLocalY, Math.abs(rearLocalX));
-		}
-
-		// ── Tire lateral forces ──
-		let latForceFront = this.corneringStiffnessFront * slipAngleFront;
-		let latForceRear = this.corneringStiffnessRear * slipAngleRear;
-
-		// Grip limit (friction circle): F_max = mu * N
+		// Grip limit: tire can only generate μ × N lateral force
 		const mu = this.config.frictionSlip;
-		const maxLatFront = mu * weightFront;
-		const maxLatRear = mu * weightRear;
-		latForceFront = Math.max(-maxLatFront, Math.min(maxLatFront, latForceFront));
-		latForceRear = Math.max(-maxLatRear, Math.min(maxLatRear, latForceRear));
+		const maxGripFront = mu * normalFront;
+		const maxGripRear = mu * normalRear;
+		fLatFront = Math.max(-maxGripFront, Math.min(maxGripFront, fLatFront));
+		fLatRear = Math.max(-maxGripRear, Math.min(maxGripRear, fLatRear));
 
-		// ── Longitudinal forces ──
-		let driveForce = 0;
+		// Handbrake: rear wheels lock → lose most lateral grip
+		if (input.handbrake) {
+			fLatRear *= 0.2;
+		}
+
+		// ═══════════════════════════════════════════════════════════
+		// 5. LONGITUDINAL FORCE
+		// ═══════════════════════════════════════════════════════════
+		let fLong = 0;
+
 		if (input.forward) {
-			driveForce = this.config.engineForce;
-			// Speed limiter
-			const speedRatio = Math.abs(this.localVelX) / this.config.maxSpeed;
-			if (speedRatio > 0.8) driveForce *= 1 - (speedRatio - 0.8) / 0.2;
+			fLong = this.config.engineForce;
+			// Speed limiter: taper force above 80% maxSpeed
+			const ratio = Math.abs(this.localVelX) / this.config.maxSpeed;
+			if (ratio > 0.8) fLong *= 1 - (ratio - 0.8) / 0.2;
 		} else if (input.backward) {
-			if (this.localVelX > 2) {
-				// Braking
-				driveForce = -this.config.brakeForce;
+			if (this.localVelX > 1) {
+				fLong = -this.config.brakeForce;
 			} else {
-				// Reverse (half power)
-				driveForce = this.config.engineForce * 0.5;
+				fLong = this.config.engineForce * 0.4; // reverse
 			}
 		}
 
-		// Handbrake
 		if (input.handbrake) {
-			driveForce = -this.config.brakeForce * 2;
-			// Handbrake reduces rear grip (simulates locked rear wheels)
-			latForceRear *= 0.3;
+			fLong -= this.config.brakeForce * 1.5;
 		}
 
 		// Rolling resistance + aero drag
-		driveForce -= this.localVelX * (15 + Math.abs(this.localVelX) * 0.1);
+		const drag = this.localVelX * (8 + Math.abs(this.localVelX) * 0.08);
+		fLong -= drag;
 
-		// ── Total forces in local frame ──
-		// Front tire force contributes to both X and Y (steered)
-		const forceX = driveForce + latForceFront * Math.sin(this.currentSteeringAngle);
-		const forceY = latForceFront * Math.cos(this.currentSteeringAngle) + latForceRear;
-
-		// ── Yaw torque ──
-		// Torque = front_lat * cgToFront - rear_lat * cgToRear
+		// ═══════════════════════════════════════════════════════════
+		// 6. YAW TORQUE
+		// ═══════════════════════════════════════════════════════════
+		// Front lateral force acts at cgToAxleFront → positive = CCW torque
+		// Rear lateral force acts at cgToAxleRear → negative = CW torque
+		// Sign convention: positive torque = positive yaw rate = CCW = left turn
 		const yawTorque =
-			latForceFront * this.cgToFront * Math.cos(this.currentSteeringAngle) -
-			latForceRear * this.cgToRear;
+			fLatFront * Math.cos(this.steerAngle) * this.cgToAxleFront - fLatRear * this.cgToAxleRear;
 
-		// ── Integration (local frame) ──
-		this.localVelX += (forceX / mass) * dt;
-		this.localVelY += (forceY / mass) * dt;
-		this.angularVelocity += (yawTorque / this.inertia) * dt;
+		// ═══════════════════════════════════════════════════════════
+		// 7. INTEGRATE (local frame)
+		// ═══════════════════════════════════════════════════════════
+		// Longitudinal acceleration
+		this.localVelX += (fLong / mass) * dt;
 
-		// Damping
-		this.angularVelocity *= 1 - 3.0 * dt;
-		this.localVelY *= 1 - 2.0 * dt;
+		// Lateral acceleration (from tire forces in local frame)
+		const fLatTotal = fLatFront * Math.cos(this.steerAngle) + fLatRear;
+		this.localVelY += (fLatTotal / mass) * dt;
 
-		// Kill tiny velocities
-		if (Math.abs(this.localVelX) < 0.05 && !input.forward && !input.backward) {
-			this.localVelX = 0;
-		}
-		if (Math.abs(this.localVelY) < 0.01) this.localVelY = 0;
-		if (Math.abs(this.angularVelocity) < 0.001) this.angularVelocity = 0;
+		// Yaw acceleration
+		this.yawRate += (yawTorque / this.yawInertia) * dt;
 
-		// ── Convert local velocity to world and integrate position ──
-		// heading=0 means car faces +Z, so we offset by -PI/2 from standard math
-		const sinH = Math.sin(this.heading);
-		const cosH = Math.cos(this.heading);
-		const worldVelX = this.localVelX * sinH - this.localVelY * cosH;
-		const worldVelZ = this.localVelX * cosH + this.localVelY * sinH;
+		// ── Damping ──
+		// Yaw damping: prevents endless spinning
+		this.yawRate *= 1 - 4.0 * dt;
+		// Lateral velocity damping: tires resist sustained sliding
+		this.localVelY *= 1 - 3.0 * dt;
 
-		this.posX += worldVelX * dt;
-		this.posZ += worldVelZ * dt;
+		// Kill tiny values to prevent drift
+		if (Math.abs(this.localVelX) < 0.01 && !input.forward && !input.backward) this.localVelX = 0;
+		if (Math.abs(this.localVelY) < 0.005) this.localVelY = 0;
+		if (Math.abs(this.yawRate) < 0.0005) this.yawRate = 0;
 
-		// Gravity
-		const verticalVel = -9.82 * dt;
-		this.posY += verticalVel * dt;
+		// ═══════════════════════════════════════════════════════════
+		// 8. LOCAL → WORLD conversion + position integration
+		// ═══════════════════════════════════════════════════════════
+		// heading=0 → car faces +Z
+		// localX (forward) → world: (sin(h), 0, cos(h))
+		// localY (lateral right) → world: (cos(h), 0, -sin(h))
+		const sh = Math.sin(this.heading);
+		const ch = Math.cos(this.heading);
+		const worldVx = this.localVelX * sh + this.localVelY * ch;
+		const worldVz = this.localVelX * ch - this.localVelY * sh;
 
-		// ── Ground collision ──
+		this.posX += worldVx * dt;
+		this.posZ += worldVz * dt;
+
+		// ── Gravity + ground collision ──
+		this.posY -= 9.82 * dt * dt;
 		if (this.terrain) {
 			const groundY = this.terrain.getHeight(this.posX, this.posZ);
-			const restHeight = this.config.wheelRadius + this.config.suspensionRestLength;
-
-			if (this.posY < groundY + restHeight) {
-				this.posY = groundY + restHeight;
-				// Simple landing: just kill downward velocity
+			const restH = wheelRadius + this.config.suspensionRestLength;
+			if (this.posY < groundY + restH) {
+				this.posY = groundY + restH;
 			}
-			this.state.onGround = this.posY <= groundY + restHeight + 0.1;
+			this.state.onGround = this.posY <= groundY + restH + 0.2;
 		}
 
-		// ── Update heading ──
-		this.heading += this.angularVelocity * dt;
+		// ═══════════════════════════════════════════════════════════
+		// 9. UPDATE HEADING
+		// ═══════════════════════════════════════════════════════════
+		this.heading += this.yawRate * dt;
 
-		// ── Update state ──
+		// ═══════════════════════════════════════════════════════════
+		// 10. UPDATE OUTPUT STATE
+		// ═══════════════════════════════════════════════════════════
 		this.state.speed = this.localVelX;
 		this.state.throttle = input.forward ? 1 : input.backward ? 0.5 : 0;
-		this.state.brake = (input.backward && this.localVelX > 2) || input.handbrake ? 1 : 0;
+		this.state.brake = (input.backward && this.localVelX > 1) || input.handbrake ? 1 : 0;
 
-		// Auto gears
+		// Auto gear shift
 		this.updateGear();
 
-		// RPM
-		const wheelRPM = ((Math.abs(this.state.speed) / this.config.wheelRadius) * 60) / (2 * Math.PI);
-		const gearRatio = this.config.gearRatios[this.currentGearIndex] || 1;
+		// RPM from wheel speed × gear ratio
+		const wheelHz = Math.abs(this.localVelX) / (wheelRadius * 2 * Math.PI);
+		const gearRatio = this.config.gearRatios[this.gearIndex] || 1;
 		this.state.rpm = Math.max(
 			this.config.idleRPM,
-			Math.min(wheelRPM * gearRatio * 3.5, this.config.maxRPM),
+			Math.min(wheelHz * 60 * gearRatio * 3.5, this.config.maxRPM),
 		);
-		if (this.state.throttle > 0 && Math.abs(this.state.speed) < 1) {
+		// Rev at standstill with throttle
+		if (this.state.throttle > 0 && Math.abs(this.localVelX) < 1) {
 			this.state.rpm =
 				this.config.idleRPM +
 				this.state.throttle * (this.config.maxRPM - this.config.idleRPM) * 0.5;
@@ -281,19 +323,18 @@ export class VehicleController {
 		this.model.position.set(this.posX, this.posY, this.posZ);
 		this.model.quaternion.setFromEuler(new THREE.Euler(0, this.heading, 0));
 
-		// Wheels: spin + steer
 		for (let i = 0; i < 4; i++) {
 			const mesh = this.wheelMeshes[i];
 			if (!mesh) continue;
 
-			// Steering: front wheels rotate around Y
+			// Front wheels steer
 			if (i < 2) {
-				mesh.quaternion.setFromEuler(new THREE.Euler(0, this.currentSteeringAngle, 0));
+				mesh.quaternion.setFromEuler(new THREE.Euler(0, this.steerAngle, 0));
 			} else {
 				mesh.quaternion.setFromEuler(new THREE.Euler(0, 0, 0));
 			}
 
-			// Spin around local X
+			// Wheel spin
 			const spinAngle = (this.state.speed / this.config.wheelRadius) * 0.016;
 			const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), spinAngle);
 			mesh.quaternion.multiply(spinQ);
@@ -305,11 +346,7 @@ export class VehicleController {
 	}
 
 	getForward(): { x: number; y: number; z: number } {
-		return {
-			x: Math.sin(this.heading),
-			y: 0,
-			z: Math.cos(this.heading),
-		};
+		return { x: Math.sin(this.heading), y: 0, z: Math.cos(this.heading) };
 	}
 
 	reset(x: number, y: number, z: number, rotation = 0): void {
@@ -319,30 +356,28 @@ export class VehicleController {
 		this.heading = rotation;
 		this.localVelX = 0;
 		this.localVelY = 0;
-		this.angularVelocity = 0;
+		this.yawRate = 0;
+		this.steerAngle = 0;
+		this.gearIndex = 0;
 		this.state.speed = 0;
 		this.state.rpm = this.config.idleRPM;
 		this.state.steeringAngle = 0;
 		this.state.throttle = 0;
 		this.state.brake = 0;
-		this.currentGearIndex = 0;
-		this.currentSteeringAngle = 0;
 	}
 
-	dispose(): void {
-		// No physics bodies to clean up
-	}
+	dispose(): void {}
 
 	private updateGear(): void {
-		const ratios = this.config.gearRatios;
 		if (this.state.speed < 0) {
-			this.currentGearIndex = 0;
+			this.gearIndex = 0;
 			return;
 		}
-		if (this.state.rpm > this.config.maxRPM * 0.85 && this.currentGearIndex < ratios.length - 1) {
-			this.currentGearIndex++;
-		} else if (this.state.rpm < this.config.maxRPM * 0.3 && this.currentGearIndex > 0) {
-			this.currentGearIndex--;
+		const ratios = this.config.gearRatios;
+		if (this.state.rpm > this.config.maxRPM * 0.85 && this.gearIndex < ratios.length - 1) {
+			this.gearIndex++;
+		} else if (this.state.rpm < this.config.maxRPM * 0.3 && this.gearIndex > 0) {
+			this.gearIndex--;
 		}
 	}
 }
