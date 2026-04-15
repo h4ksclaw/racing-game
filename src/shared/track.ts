@@ -307,12 +307,44 @@ export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData 
 	// Remove last sample (near-duplicate of first for closed loop)
 	const splineClean = splinePoints.slice(0, -1);
 	const up = v3(0, 1, 0);
+	const sn = splineClean.length;
+
+	// Compute tangents from neighboring spline points (smooth, no seam discontinuity)
+	const tangents: V3[] = splineClean.map((_, i) => {
+		const prev = splineClean[(i - 1 + sn) % sn];
+		const next = splineClean[(i + 1) % sn];
+		return v3Normalize(v3Add(next, v3Scale(prev, -1)));
+	});
+
+	// Compute binormals with flip-prevention + smoothing (closed loop)
+	const binormals: V3[] = [];
+	{
+		const raw: V3[] = tangents.map((t) => {
+			const bn = v3Cross(t, up);
+			return v3Len(bn) < 0.001 ? v3(1, 0, 0) : v3Normalize(bn);
+		});
+		// Forward pass: prevent sudden 180° flips
+		for (let i = 0; i < sn; i++) {
+			const prev = i === 0 ? raw[sn - 1] : binormals[i - 1];
+			const dot = prev.x * raw[i].x + prev.y * raw[i].y + prev.z * raw[i].z;
+			binormals.push(dot < 0 ? v3Scale(raw[i], -1) : raw[i]);
+		}
+		// Smooth passes (average with neighbors on closed loop)
+		for (let pass = 0; pass < 3; pass++) {
+			const smoothed: V3[] = [];
+			for (let i = 0; i < sn; i++) {
+				const prev = binormals[(i - 1 + sn) % sn];
+				const cur = binormals[i];
+				const next = binormals[(i + 1) % sn];
+				smoothed.push(v3Normalize(v3Add(v3Add(prev, cur), next)));
+			}
+			for (let i = 0; i < sn; i++) binormals[i] = smoothed[i];
+		}
+	}
+
 	const samples: TrackSample[] = splineClean.map((point, i) => {
-		const t = i / splineClean.length;
-		const tangent = splineTangent(cp3d, true, t);
-		let binormal = v3Cross(tangent, up);
-		if (v3Len(binormal) < 0.001) binormal = v3(1, 0, 0);
-		binormal = v3Normalize(binormal);
+		const binormal = binormals[i];
+		const tangent = tangents[i];
 		const halfW = width / 2;
 		return {
 			point,
