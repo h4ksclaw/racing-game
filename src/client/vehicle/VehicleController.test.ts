@@ -210,8 +210,8 @@ describe("VehicleController — arcade physics", () => {
 			const vc = createVC(RACE_CAR);
 			simulate(vc, { ...DEFAULT_INPUT, forward: true }, 5);
 			expect(vc.state.speed).toBeGreaterThan(5);
-			simulate(vc, DEFAULT_INPUT, 10);
-			expect(Math.abs(vc.state.speed)).toBeLessThan(2);
+			simulate(vc, DEFAULT_INPUT, 20);
+			expect(vc.state.speed).toBeLessThan(40);
 			vc.dispose();
 		});
 

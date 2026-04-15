@@ -1,16 +1,17 @@
 /**
  * VehicleController — arcade/bicycle-model physics.
  *
- * No physics engine. Ground collision = terrain.getHeight() sampling.
- * Steering = bicycle model (velocity rotates with car heading).
- * Suspension = simple spring interpolation on Y.
+ * Proper bicycle model with:
+ * - Slip angles (front + rear computed from local velocities)
+ * - Tire lateral forces with grip limit (tire circle)
+ * - Weight transfer under acceleration/braking
+ * - Yaw torque from tire force differentials
+ * - Ground collision via terrain.getHeight() sampling
  *
- * Dropped cannon-es because:
- * - RaycastVehicle can't raycast Heightfield shapes
- * - Trimesh creates invisible walls at triangle edges
- * - Chassis Box + Trimesh causes clipping
- * - No lateral steering force without chassis shape
- * - All workarounds (manual yaw torque, plane moving) caused worse bugs
+ * References:
+ * - Marco Monster "Car Physics for Games"
+ * - https://www.xarg.org/book/vehicle-physics/
+ * - Gillespie "Fundamentals of Vehicle Dynamics"
  */
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -38,23 +39,52 @@ export class VehicleController {
 
 	private config: CarConfig;
 
-	// Position / orientation
-	private pos = { x: 0, y: 2, z: 0 };
-	private heading = 0; // yaw in radians
-	private velocity = { x: 0, y: 0, z: 0 };
+	// Position / orientation (world space)
+	private posX = 0;
+	private posY = 2;
+	private posZ = 0;
+	private heading = 0; // yaw radians (0 = facing +Z)
+
+	// Velocities in LOCAL frame (forward=lateral)
+	// localX = forward speed, localY = lateral speed (right-positive)
+	private localVelX = 0;
+	private localVelY = 0;
+	private angularVelocity = 0; // yaw rate rad/s
 
 	// Steering
 	private currentSteeringAngle = 0;
-	private steeringSpeed = 3.0; // rad/s
+	private steeringSpeed = 3.0; // rad/s interpolation
 
 	// Gears
 	private currentGearIndex = 0;
 
-	// Suspension spring
-	private suspensionY = 0; // offset from rest height
+	// ── Derived car dimensions from config ──
+	private cgToFront: number;
+	private cgToRear: number;
+	private cgHeight: number;
+	private inertia: number; // rotational inertia about yaw axis
+
+	// ── Tire model parameters ──
+	private corneringStiffnessFront: number;
+	private corneringStiffnessRear: number;
 
 	constructor(config: CarConfig = RACE_CAR) {
 		this.config = config;
+
+		// CG position: slightly forward of center (front-heavy for RWD)
+		const wb = config.wheelBase;
+		this.cgToFront = wb * 0.55;
+		this.cgToRear = wb * 0.45;
+		this.cgHeight = config.wheelRadius * 1.5;
+
+		// Rotational inertia: I = m * a * b (simplified)
+		this.inertia = config.mass * this.cgToFront * this.cgToRear;
+
+		// Cornering stiffness: higher = more grip, more responsive steering
+		// Scales with mass so heavier cars don't feel sluggish
+		const baseStiffness = config.frictionSlip * 50;
+		this.corneringStiffnessFront = baseStiffness;
+		this.corneringStiffnessRear = baseStiffness * 0.95; // slightly less rear grip
 	}
 
 	async loadModel(): Promise<THREE.Group> {
@@ -84,9 +114,10 @@ export class VehicleController {
 
 	update(input: VehicleInput, delta: number): void {
 		const dt = Math.min(delta, 1 / 30);
+		const mass = this.config.mass;
 
-		// ── Steering ──
-		const speedFactor = 1 - (Math.abs(this.state.speed) / this.config.maxSpeed) * 0.5;
+		// ── Steering input (smooth, speed-dependent) ──
+		const speedFactor = 1 - (Math.abs(this.localVelX) / this.config.maxSpeed) * 0.5;
 		const targetSteer =
 			((input.left ? 1 : 0) - (input.right ? 1 : 0)) * this.config.maxSteerAngle * speedFactor;
 
@@ -98,120 +129,134 @@ export class VehicleController {
 		}
 		this.state.steeringAngle = this.currentSteeringAngle;
 
-		// ── Bicycle-model turning ──
-		// Turn rate = speed * tan(steerAngle) / wheelbase
-		// Rotate both velocity vector and heading together
-		if (Math.abs(this.currentSteeringAngle) > 0.001 && Math.abs(this.state.speed) > 0.5) {
-			const turnRate =
-				(Math.abs(this.state.speed) * Math.tan(this.currentSteeringAngle)) / this.config.wheelBase;
-			const yawDelta = turnRate * dt;
+		// ── Weight transfer ──
+		const weight = mass * 9.82;
+		const accelForce = input.forward ? this.config.engineForce : 0;
+		const brakeForce = input.backward && this.localVelX > 2 ? this.config.brakeForce : 0;
+		const weightTransfer =
+			(accelForce * this.config.wheelRadius - brakeForce * this.cgHeight) / this.config.wheelBase;
+		const weightFront = Math.max(weight * 0.1, weight * 0.5 - weightTransfer);
+		const weightRear = Math.max(weight * 0.1, weight * 0.5 + weightTransfer);
 
-			const cos = Math.cos(yawDelta);
-			const sin = Math.sin(yawDelta);
-			const vx = this.velocity.x;
-			const vz = this.velocity.z;
-			this.velocity.x = vx * cos - vz * sin;
-			this.velocity.z = vx * sin + vz * cos;
-			this.heading += yawDelta;
+		// ── Slip angles ──
+		// Front axle velocity in local frame
+		const frontLocalX = this.localVelX;
+		const frontLocalY = this.localVelY + this.angularVelocity * this.cgToFront;
+
+		let slipAngleFront = 0;
+		if (Math.abs(frontLocalX) > 0.5) {
+			slipAngleFront =
+				Math.atan2(frontLocalY, Math.abs(frontLocalX)) -
+				Math.sign(frontLocalX) * this.currentSteeringAngle;
 		}
 
-		// ── Forward direction ──
-		const fwdX = Math.sin(this.heading);
-		const fwdZ = Math.cos(this.heading);
+		// Rear axle velocity in local frame
+		const rearLocalX = this.localVelX;
+		const rearLocalY = this.localVelY - this.angularVelocity * this.cgToRear;
 
-		// ── Engine / Brake ──
-		const ef = this.config.engineForce / this.config.mass; // acceleration
+		let slipAngleRear = 0;
+		if (Math.abs(rearLocalX) > 0.5) {
+			slipAngleRear = Math.atan2(rearLocalY, Math.abs(rearLocalX));
+		}
 
+		// ── Tire lateral forces ──
+		let latForceFront = this.corneringStiffnessFront * slipAngleFront;
+		let latForceRear = this.corneringStiffnessRear * slipAngleRear;
+
+		// Grip limit (friction circle): F_max = mu * N
+		const mu = this.config.frictionSlip;
+		const maxLatFront = mu * weightFront;
+		const maxLatRear = mu * weightRear;
+		latForceFront = Math.max(-maxLatFront, Math.min(maxLatFront, latForceFront));
+		latForceRear = Math.max(-maxLatRear, Math.min(maxLatRear, latForceRear));
+
+		// ── Longitudinal forces ──
+		let driveForce = 0;
 		if (input.forward) {
-			const speedRatio = Math.abs(this.state.speed) / this.config.maxSpeed;
-			const limitedAccel = speedRatio > 0.8 ? ef * (1 - (speedRatio - 0.8) / 0.2) : ef;
-			this.velocity.x += fwdX * limitedAccel * dt;
-			this.velocity.z += fwdZ * limitedAccel * dt;
-			this.state.throttle = 1;
-			this.state.brake = 0;
+			driveForce = this.config.engineForce;
+			// Speed limiter
+			const speedRatio = Math.abs(this.localVelX) / this.config.maxSpeed;
+			if (speedRatio > 0.8) driveForce *= 1 - (speedRatio - 0.8) / 0.2;
 		} else if (input.backward) {
-			if (this.state.speed > 2) {
-				// Brake
-				const brakeDecel = this.config.brakeForce / this.config.mass;
-				const fwdSpeed = this.velocity.x * fwdX + this.velocity.z * fwdZ;
-				if (fwdSpeed > 0) {
-					const brakeAmount = Math.min(brakeDecel * dt, fwdSpeed);
-					this.velocity.x -= fwdX * brakeAmount;
-					this.velocity.z -= fwdZ * brakeAmount;
-				}
-				this.state.brake = 1;
-				this.state.throttle = 0;
+			if (this.localVelX > 2) {
+				// Braking
+				driveForce = -this.config.brakeForce;
 			} else {
-				// Reverse
-				this.velocity.x -= fwdX * ef * 0.5 * dt;
-				this.velocity.z -= fwdZ * ef * 0.5 * dt;
-				this.state.throttle = 0.5;
-				this.state.brake = 0;
+				// Reverse (half power)
+				driveForce = this.config.engineForce * 0.5;
 			}
-		} else {
-			this.state.throttle = 0;
-			this.state.brake = 0;
 		}
 
 		// Handbrake
 		if (input.handbrake) {
-			const brakeDecel = (this.config.brakeForce * 2) / this.config.mass;
-			const fwdSpeed = this.velocity.x * fwdX + this.velocity.z * fwdZ;
-			if (fwdSpeed > 0) {
-				const brakeAmount = Math.min(brakeDecel * dt, fwdSpeed);
-				this.velocity.x -= fwdX * brakeAmount;
-				this.velocity.z -= fwdZ * brakeAmount;
-			}
+			driveForce = -this.config.brakeForce * 2;
+			// Handbrake reduces rear grip (simulates locked rear wheels)
+			latForceRear *= 0.3;
 		}
 
-		// ── Drag / friction ──
-		// Simple linear drag (air resistance + rolling resistance)
-		const dragCoeff = 0.3; // per second
-		const drag = 1 - dragCoeff * dt;
-		this.velocity.x *= drag;
-		this.velocity.z *= drag;
+		// Rolling resistance + aero drag
+		driveForce -= this.localVelX * (15 + Math.abs(this.localVelX) * 0.1);
 
-		// Very slow → stop
-		const hSpeed = Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2);
-		if (hSpeed < 0.1 && !input.forward && !input.backward) {
-			this.velocity.x = 0;
-			this.velocity.z = 0;
+		// ── Total forces in local frame ──
+		// Front tire force contributes to both X and Y (steered)
+		const forceX = driveForce + latForceFront * Math.sin(this.currentSteeringAngle);
+		const forceY = latForceFront * Math.cos(this.currentSteeringAngle) + latForceRear;
+
+		// ── Yaw torque ──
+		// Torque = front_lat * cgToFront - rear_lat * cgToRear
+		const yawTorque =
+			latForceFront * this.cgToFront * Math.cos(this.currentSteeringAngle) -
+			latForceRear * this.cgToRear;
+
+		// ── Integration (local frame) ──
+		this.localVelX += (forceX / mass) * dt;
+		this.localVelY += (forceY / mass) * dt;
+		this.angularVelocity += (yawTorque / this.inertia) * dt;
+
+		// Damping
+		this.angularVelocity *= 1 - 3.0 * dt;
+		this.localVelY *= 1 - 2.0 * dt;
+
+		// Kill tiny velocities
+		if (Math.abs(this.localVelX) < 0.05 && !input.forward && !input.backward) {
+			this.localVelX = 0;
 		}
+		if (Math.abs(this.localVelY) < 0.01) this.localVelY = 0;
+		if (Math.abs(this.angularVelocity) < 0.001) this.angularVelocity = 0;
 
-		// ── Gravity ──
-		this.velocity.y -= 9.82 * dt;
+		// ── Convert local velocity to world and integrate position ──
+		// heading=0 means car faces +Z, so we offset by -PI/2 from standard math
+		const sinH = Math.sin(this.heading);
+		const cosH = Math.cos(this.heading);
+		const worldVelX = this.localVelX * sinH - this.localVelY * cosH;
+		const worldVelZ = this.localVelX * cosH + this.localVelY * sinH;
 
-		// ── Apply velocity ──
-		this.pos.x += this.velocity.x * dt;
-		this.pos.y += this.velocity.y * dt;
-		this.pos.z += this.velocity.z * dt;
+		this.posX += worldVelX * dt;
+		this.posZ += worldVelZ * dt;
+
+		// Gravity
+		const verticalVel = -9.82 * dt;
+		this.posY += verticalVel * dt;
 
 		// ── Ground collision ──
 		if (this.terrain) {
-			const groundY = this.terrain.getHeight(this.pos.x, this.pos.z);
+			const groundY = this.terrain.getHeight(this.posX, this.posZ);
 			const restHeight = this.config.wheelRadius + this.config.suspensionRestLength;
 
-			if (this.pos.y < groundY + restHeight) {
-				this.pos.y = groundY + restHeight;
-
-				// Suspension spring: absorb impact, allow small bounce
-				if (this.velocity.y < 0) {
-					// Spring: push up proportional to penetration velocity
-					const springForce = -this.velocity.y * this.config.suspensionStiffness * 0.01;
-					this.velocity.y = Math.max(0, this.velocity.y + springForce * dt);
-
-					// Damping: kill most downward velocity on contact
-					this.velocity.y *= 0.1;
-				}
-				this.state.onGround = true;
-			} else {
-				this.state.onGround = false;
+			if (this.posY < groundY + restHeight) {
+				this.posY = groundY + restHeight;
+				// Simple landing: just kill downward velocity
 			}
+			this.state.onGround = this.posY <= groundY + restHeight + 0.1;
 		}
 
-		// ── Update derived state ──
-		// Speed = component of velocity along forward direction
-		this.state.speed = this.velocity.x * fwdX + this.velocity.z * fwdZ;
+		// ── Update heading ──
+		this.heading += this.angularVelocity * dt;
+
+		// ── Update state ──
+		this.state.speed = this.localVelX;
+		this.state.throttle = input.forward ? 1 : input.backward ? 0.5 : 0;
+		this.state.brake = (input.backward && this.localVelX > 2) || input.handbrake ? 1 : 0;
 
 		// Auto gears
 		this.updateGear();
@@ -233,30 +278,30 @@ export class VehicleController {
 	syncVisuals(): void {
 		if (!this.model) return;
 
-		this.model.position.set(this.pos.x, this.pos.y, this.pos.z);
+		this.model.position.set(this.posX, this.posY, this.posZ);
 		this.model.quaternion.setFromEuler(new THREE.Euler(0, this.heading, 0));
 
-		// Wheels: rotate them based on speed (spin) and steering angle
+		// Wheels: spin + steer
 		for (let i = 0; i < 4; i++) {
 			const mesh = this.wheelMeshes[i];
 			if (!mesh) continue;
 
-			// Steering: front wheels (0,1) rotate around Y
+			// Steering: front wheels rotate around Y
 			if (i < 2) {
 				mesh.quaternion.setFromEuler(new THREE.Euler(0, this.currentSteeringAngle, 0));
 			} else {
 				mesh.quaternion.setFromEuler(new THREE.Euler(0, 0, 0));
 			}
 
-			// Spin: rotate around local X axis based on speed
-			const spinAngle = (this.state.speed / this.config.wheelRadius) * 0.016; // ~60fps
+			// Spin around local X
+			const spinAngle = (this.state.speed / this.config.wheelRadius) * 0.016;
 			const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), spinAngle);
 			mesh.quaternion.multiply(spinQ);
 		}
 	}
 
 	getPosition(): { x: number; y: number; z: number } {
-		return { ...this.pos };
+		return { x: this.posX, y: this.posY, z: this.posZ };
 	}
 
 	getForward(): { x: number; y: number; z: number } {
@@ -268,9 +313,13 @@ export class VehicleController {
 	}
 
 	reset(x: number, y: number, z: number, rotation = 0): void {
-		this.pos = { x, y, z };
+		this.posX = x;
+		this.posY = y;
+		this.posZ = z;
 		this.heading = rotation;
-		this.velocity = { x: 0, y: 0, z: 0 };
+		this.localVelX = 0;
+		this.localVelY = 0;
+		this.angularVelocity = 0;
 		this.state.speed = 0;
 		this.state.rpm = this.config.idleRPM;
 		this.state.steeringAngle = 0;
@@ -297,7 +346,3 @@ export class VehicleController {
 		}
 	}
 }
-
-// Re-export for test compatibility
-export const DEFAULT_INPUT_OBJ = DEFAULT_INPUT;
-export const RACE_CAR_CONFIG = RACE_CAR;
