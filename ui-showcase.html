@@ -3,682 +3,338 @@
 <head>
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<title>Racing Game — Night Signal Concepts</title>
+	<title>Racing Game — UI Concept</title>
 	<style>
-		@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800;900&family=Chakra+Petch:wght@300;400;500;600;700&family=Exo+2:wght@300;400;500;600;700;800;900&display=swap');
+		@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
 
 		* { margin: 0; padding: 0; box-sizing: border-box; }
 		html, body { width: 100%; height: 100%; overflow: hidden; background: #06040a; }
 
-		.nav {
-			position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-			display: flex; gap: 0; background: rgba(6,4,10,0.95);
-			border-bottom: 1px solid rgba(139,92,246,0.08);
-			backdrop-filter: blur(20px);
-			font-family: 'Inter', sans-serif;
-		}
-		.nav-tab {
-			flex: 1; padding: 14px 20px; text-align: center; cursor: pointer;
-			color: rgba(255,255,255,0.3); font-size: 12px; font-weight: 600;
-			letter-spacing: 1px; transition: all 0.3s ease;
-			border-bottom: 2px solid transparent; user-select: none;
-		}
-		.nav-tab:hover { color: rgba(255,255,255,0.6); background: rgba(139,92,246,0.03); }
-		.nav-tab.active { color: rgba(255,255,255,0.9); }
-
-		.concept { position: absolute; inset: 0; display: none; }
-		.concept.active { display: block; }
 		.canvas-bg { position: absolute; inset: 0; z-index: 0; }
 		.canvas-bg canvas { display: block; width: 100%; height: 100%; }
 
-		.info-toggle {
-			position: fixed; top: 60px; right: 16px; z-index: 600;
-			padding: 6px 14px; border-radius: 6px; cursor: pointer;
-			font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600;
-			border: 1px solid rgba(139,92,246,0.15); background: rgba(139,92,246,0.05);
-			color: rgba(139,92,246,0.6); letter-spacing: 1px; transition: all 0.2s;
-			text-transform: uppercase;
+		/* ── TOP BAR (HUD Terminal style) ─────────────────────── */
+		.top-bar {
+			position: fixed; top: 0; left: 0; right: 0; z-index: 100; pointer-events: none;
+			font-family: 'JetBrains Mono', monospace;
+			display: flex; align-items: center;
+			background: rgba(6,4,14,0.8);
+			backdrop-filter: blur(12px);
+			border-bottom: 1px solid rgba(139,92,246,0.08);
+			padding: 7px 20px;
 		}
-		.info-toggle:hover { background: rgba(139,92,246,0.1); color: rgba(139,92,246,0.9); }
-		.info-panel {
-			position: fixed; top: 60px; right: 16px; z-index: 599;
-			width: 320px; max-height: calc(100vh - 80px); overflow-y: auto;
-			background: rgba(10,6,18,0.95); backdrop-filter: blur(20px);
-			border: 1px solid rgba(139,92,246,0.1); border-radius: 12px;
-			padding: 24px; font-family: 'Inter', sans-serif; color: rgba(255,255,255,0.6);
-			font-size: 13px; line-height: 1.7; display: none;
+		.top-bar .label { font-size: 9px; color: rgba(139,92,246,0.35); letter-spacing: 3px; }
+		.top-bar .value { font-size: 9px; color: rgba(255,255,255,0.45); margin-left: 6px; }
+		.top-bar .sep { font-size: 9px; color: rgba(139,92,246,0.08); margin: 0 14px; }
+		.top-bar .controls { margin-left: auto; font-size: 9px; color: rgba(139,92,246,0.18); letter-spacing: 1px; }
+
+		/* Corner brackets from terminal */
+		.corner-tl { position:fixed; top:32px; left:4px; width:14px; height:14px; border-left:2px solid rgba(139,92,246,0.12); border-top:2px solid rgba(139,92,246,0.12); pointer-events:none; z-index:90; }
+		.corner-tr { position:fixed; top:32px; right:4px; width:14px; height:14px; border-right:2px solid rgba(139,92,246,0.12); border-top:2px solid rgba(139,92,246,0.12); pointer-events:none; z-index:90; }
+		.corner-bl { position:fixed; bottom:68px; left:4px; width:14px; height:14px; border-left:2px solid rgba(139,92,246,0.12); border-bottom:2px solid rgba(139,92,246,0.12); pointer-events:none; z-index:90; }
+		.corner-br { position:fixed; bottom:68px; right:4px; width:14px; height:14px; border-right:2px solid rgba(139,92,246,0.12); border-bottom:2px solid rgba(139,92,246,0.12); pointer-events:none; z-index:90; }
+
+		/* ── BOTTOM HUD (Broadcast layout, Tokyo Drift theming) ── */
+		.bottom-hud {
+			position: fixed; bottom: 16px; left: 16px; right: 16px; z-index: 100; pointer-events: none;
+			display: flex; align-items: flex-end; justify-content: space-between;
 		}
-		.info-panel.open { display: block; }
-		.info-panel h3 { color: #fff; font-size: 18px; margin-bottom: 4px; font-weight: 700; }
-		.info-panel h4 { color: rgba(139,92,246,0.8); font-size: 11px; margin: 16px 0 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 2px; }
-		.info-panel ul { padding-left: 16px; }
-		.info-panel li { margin-bottom: 4px; }
-		.info-panel .tag { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 10px; font-weight: 600; margin: 2px 4px 2px 0; letter-spacing: 0.5px; }
+
+		/* Left: nameplate + data row (broadcast style) */
+		.hud-left { font-family: 'Inter', sans-serif; }
+
+		.nameplate {
+			display: flex; align-items: stretch;
+		}
+		.nameplate .num {
+			background: rgba(139,92,246,0.85); padding: 5px 12px;
+			display: flex; align-items: center;
+		}
+		.nameplate .num span {
+			font-size: 15px; font-weight: 800; color: #fff; letter-spacing: 1px;
+		}
+		.nameplate .car {
+			background: rgba(10,8,18,0.85); backdrop-filter: blur(10px);
+			padding: 5px 14px; display: flex; align-items: center;
+			border: 1px solid rgba(139,92,246,0.12); border-left: none;
+		}
+		.nameplate .car span {
+			font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.75); letter-spacing: 0.5px;
+		}
+
+		.data-row {
+			margin-top: 5px; background: rgba(10,8,18,0.8); backdrop-filter: blur(10px);
+			border: 1px solid rgba(139,92,246,0.08);
+			padding: 7px 14px; display: inline-flex; align-items: baseline; gap: 6px;
+		}
+		.data-row .speed-val {
+			font-size: 30px; font-weight: 700; color: #fff;
+			font-variant-numeric: tabular-nums; letter-spacing: -1px;
+		}
+		.data-row .speed-unit {
+			font-size: 10px; color: rgba(139,92,246,0.4); font-weight: 500; letter-spacing: 1px;
+		}
+		.data-row .sep {
+			margin: 0 6px; color: rgba(139,92,246,0.08);
+		}
+		.data-row .label {
+			font-size: 9px; color: rgba(139,92,246,0.3); font-weight: 600; letter-spacing: 1px;
+		}
+		.data-row .val {
+			font-size: 17px; font-weight: 700; color: rgba(139,92,246,0.8);
+			font-variant-numeric: tabular-nums;
+		}
+		.data-row .val-white {
+			font-size: 17px; font-weight: 700; color: rgba(255,255,255,0.65);
+			font-variant-numeric: tabular-nums;
+		}
+
+		/* Right: session + RPM (broadcast clean + terminal segments) */
+		.hud-right { font-family: 'Inter', sans-serif; text-align: right; }
+
+		.session-badge {
+			background: rgba(10,8,18,0.8); backdrop-filter: blur(10px);
+			border: 1px solid rgba(139,92,246,0.08);
+			padding: 6px 14px; display: inline-flex; align-items: center; gap: 8px;
+		}
+		.session-badge .dot {
+			width: 5px; height: 5px; border-radius: 50%; background: #8b5cf6;
+			animation: pulse 2s infinite;
+		}
+		.session-badge .timer {
+			font-size: 13px; color: rgba(255,255,255,0.6); font-weight: 600;
+			font-variant-numeric: tabular-nums; letter-spacing: 0.5px;
+			font-family: 'JetBrains Mono', monospace;
+		}
+		.session-badge .type {
+			font-size: 9px; color: rgba(139,92,246,0.35); font-weight: 600; letter-spacing: 1px;
+		}
+
+		/* Segmented RPM bar (terminal style) */
+		.rpm-strip {
+			margin-top: 5px; background: rgba(10,8,18,0.8); backdrop-filter: blur(10px);
+			border: 1px solid rgba(139,92,246,0.08);
+			padding: 7px 14px; display: flex; align-items: center; gap: 8px;
+		}
+		.rpm-strip .label {
+			font-size: 9px; color: rgba(139,92,246,0.3); font-weight: 600; letter-spacing: 2px;
+		}
+		.rpm-strip .segments {
+			display: flex; gap: 2px; flex: 1; height: 7px;
+		}
+		.rpm-strip .seg {
+			flex: 1; background: rgba(139,92,246,0.06); transition: background 0.05s;
+		}
+		.rpm-strip .seg.red { background: rgba(244,63,94,0.06); }
+		.rpm-strip .rpm-val {
+			font-size: 10px; color: rgba(139,92,246,0.5); min-width: 28px; text-align: right;
+			font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums;
+		}
+
+		/* ── NOTIFICATION (Tokyo Drift glow + terminal prefix) ── */
+		.toast {
+			position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+			z-index: 200; pointer-events: none;
+			font-family: 'JetBrains Mono', monospace;
+			background: rgba(10,8,18,0.85); backdrop-filter: blur(12px);
+			border: 1px solid rgba(139,92,246,0.12);
+			padding: 10px 22px;
+			font-size: 10px; color: rgba(139,92,246,0.5); letter-spacing: 2px;
+		}
+		.toast .ok { color: rgba(163,230,53,0.6); margin-right: 8px; }
+
+		/* ── Scanline overlay (Tokyo Drift) ───────────────────── */
+		.scanlines {
+			position: fixed; inset: 0; pointer-events: none; z-index: 50;
+			background: repeating-linear-gradient(
+				0deg, transparent, transparent 2px,
+				rgba(0,0,0,0.02) 2px, rgba(0,0,0,0.02) 4px
+			);
+		}
+
+		/* ── Thin RPM edge bar (broadcast) ────────────────────── */
+		.rpm-edge {
+			position: fixed; bottom: 0; left: 0; right: 0; height: 3px;
+			z-index: 100; pointer-events: none;
+		}
+		.rpm-edge .track { height: 100%; background: rgba(255,255,255,0.02); }
+		.rpm-edge .fill {
+			height: 100%; transition: width 0.05s linear;
+			background: linear-gradient(90deg, rgba(139,92,246,0.2), rgba(139,92,246,0.5), rgba(244,63,94,0.5));
+		}
+
+		/* ── Live indicator pulse ──────────────────────────────── */
+		@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 	</style>
 </head>
 <body>
 
-<div class="nav" id="nav">
-	<div class="nav-tab active" data-concept="1" style="border-bottom-color: #8b5cf6;">
-		01 / Tokyo Drift
-	</div>
-	<div class="nav-tab" data-concept="2" style="border-bottom-color: #06b6d4;">
-		02 / HUD Terminal
-	</div>
-	<div class="nav-tab" data-concept="3" style="border-bottom-color: #f43f5e;">
-		03 / Race Broadcast
-	</div>
-	<div class="nav-tab" data-concept="4" style="border-bottom-color: #a3e635;">
-		04 / Midnight Grid
-	</div>
+<div class="canvas-bg" id="bg"></div>
+
+<!-- Scanlines -->
+<div class="scanlines"></div>
+
+<!-- Corner brackets -->
+<div class="corner-tl"></div>
+<div class="corner-tr"></div>
+<div class="corner-bl"></div>
+<div class="corner-br"></div>
+
+<!-- ── TOP BAR (Terminal: labeled system data) ─────────────── -->
+<div class="top-bar">
+	<span class="label">SEED</span><span class="value">0042</span>
+	<span class="sep">|</span>
+	<span class="label">TIME</span><span class="value">18:30</span>
+	<span class="sep">|</span>
+	<span class="label">WX</span><span class="value">CLEAR</span>
+	<span class="sep">|</span>
+	<span class="label">SURFACE</span><span class="value">DRY</span>
+	<span class="sep">|</span>
+	<span class="label">POS</span><span class="value" id="pos">142.3 / 88.1 / 12.0</span>
+	<span class="controls">W/S A/D SPACE R</span>
 </div>
 
-<button class="info-toggle" id="infoToggle">About</button>
-<div class="info-panel" id="infoPanel"></div>
+<!-- ── BOTTOM HUD ──────────────────────────────────────────── -->
+<div class="bottom-hud">
 
-<!-- ============================================================ -->
-<!-- CONCEPT 1: TOKYO DRIFT                                        -->
-// Organic neon glow, Japanese underground racing vibes              -->
-// Soft gradients, wide letterforms, breathing glow animations      -->
-// Inspired: Wangan Midnight, Initial D night scenes, Shibuya neon  -->
-<!-- ============================================================ -->
-<div class="concept active" id="concept1">
-	<div class="canvas-bg"></div>
-
-	<!-- Speed + Gear — bottom left, large -->
-	<div style="position:fixed; bottom:32px; left:32px; z-index:100; pointer-events:none; font-family:'Orbitron',sans-serif;">
-		<div id="c1-speed" style="font-size:96px; font-weight:900; color:#fff; line-height:0.9; letter-spacing:-4px;
-			text-shadow: 0 0 60px rgba(139,92,246,0.4), 0 0 120px rgba(139,92,246,0.15);">142</div>
-		<div style="display:flex; align-items:baseline; gap:10px; margin-top:2px;">
-			<div style="font-size:13px; color:rgba(139,92,246,0.5); letter-spacing:8px; font-weight:500;">KM/H</div>
-			<div style="width:80px; height:2px; background:linear-gradient(90deg, #8b5cf6, transparent);"></div>
+	<!-- Left: broadcast nameplate + inline data -->
+	<div class="hud-left">
+		<div class="nameplate">
+			<div class="num"><span>86</span></div>
+			<div class="car"><span>AE86 TRUENO</span></div>
 		</div>
-		<div style="display:flex; align-items:center; gap:16px; margin-top:18px;">
-			<div>
-				<div id="c1-gear" style="font-size:40px; font-weight:700; color:#8b5cf6;
-					text-shadow:0 0 20px rgba(139,92,246,0.5);">4</div>
-				<div style="font-size:8px; color:rgba(139,92,246,0.25); letter-spacing:4px;">GEAR</div>
+		<div class="data-row">
+			<span class="speed-val" id="speed">142</span>
+			<span class="speed-unit">km/h</span>
+			<span class="sep">|</span>
+			<span class="label">GEAR</span>
+			<span class="val" id="gear">4</span>
+			<span class="sep">|</span>
+			<span class="label">RPM</span>
+			<span class="val-white" id="rpm">7200</span>
+		</div>
+	</div>
+
+	<!-- Right: session timer + segmented RPM -->
+	<div class="hud-right">
+		<div class="session-badge">
+			<div class="dot"></div>
+			<span class="type">FREE ROAM</span>
+			<span class="timer">00:00:00</span>
+		</div>
+		<div class="rpm-strip">
+			<span class="label">RPM</span>
+			<div class="segments">
+				<div class="seg" id="s1"></div>
+				<div class="seg" id="s2"></div>
+				<div class="seg" id="s3"></div>
+				<div class="seg" id="s4"></div>
+				<div class="seg" id="s5"></div>
+				<div class="seg" id="s6"></div>
+				<div class="seg red" id="s7"></div>
+				<div class="seg red" id="s8"></div>
 			</div>
-			<div style="width:140px;">
-				<div style="height:5px; background:rgba(139,92,246,0.08); border-radius:3px; overflow:hidden;">
-					<div id="c1-rpm" style="height:100%; border-radius:3px; transition:width 0.05s linear, background 0.3s; width:72%;
-						background:linear-gradient(90deg, #8b5cf6, #a78bfa, #c4b5fd);"></div>
-				</div>
-				<div style="display:flex; justify-content:space-between; margin-top:4px;">
-					<span style="font-size:8px; color:rgba(139,92,246,0.15);">RPM</span>
-					<span style="font-size:8px; color:rgba(239,68,68,0.25);">REDLINE</span>
-				</div>
-			</div>
+			<span class="rpm-val" id="rpm-val">7200</span>
 		</div>
 	</div>
 
-	<!-- Right side — session + controls -->
-	<div style="position:fixed; bottom:32px; right:32px; z-index:100; pointer-events:none; font-family:'Orbitron',sans-serif; text-align:right;">
-		<div style="font-size:9px; color:rgba(139,92,246,0.25); letter-spacing:4px;">SESSION</div>
-		<div style="font-size:24px; color:rgba(255,255,255,0.5); font-weight:700; letter-spacing:3px;">FREE ROAM</div>
-		<div style="width:100%; height:1px; background:linear-gradient(90deg, transparent, rgba(139,92,246,0.2)); margin:12px 0;"></div>
-		<div style="font-size:9px; color:rgba(255,255,255,0.12); line-height:2.2; letter-spacing:1px;">
-			W/S THROTTLE / BRAKE<br>
-			A/D STEER<br>
-			SPACE HANDBRAKE<br>
-			R RESET POSITION
-		</div>
-	</div>
-
-	<!-- Top center — world info -->
-	<div style="position:fixed; top:52px; left:50%; transform:translateX(-50%); z-index:100; pointer-events:none; font-family:'Orbitron',sans-serif;">
-		<div style="font-size:10px; color:rgba(139,92,246,0.2); letter-spacing:5px; text-align:center;">
-			SEED 42 &middot; CLEAR &middot; 18:30
-		</div>
-	</div>
-
-	<!-- Mini notification toast -->
-	<div style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:200; pointer-events:none; font-family:'Orbitron',sans-serif;
-		background:rgba(10,6,18,0.85); backdrop-filter:blur(12px); border:1px solid rgba(139,92,246,0.15); border-radius:8px;
-		padding:12px 28px; font-size:12px; color:rgba(255,255,255,0.6); letter-spacing:2px;">
-		<span style="color:rgba(139,92,246,0.6); margin-right:8px;">+</span> WORLD LOADED
-	</div>
-
-	<!-- Subtle scanline -->
-	<div style="position:fixed; inset:0; pointer-events:none; z-index:50;
-		background:repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.02) 2px, rgba(0,0,0,0.02) 4px);"></div>
 </div>
 
-<!-- ============================================================ -->
-<!-- CONCEPT 2: HUD TERMINAL                                       -->
-// Data-dense, compact, retro-futuristic terminal aesthetic        -->
-// Every element has a border, every value has a label             -->
-// Inspired: TRON, old CRT terminals, military HUDs, sci-fi cockpits -->
-<!-- ============================================================ -->
-<div class="concept" id="concept2">
-	<div class="canvas-bg"></div>
-
-	<!-- Full HUD frame — border around viewport -->
-	<div style="position:fixed; inset:12px; border:1px solid rgba(6,182,212,0.1); border-radius:4px; pointer-events:none; z-index:80;"></div>
-	<div style="position:fixed; inset:14px; border:1px solid rgba(6,182,212,0.04); border-radius:3px; pointer-events:none; z-index:80;"></div>
-
-	<!-- Bottom bar — speed, gear, rpm, throttle, brake all in one strip -->
-	<div style="position:fixed; bottom:0; left:0; right:0; z-index:100; pointer-events:none; font-family:'JetBrains Mono',monospace;">
-		<div style="display:flex; align-items:stretch; background:rgba(4,12,16,0.85); backdrop-filter:blur(12px); border-top:1px solid rgba(6,182,212,0.12);">
-			<!-- Speed block -->
-			<div style="padding:12px 24px; border-right:1px solid rgba(6,182,212,0.08); min-width:160px; text-align:center;">
-				<div style="font-size:9px; color:rgba(6,182,212,0.4); letter-spacing:3px;">VELOCITY</div>
-				<div style="display:flex; align-items:baseline; justify-content:center; gap:4px; margin-top:2px;">
-					<span id="c2-speed" style="font-size:36px; font-weight:300; color:#06b6d4; font-variant-numeric:tabular-nums;">142</span>
-					<span style="font-size:10px; color:rgba(6,182,212,0.3);">km/h</span>
-				</div>
-			</div>
-			<!-- Gear block -->
-			<div style="padding:12px 20px; border-right:1px solid rgba(6,182,212,0.08); min-width:64px; text-align:center;">
-				<div style="font-size:9px; color:rgba(6,182,212,0.4); letter-spacing:3px;">GEAR</div>
-				<div id="c2-gear" style="font-size:32px; font-weight:700; color:#fff; line-height:1.2;">4</div>
-			</div>
-			<!-- RPM block -->
-			<div style="flex:1; padding:12px 20px; border-right:1px solid rgba(6,182,212,0.08);">
-				<div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-					<span style="font-size:9px; color:rgba(6,182,212,0.4); letter-spacing:3px;">ENGINE RPM</span>
-					<span id="c2-rpm-val" style="font-size:11px; color:rgba(6,182,212,0.6); font-variant-numeric:tabular-nums;">7200</span>
-				</div>
-				<!-- Segmented RPM bar -->
-				<div style="display:flex; gap:2px; height:8px;">
-					<div id="c2-rpm-s1" style="flex:1; background:#06b6d4; opacity:0.15; transition:opacity 0.05s;"></div>
-					<div id="c2-rpm-s2" style="flex:1; background:#06b6d4; opacity:0.15; transition:opacity 0.05s;"></div>
-					<div id="c2-rpm-s3" style="flex:1; background:#06b6d4; opacity:0.15; transition:opacity 0.05s;"></div>
-					<div id="c2-rpm-s4" style="flex:1; background:#06b6d4; opacity:0.15; transition:opacity 0.05s;"></div>
-					<div id="c2-rpm-s5" style="flex:1; background:#06b6d4; opacity:0.15; transition:opacity 0.05s;"></div>
-					<div id="c2-rpm-s6" style="flex:1; background:#06b6d4; opacity:0.15; transition:opacity 0.05s;"></div>
-					<div id="c2-rpm-s7" style="flex:1; background:#f43f5e; opacity:0.15; transition:opacity 0.05s;"></div>
-					<div id="c2-rpm-s8" style="flex:1; background:#f43f5e; opacity:0.15; transition:opacity 0.05s;"></div>
-				</div>
-			</div>
-			<!-- Throttle/Brake bars -->
-			<div style="padding:12px 16px; min-width:48px; border-right:1px solid rgba(6,182,212,0.08); text-align:center;">
-				<div style="font-size:8px; color:rgba(6,182,212,0.3); letter-spacing:2px;">THR</div>
-				<div style="width:12px; height:40px; background:rgba(6,182,212,0.06); border-radius:2px; margin:6px auto 0; position:relative;">
-					<div id="c2-thr" style="position:absolute; bottom:0; width:100%; height:60%; background:#06b6d4; border-radius:2px; transition:height 0.1s;"></div>
-				</div>
-			</div>
-			<div style="padding:12px 16px; min-width:48px; text-align:center;">
-				<div style="font-size:8px; color:rgba(6,182,212,0.3); letter-spacing:2px;">BRK</div>
-				<div style="width:12px; height:40px; background:rgba(244,63,94,0.06); border-radius:2px; margin:6px auto 0; position:relative;">
-					<div id="c2-brk" style="position:absolute; bottom:0; width:100%; height:0%; background:#f43f5e; border-radius:2px; transition:height 0.1s;"></div>
-				</div>
-			</div>
-		</div>
-	</div>
-
-	<!-- Top bar — world info strip -->
-	<div style="position:fixed; top:48px; left:0; right:0; z-index:100; pointer-events:none; font-family:'JetBrains Mono',monospace;">
-		<div style="display:flex; align-items:center; background:rgba(4,12,16,0.8); backdrop-filter:blur(12px); border-bottom:1px solid rgba(6,182,212,0.08); padding:6px 20px;">
-			<span style="font-size:9px; color:rgba(6,182,212,0.3); letter-spacing:3px;">SYS</span>
-			<span style="font-size:9px; color:rgba(6,182,212,0.15); margin:0 12px;">|</span>
-			<span style="font-size:9px; color:rgba(6,182,212,0.4);">SEED</span>
-			<span style="font-size:9px; color:rgba(255,255,255,0.4); margin-left:6px;">0042</span>
-			<span style="font-size:9px; color:rgba(6,182,212,0.15); margin:0 12px;">|</span>
-			<span style="font-size:9px; color:rgba(6,182,212,0.4);">TIME</span>
-			<span style="font-size:9px; color:rgba(255,255,255,0.4); margin-left:6px;">18:30</span>
-			<span style="font-size:9px; color:rgba(6,182,212,0.15); margin:0 12px;">|</span>
-			<span style="font-size:9px; color:rgba(6,182,212,0.4);">WX</span>
-			<span style="font-size:9px; color:rgba(255,255,255,0.4); margin-left:6px;">CLEAR</span>
-			<span style="font-size:9px; color:rgba(6,182,212,0.15); margin:0 12px;">|</span>
-			<span style="font-size:9px; color:rgba(6,182,212,0.4);">POS</span>
-			<span style="font-size:9px; color:rgba(255,255,255,0.4); margin-left:6px;">142.3 / 88.1 / 12.0</span>
-			<!-- Right side controls -->
-			<div style="margin-left:auto; display:flex; gap:12px;">
-				<span style="font-size:9px; color:rgba(6,182,212,0.2); letter-spacing:1px;">W/S A/D SPACE R</span>
-			</div>
-		</div>
-	</div>
-
-	<!-- Corner brackets decoration -->
-	<div style="position:fixed; top:56px; left:4px; width:16px; height:16px; border-left:2px solid rgba(6,182,212,0.15); border-top:2px solid rgba(6,182,212,0.15); pointer-events:none; z-index:90;"></div>
-	<div style="position:fixed; top:56px; right:4px; width:16px; height:16px; border-right:2px solid rgba(6,182,212,0.15); border-top:2px solid rgba(6,182,212,0.15); pointer-events:none; z-index:90;"></div>
-	<div style="position:fixed; bottom:56px; left:4px; width:16px; height:16px; border-left:2px solid rgba(6,182,212,0.15); border-bottom:2px solid rgba(6,182,212,0.15); pointer-events:none; z-index:90;"></div>
-	<div style="position:fixed; bottom:56px; right:4px; width:16px; height:16px; border-right:2px solid rgba(6,182,212,0.15); border-bottom:2px solid rgba(6,182,212,0.15); pointer-events:none; z-index:90;"></div>
-
-	<!-- Notification — terminal style -->
-	<div style="position:fixed; top:90px; left:50%; transform:translateX(-50%); z-index:200; pointer-events:none; font-family:'JetBrains Mono',monospace;
-		padding:8px 20px; border:1px solid rgba(6,182,212,0.15); background:rgba(4,12,16,0.8);
-		font-size:10px; color:rgba(6,182,212,0.6); letter-spacing:1px;">
-		<span style="color:rgba(163,230,53,0.6);">[OK]</span> WORLD LOADED
-	</div>
+<!-- RPM edge bar -->
+<div class="rpm-edge">
+	<div class="track"><div class="fill" id="rpm-edge-fill" style="width:72%"></div></div>
 </div>
 
-<!-- ============================================================ -->
-<!-- CONCEPT 3: RACE BROADCAST                                     -->
-// Clean broadcast TV overlay, like watching a race on TV          -->
-// Compact, high info density, always readable                    -->
-// Inspired: F1 TV graphics, WEC broadcast, IMSA coverage         -->
-<!-- ============================================================ -->
-<div class="concept" id="concept3">
-	<div class="canvas-bg"></div>
-
-	<!-- Bottom left — nameplate + speed -->
-	<div style="position:fixed; bottom:24px; left:24px; z-index:100; pointer-events:none; font-family:'Inter',sans-serif;">
-		<!-- Driver nameplate -->
-		<div style="display:flex; align-items:stretch;">
-			<div style="background:rgba(244,63,94,0.9); padding:6px 12px; display:flex; align-items:center;">
-				<span style="font-size:16px; font-weight:800; color:#fff; letter-spacing:1px;">86</span>
-			</div>
-			<div style="background:rgba(10,8,14,0.85); backdrop-filter:blur(10px); padding:6px 16px; display:flex; align-items:center; border:1px solid rgba(244,63,94,0.15); border-left:none;">
-				<span style="font-size:13px; font-weight:600; color:rgba(255,255,255,0.8); letter-spacing:0.5px;">AE86 TRUENO</span>
-			</div>
-		</div>
-		<!-- Speed below nameplate -->
-		<div style="margin-top:6px; background:rgba(10,8,14,0.85); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.06); padding:8px 16px; display:inline-flex; align-items:baseline; gap:6px;">
-			<span id="c3-speed" style="font-size:32px; font-weight:700; color:#fff; font-variant-numeric:tabular-nums; letter-spacing:-1px;">142</span>
-			<span style="font-size:11px; color:rgba(255,255,255,0.3); font-weight:500;">km/h</span>
-			<span style="margin:0 8px; color:rgba(255,255,255,0.08);">|</span>
-			<span style="font-size:10px; color:rgba(255,255,255,0.25); font-weight:500;">GEAR</span>
-			<span id="c3-gear" style="font-size:18px; font-weight:700; color:rgba(244,63,94,0.8);">4</span>
-			<span style="margin:0 8px; color:rgba(255,255,255,0.08);">|</span>
-			<span style="font-size:10px; color:rgba(255,255,255,0.25); font-weight:500;">RPM</span>
-			<span id="c3-rpm" style="font-size:18px; font-weight:700; color:rgba(255,255,255,0.7); font-variant-numeric:tabular-nums;">7200</span>
-		</div>
-	</div>
-
-	<!-- Top left — session timer -->
-	<div style="position:fixed; top:52px; left:24px; z-index:100; pointer-events:none; font-family:'Inter',sans-serif;">
-		<div style="background:rgba(10,8,14,0.8); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.06); padding:8px 14px; display:flex; align-items:center; gap:10px;">
-			<div style="width:6px; height:6px; border-radius:50%; background:#f43f5e; animation:pulse3 2s infinite;"></div>
-			<span style="font-size:10px; color:rgba(255,255,255,0.3); font-weight:600; letter-spacing:1px;">LIVE</span>
-			<span style="font-size:14px; color:rgba(255,255,255,0.7); font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:0.5px;">00:00:00</span>
-		</div>
-	</div>
-
-	<!-- Top right — weather/conditions -->
-	<div style="position:fixed; top:52px; right:24px; z-index:100; pointer-events:none; font-family:'Inter',sans-serif;">
-		<div style="background:rgba(10,8,14,0.8); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.06); padding:8px 14px; display:flex; align-items:center; gap:12px;">
-			<span style="font-size:11px; color:rgba(255,255,255,0.4); font-weight:500;">18:30</span>
-			<span style="color:rgba(255,255,255,0.08);">|</span>
-			<span style="font-size:11px; color:rgba(255,255,255,0.4); font-weight:500;">Clear</span>
-			<span style="color:rgba(255,255,255,0.08);">|</span>
-			<span style="font-size:11px; color:rgba(255,255,255,0.4); font-weight:500;">Dry</span>
-		</div>
-	</div>
-
-	<!-- Bottom right — position badge -->
-	<div style="position:fixed; bottom:24px; right:24px; z-index:100; pointer-events:none; font-family:'Inter',sans-serif;">
-		<div style="background:rgba(10,8,14,0.8); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.06); padding:8px 16px; text-align:center;">
-			<div style="font-size:10px; color:rgba(255,255,255,0.25); font-weight:600; letter-spacing:1px;">FREE ROAM</div>
-			<div style="font-size:9px; color:rgba(255,255,255,0.15); margin-top:2px; letter-spacing:0.5px;">W/S A/D SPACE R</div>
-		</div>
-	</div>
-
-	<!-- Minimal RPM bar at very bottom edge -->
-	<div style="position:fixed; bottom:0; left:0; right:0; height:3px; z-index:100; pointer-events:none;">
-		<div style="height:100%; background:rgba(255,255,255,0.03);">
-			<div id="c3-rpm-bar" style="height:100%; width:72%; transition:width 0.05s linear;
-				background:linear-gradient(90deg, rgba(255,255,255,0.15), rgba(244,63,94,0.6));"></div>
-		</div>
-	</div>
-
-	<style>
-		@keyframes pulse3 { 0%,100%{opacity:1} 50%{opacity:0.3} }
-	</style>
-</div>
-
-<!-- ============================================================ -->
-<!-- CONCEPT 4: MIDNIGHT GRID                                      -->
-// Geometric, structured, tron-like grid aesthetic                  -->
-// Angular shapes, grid patterns, sharp edges, data panels          -->
-// Inspired: TRON Legacy, geometric art, circuit board patterns     -->
-<!-- ============================================================ -->
-<div class="concept" id="concept4">
-	<div class="canvas-bg"></div>
-
-	<!-- Grid overlay -->
-	<div style="position:fixed; inset:0; pointer-events:none; z-index:40; opacity:0.03;
-		background-image:
-			linear-gradient(rgba(163,230,53,1) 1px, transparent 1px),
-			linear-gradient(90deg, rgba(163,230,53,1) 1px, transparent 1px);
-		background-size: 40px 40px;"></div>
-
-	<!-- Speed — center bottom, large geometric -->
-	<div style="position:fixed; bottom:32px; left:50%; transform:translateX(-50%); z-index:100; pointer-events:none; font-family:'Chakra+Petch',sans-serif; text-align:center;">
-		<!-- Speed number with geometric frame -->
-		<div style="position:relative; display:inline-block;">
-			<div style="position:absolute; top:-1px; left:20px; right:20px; height:1px; background:linear-gradient(90deg, transparent, rgba(163,230,53,0.3), transparent);"></div>
-			<div style="position:absolute; bottom:-1px; left:20px; right:20px; height:1px; background:linear-gradient(90deg, transparent, rgba(163,230,53,0.2), transparent);"></div>
-			<div style="padding:8px 40px;">
-				<div id="c4-speed" style="font-size:88px; font-weight:700; color:#fff; line-height:0.9; letter-spacing:-2px; font-variant-numeric:tabular-nums;">142</div>
-				<div style="font-size:11px; color:rgba(163,230,53,0.35); letter-spacing:10px; font-weight:600;">KM/H</div>
-			</div>
-		</div>
-		<!-- Gear + RPM below -->
-		<div style="display:flex; align-items:center; justify-content:center; gap:24px; margin-top:12px;">
-			<div style="display:flex; align-items:center; gap:8px;">
-				<div style="width:32px; height:32px; border:1px solid rgba(163,230,53,0.15); display:flex; align-items:center; justify-content:center; transform:rotate(45deg);">
-					<div id="c4-gear" style="font-size:20px; font-weight:700; color:#a3e635; transform:rotate(-45deg);">4</div>
-				</div>
-				<span style="font-size:9px; color:rgba(163,230,53,0.2); letter-spacing:3px;">GEAR</span>
-			</div>
-			<div style="width:160px;">
-				<div style="display:flex; gap:1px; height:6px;">
-					<div id="c4-r1" style="flex:1; background:rgba(163,230,53,0.08); transition:background 0.05s;"></div>
-					<div id="c4-r2" style="flex:1; background:rgba(163,230,53,0.08); transition:background 0.05s;"></div>
-					<div id="c4-r3" style="flex:1; background:rgba(163,230,53,0.08); transition:background 0.05s;"></div>
-					<div id="c4-r4" style="flex:1; background:rgba(163,230,53,0.08); transition:background 0.05s;"></div>
-					<div id="c4-r5" style="flex:1; background:rgba(163,230,53,0.08); transition:background 0.05s;"></div>
-					<div id="c4-r6" style="flex:1; background:rgba(163,230,53,0.08); transition:background 0.05s;"></div>
-					<div id="c4-r7" style="flex:1; background:rgba(163,230,53,0.08); transition:background 0.05s;"></div>
-					<div id="c4-r8" style="flex:1; background:rgba(163,230,53,0.08); transition:background 0.05s;"></div>
-					<div id="c4-r9" style="flex:1; background:rgba(163,230,53,0.08); transition:background 0.05s;"></div>
-					<div id="c4-r10" style="flex:1; background:rgba(163,230,53,0.08); transition:background 0.05s;"></div>
-				</div>
-				<div style="display:flex; justify-content:space-between; margin-top:3px;">
-					<span style="font-size:8px; color:rgba(163,230,53,0.12);">0</span>
-					<span style="font-size:8px; color:rgba(163,230,53,0.12);">8000</span>
-				</div>
-			</div>
-		</div>
-	</div>
-
-	<!-- Left panel — data readout -->
-	<div style="position:fixed; top:52px; left:16px; z-index:100; pointer-events:none; font-family:'Chakra+Petch',sans-serif;">
-		<div style="background:rgba(6,10,4,0.7); border:1px solid rgba(163,230,53,0.06); padding:12px 16px; min-width:140px;">
-			<div style="font-size:9px; color:rgba(163,230,53,0.2); letter-spacing:3px; margin-bottom:10px;">WORLD DATA</div>
-			<div style="font-size:10px; line-height:2.2;">
-				<div style="display:flex; justify-content:space-between;">
-					<span style="color:rgba(163,230,53,0.2);">SEED</span>
-					<span style="color:rgba(255,255,255,0.35);">0042</span>
-				</div>
-				<div style="display:flex; justify-content:space-between;">
-					<span style="color:rgba(163,230,53,0.2);">TIME</span>
-					<span style="color:rgba(255,255,255,0.35);">18:30</span>
-				</div>
-				<div style="display:flex; justify-content:space-between;">
-					<span style="color:rgba(163,230,53,0.2);">WEATHER</span>
-					<span style="color:rgba(255,255,255,0.35);">CLEAR</span>
-				</div>
-				<div style="display:flex; justify-content:space-between;">
-					<span style="color:rgba(163,230,53,0.2);">TERRAIN</span>
-					<span style="color:rgba(255,255,255,0.35);">GRASS</span>
-				</div>
-			</div>
-		</div>
-	</div>
-
-	<!-- Right panel — controls -->
-	<div style="position:fixed; top:52px; right:16px; z-index:100; pointer-events:none; font-family:'Chakra+Petch',sans-serif;">
-		<div style="background:rgba(6,10,4,0.7); border:1px solid rgba(163,230,53,0.06); padding:12px 16px; min-width:140px;">
-			<div style="font-size:9px; color:rgba(163,230,53,0.2); letter-spacing:3px; margin-bottom:10px;">CONTROLS</div>
-			<div style="font-size:10px; line-height:2.2; color:rgba(255,255,255,0.2);">
-				<div>W/S &middot; THROTTLE</div>
-				<div>A/D &middot; STEER</div>
-				<div>SPACE &middot; HANDBRAKE</div>
-				<div>R &middot; RESET</div>
-			</div>
-		</div>
-	</div>
-
-	<!-- Center notification — geometric frame -->
-	<div style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:200; pointer-events:none; font-family:'Chakra+Petch',sans-serif;">
-		<div style="position:relative; padding:10px 24px; background:rgba(6,10,4,0.8); border:1px solid rgba(163,230,53,0.1);">
-			<div style="position:absolute; top:-4px; left:-4px; width:8px; height:8px; border-top:1px solid rgba(163,230,53,0.3); border-left:1px solid rgba(163,230,53,0.3);"></div>
-			<div style="position:absolute; top:-4px; right:-4px; width:8px; height:8px; border-top:1px solid rgba(163,230,53,0.3); border-right:1px solid rgba(163,230,53,0.3);"></div>
-			<div style="position:absolute; bottom:-4px; left:-4px; width:8px; height:8px; border-bottom:1px solid rgba(163,230,53,0.3); border-left:1px solid rgba(163,230,53,0.3);"></div>
-			<div style="position:absolute; bottom:-4px; right:-4px; width:8px; height:8px; border-bottom:1px solid rgba(163,230,53,0.3); border-right:1px solid rgba(163,230,53,0.3);"></div>
-			<span style="font-size:10px; color:rgba(163,230,53,0.5); letter-spacing:3px;">WORLD LOADED</span>
-		</div>
-	</div>
-
-	<!-- Perspective grid at bottom -->
-	<div style="position:fixed; bottom:0; left:0; right:0; height:80px; pointer-events:none; z-index:45;
-		background:linear-gradient(to top, rgba(163,230,53,0.02), transparent);
-		border-top:1px solid rgba(163,230,53,0.04);"></div>
-</div>
+<!-- Toast notification -->
+<div class="toast"><span class="ok">[OK]</span> WORLD LOADED</div>
 
 <script type="module">
 import * as THREE from "three";
 
-// ── Concept info ────────────────────────────────────────────────
-const conceptInfo = {
-	1: {
-		name: "Tokyo Drift",
-		philosophy: "Organic neon glow. The UI breathes with the city. Soft edges, wide letterforms, everything bathed in purple light. This is racing through neon-soaked streets at midnight.",
-		inspired: "Wangan Midnight, Initial D night scenes, Shibuya neon districts, Japanese underground racing culture",
-		typography: "Orbitron (geometric, wide) — futuristic but organic. Large speed number with heavy text-shadow glow. Lowercase labels with wide letter-spacing.",
-		layout: "Asymmetric bottom-left speed cluster. Session info bottom-right. World info top-center. Lots of negative space. Toast centered.",
-		colors: "Purple (#8b5cf6) accent on near-black (#06040a). White for primary data. Glow effects via text-shadow and box-shadow. Subtle gradient lines.",
-		personality: "Underground, atmospheric, stylish. The city is alive and you're part of it. Not clinical, not aggressive — just cool.",
-		components: "Speed/gear/RPM cluster, session info panel, controls reference, world info strip, centered notification toast, scanline overlay",
-		pros: ["Strong mood and atmosphere", "Gorgeous at night", "Memorable identity", "Breathing/alive feel with glow"],
-		cons: ["Glow can reduce readability in bright areas", "Scanline overlay is polarizing", "Less information dense"],
-		identity: "Neon Underground",
-		tags: [
-			{ text: "Neon", bg: "rgba(139,92,246,0.1)", color: "#8b5cf6" },
-			{ text: "Glow", bg: "rgba(139,92,246,0.1)", color: "#8b5cf6" },
-			{ text: "Atmospheric", bg: "rgba(139,92,246,0.1)", color: "#8b5cf6" },
-			{ text: "Asymmetric", bg: "rgba(139,92,246,0.1)", color: "#8b5cf6" },
-		]
-	},
-	2: {
-		name: "HUD Terminal",
-		philosophy: "Data-dense military-grade display. Every value labeled, every section bordered. The screen IS the dashboard. Compact, efficient, zero wasted pixels.",
-		inspired: "TRON Legacy light cycles, fighter jet HUDs, sci-fi cockpit interfaces, military targeting systems",
-		typography: "JetBrains Mono (monospace) — every character identical width, perfect alignment. Thin weight for values, bold for current gear. All-caps labels with wide tracking.",
-		layout: "Full-width bottom bar with speed/gear/RPM/throttle/brake in one strip. Top bar with system data. Viewport frame border. Corner bracket decorations.",
-		colors: "Cyan (#06b6d4) on dark teal-black (#040c10). Red (#f43f5e) for brake and redline. Every element has a subtle border. Terminal green for success states.",
-		components: "Bottom data strip (speed/gear/segmented RPM/throttle bar/brake bar), top system bar (seed/time/weather/position), viewport frame, corner brackets, terminal-style notification",
-		pros: ["Maximum information density", "Every pixel justified", "Professional/technical feel", "Segmented RPM is instantly readable"],
-		cons: ["Can feel cramped", "Border-heavy", "Less atmospheric", "May overwhelm casual players"],
-		identity: "Tactical Display",
-		tags: [
-			{ text: "Terminal", bg: "rgba(6,182,212,0.1)", color: "#06b6d4" },
-			{ text: "Data-Dense", bg: "rgba(6,182,212,0.1)", color: "#06b6d4" },
-			{ text: "Bordered", bg: "rgba(6,182,212,0.1)", color: "#06b6d4" },
-			{ text: "Compact", bg: "rgba(6,182,212,0.1)", color: "#06b6d4" },
-		]
-	},
-	3: {
-		name: "Race Broadcast",
-		philosophy: "Clean TV broadcast overlay. Watch a race on television. Compact, always readable, professional. The car and world are the star — the UI just tells you what you need to know.",
-		inspired: "F1 TV graphics, WEC/Le Mans broadcast, IMSA coverage, Supercars Championship TV",
-		typography: "Inter (clean sans-serif) — the most readable font available. Medium weight for data, bold for speed. Small labels in muted color. No display fonts.",
-		layout: "Bottom-left: car number badge + nameplate + speed/gear/RPM inline. Top-left: live timer. Top-right: conditions. Bottom-right: session type. RPM as thin bottom-edge bar.",
-		colors: "White on near-black with rose accent (#f43f5e) for the car number badge and live indicator. No glow, no neon. Subtle borders, glassmorphism panels.",
-		components: "Car number + name badge, inline speed/gear/RPM readout, live session timer with pulse dot, weather/conditions strip, session type label, thin RPM edge bar, minimal notification",
-		pros: ["Most readable design", "Professional broadcast feel", "Non-intrusive", "Works in any lighting"],
-		cons: ["Least distinctive personality", "Generic feel", "No atmosphere/mood", "May feel too plain for a game"],
-		identity: "TV Broadcast",
-		tags: [
-			{ text: "Clean", bg: "rgba(244,63,94,0.1)", color: "#f43f5e" },
-			{ text: "Broadcast", bg: "rgba(244,63,94,0.1)", color: "#f43f5e" },
-			{ text: "Readable", bg: "rgba(244,63,94,0.1)", color: "#f43f5e" },
-			{ text: "Minimal", bg: "rgba(244,63,94,0.1)", color: "#f43f5e" },
-		]
-	},
-	4: {
-		name: "Midnight Grid",
-		philosophy: "Geometric precision meets digital racing. Angular shapes, grid patterns, structured data panels. The world is a wireframe and you're navigating its geometry.",
-		inspired: "TRON Legacy aesthetic, circuit board patterns, geometric art, wireframe landscapes, synthwave grids",
-		typography: "Chakra Petch (geometric, angular) — designed for tech/futuristic UIs. Sharp angles echo the grid theme. Diamond-shaped gear indicator rotated 45deg.",
-		layout: "Centered bottom speed with geometric frame lines. Left data panel (world info). Right data panel (controls). Centered diamond-cornered notification. Full-screen grid overlay.",
-		colors: "Lime (#a3e635) on deep green-black (#060a04). Geometric accent lines. Grid overlay at 3% opacity. Corner bracket decorations on panels.",
-		components: "Centered speed with horizontal accent lines, diamond-rotated gear indicator, segmented RPM bar, left data panel (seed/time/weather/terrain), right controls panel, corner-bracketed notification, perspective grid floor",
-		pros: ["Unique geometric identity", "Grid creates depth", "Structured and clean", "Diamond gear indicator is distinctive"],
-		cons: ["Lime green is unusual for racing", "Grid overlay can be distracting", "Less emotional warmth", "Angular feel may not suit all"],
-		identity: "Digital Geometry",
-		tags: [
-			{ text: "Geometric", bg: "rgba(163,230,53,0.1)", color: "#a3e635" },
-			{ text: "Grid", bg: "rgba(163,230,53,0.1)", color: "#a3e635" },
-			{ text: "Angular", bg: "rgba(163,230,53,0.1)", color: "#a3e635" },
-			{ text: "Structured", bg: "rgba(163,230,53,0.1)", color: "#a3e635" },
-		]
-	}
-};
+const container = document.getElementById("bg");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x06040a);
+scene.fog = new THREE.FogExp2(0x06040a, 0.004);
 
-// ── Three.js backgrounds ─────────────────────────────────────────
-const scenes = {};
-let activeConcept = 1;
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+camera.position.set(0, 60, 140);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+container.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0x88bbff, 0x445511, 0.3));
+const dir = new THREE.DirectionalLight(0xffffcc, 0.8);
+dir.position.set(100, 150, 50);
+scene.add(dir);
+
+const accent = new THREE.PointLight(new THREE.Color(0x8b5cf6), 2, 300);
+accent.position.set(0, 30, 0);
+scene.add(accent);
+
+const ground = new THREE.Mesh(
+	new THREE.PlaneGeometry(2000, 2000),
+	new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -20;
+scene.add(ground);
+
+const geo = new THREE.TorusKnotGeometry(15, 4, 128, 32);
+const mat = new THREE.MeshStandardMaterial({
+	color: 0x8b5cf6, metalness: 0.6, roughness: 0.3,
+	emissive: 0x8b5cf6, emissiveIntensity: 0.1
+});
+const mesh = new THREE.Mesh(geo, mat);
+scene.add(mesh);
+
 let t = 0;
-
-function initBg(id, bgColor, fogColor, accentHex) {
-	const container = document.querySelector(`#concept${id} .canvas-bg`);
-	const scene = new THREE.Scene();
-	scene.background = new THREE.Color(bgColor);
-	scene.fog = new THREE.FogExp2(fogColor, 0.004);
-	const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-	camera.position.set(0, 60, 140);
-	const renderer = new THREE.WebGLRenderer({ antialias: true });
-	renderer.setSize(window.innerWidth, window.innerHeight);
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-	renderer.toneMapping = THREE.ACESFilmicToneMapping;
-	renderer.toneMappingExposure = 1.0;
-	container.appendChild(renderer.domElement);
-	scene.add(new THREE.HemisphereLight(0x88bbff, 0x445511, 0.3));
-	const dir = new THREE.DirectionalLight(0xffffcc, 0.8);
-	dir.position.set(100, 150, 50);
-	scene.add(dir);
-	const accent = new THREE.PointLight(new THREE.Color(accentHex), 2, 300);
-	accent.position.set(0, 30, 0);
-	scene.add(accent);
-	const ground = new THREE.Mesh(
-		new THREE.PlaneGeometry(2000, 2000),
-		new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 })
-	);
-	ground.rotation.x = -Math.PI / 2;
-	ground.position.y = -20;
-	scene.add(ground);
-	const geo = new THREE.TorusKnotGeometry(15, 4, 128, 32);
-	const mat = new THREE.MeshStandardMaterial({
-		color: new THREE.Color(accentHex), metalness: 0.6, roughness: 0.3,
-		emissive: new THREE.Color(accentHex), emissiveIntensity: 0.1
-	});
-	const mesh = new THREE.Mesh(geo, mat);
-	scene.add(mesh);
-	scenes[id] = { scene, camera, renderer, mesh, accent };
-}
-
-initBg(1, 0x06040a, 0x06040a, 0x8b5cf6);
-initBg(2, 0x040c10, 0x040c10, 0x06b6d4);
-initBg(3, 0x0a080e, 0x0a080e, 0xf43f5e);
-initBg(4, 0x060a04, 0x060a04, 0xa3e635);
 
 function animate() {
 	requestAnimationFrame(animate);
 	t += 0.016;
-	const bg = scenes[activeConcept];
-	if (!bg) return;
-	bg.mesh.rotation.x += 0.002;
-	bg.mesh.rotation.y += 0.004;
-	bg.accent.intensity = 2 + Math.sin(t * 2) * 0.5;
-	bg.renderer.render(bg.scene, bg.camera);
 
-	// Animated values
+	mesh.rotation.x += 0.002;
+	mesh.rotation.y += 0.004;
+	accent.intensity = 2 + Math.sin(t * 2) * 0.5;
+	renderer.render(scene, camera);
+
+	// Animate values
 	const speed = 60 + Math.sin(t * 0.5) * 80 + Math.sin(t * 1.3) * 20;
 	const rpm = 0.3 + Math.abs(Math.sin(t * 0.8)) * 0.65;
 	const gear = Math.min(Math.floor(Math.max(0, speed) / 40), 4) + 1;
 	const rpmVal = Math.round(rpm * 8000);
 
-	// Concept 1 — Tokyo Drift
-	const el = (id) => document.getElementById(id);
-	if (el('c1-speed')) el('c1-speed').textContent = Math.max(0, Math.round(speed));
-	if (el('c1-gear')) el('c1-gear').textContent = gear;
-	if (el('c1-rpm')) {
-		el('c1-rpm').style.width = `${rpm * 100}%`;
-		el('c1-rpm').style.background = rpm > 0.85
-			? 'linear-gradient(90deg, #8b5cf6, #f43f5e)'
-			: 'linear-gradient(90deg, #8b5cf6, #a78bfa, #c4b5fd)';
-	}
+	const $ = (id) => document.getElementById(id);
+	if ($("speed")) $("speed").textContent = Math.max(0, Math.round(speed));
+	if ($("gear")) $("gear").textContent = gear;
+	if ($("rpm")) $("rpm").textContent = rpmVal;
+	if ($("rpm-val")) $("rpm-val").textContent = rpmVal;
+	if ($("rpm-edge-fill")) $("rpm-edge-fill").style.width = `${rpm * 100}%`;
 
-	// Concept 2 — HUD Terminal
-	if (el('c2-speed')) el('c2-speed').textContent = Math.max(0, Math.round(speed));
-	if (el('c2-gear')) el('c2-gear').textContent = gear;
-	if (el('c2-rpm-val')) el('c2-rpm-val').textContent = rpmVal;
-	// Segmented RPM — 8 segments
+	// Segmented RPM — 8 segments, last 2 are red zone
 	for (let i = 1; i <= 8; i++) {
-		const seg = el(`c2-rpm-s${i}`);
-		if (seg) seg.style.opacity = (rpm * 8) >= i ? (i >= 7 ? '0.8' : '0.6') : '0.15';
-	}
-	// Throttle/brake simulation
-	if (el('c2-thr')) el('c2-thr').style.height = `${Math.max(0, Math.sin(t * 0.3)) * 100}%`;
-	if (el('c2-brk')) el('c2-brk').style.height = `${Math.max(0, -Math.sin(t * 0.7)) * 40}%`;
-
-	// Concept 3 — Race Broadcast
-	if (el('c3-speed')) el('c3-speed').textContent = Math.max(0, Math.round(speed));
-	if (el('c3-gear')) el('c3-gear').textContent = gear;
-	if (el('c3-rpm')) el('c3-rpm').textContent = rpmVal;
-	if (el('c3-rpm-bar')) el('c3-rpm-bar').style.width = `${rpm * 100}%`;
-
-	// Concept 4 — Midnight Grid
-	if (el('c4-speed')) el('c4-speed').textContent = Math.max(0, Math.round(speed));
-	if (el('c4-gear')) el('c4-gear').textContent = gear;
-	// 10-segment RPM
-	for (let i = 1; i <= 10; i++) {
-		const seg = el(`c4-r${i}`);
-		if (seg) seg.style.background = (rpm * 10) >= i ? 'rgba(163,230,53,0.5)' : 'rgba(163,230,53,0.08)';
+		const seg = $(`s${i}`);
+		if (!seg) continue;
+		const filled = (rpm * 8) >= i;
+		const isRed = i >= 7;
+		if (filled) {
+			seg.style.background = isRed ? "rgba(244,63,94,0.6)" : "rgba(139,92,246,0.5)";
+		} else {
+			seg.style.background = isRed ? "rgba(244,63,94,0.06)" : "rgba(139,92,246,0.06)";
+		}
 	}
 }
 
 animate();
 
-// ── Tab switching ────────────────────────────────────────────────
-const tabs = document.querySelectorAll('.nav-tab');
-const concepts = document.querySelectorAll('.concept');
-const infoPanel = document.getElementById('infoPanel');
-const infoToggle = document.getElementById('infoToggle');
-
-function showInfo(n) {
-	const c = conceptInfo[n];
-	infoPanel.innerHTML = `
-		<h3>${c.name}</h3>
-		<p style="margin-bottom:14px; font-style:italic; opacity:0.7; color:rgba(255,255,255,0.4);">${c.identity}</p>
-		<p style="margin-bottom:14px;">${c.philosophy}</p>
-		<h4>Inspired by</h4>
-		<p style="margin-bottom:14px;">${c.inspired}</p>
-		<h4>Typography</h4>
-		<p style="margin-bottom:14px;">${c.typography}</p>
-		<h4>Layout</h4>
-		<p style="margin-bottom:14px;">${c.layout}</p>
-		<h4>Colors</h4>
-		<p style="margin-bottom:14px;">${c.colors}</p>
-		<h4>Personality</h4>
-		<p style="margin-bottom:14px;">${c.personality}</p>
-		<h4>Components shown</h4>
-		<p style="margin-bottom:14px;">${c.components}</p>
-		<h4>Strengths</h4>
-		<ul style="margin-bottom:14px;">${c.pros.map(p => `<li>${p}</li>`).join('')}</ul>
-		<h4>Trade-offs</h4>
-		<ul style="margin-bottom:16px;">${c.cons.map(p => `<li>${p}</li>`).join('')}</ul>
-		<div>${c.tags.map(t => `<span class="tag" style="background:${t.bg}; color:${t.color};">${t.text}</span>`).join('')}</div>
-	`;
-}
-
-tabs.forEach(tab => {
-	tab.addEventListener('click', () => {
-		const n = Number(tab.dataset.concept);
-		activeConcept = n;
-		tabs.forEach(t => { t.classList.remove('active'); t.style.borderBottomColor = 'transparent'; });
-		tab.classList.add('active');
-		concepts.forEach(c => c.classList.remove('active'));
-		document.getElementById(`concept${n}`).classList.add('active');
-		const colors = { 1: '#8b5cf6', 2: '#06b6d4', 3: '#f43f5e', 4: '#a3e635' };
-		tab.style.borderBottomColor = colors[n];
-		const bg = scenes[activeConcept];
-		if (bg) {
-			bg.renderer.setSize(window.innerWidth, window.innerHeight);
-			bg.camera.aspect = window.innerWidth / window.innerHeight;
-			bg.camera.updateProjectionMatrix();
-		}
-		showInfo(activeConcept);
-	});
-});
-
-infoToggle.addEventListener('click', () => {
-	infoPanel.classList.toggle('open');
-	infoToggle.textContent = infoPanel.classList.contains('open') ? 'Close' : 'About';
-});
-
-showInfo(1);
-
-window.addEventListener('resize', () => {
-	Object.values(scenes).forEach(bg => {
-		bg.renderer.setSize(window.innerWidth, window.innerHeight);
-		bg.camera.aspect = window.innerWidth / window.innerHeight;
-		bg.camera.updateProjectionMatrix();
-	});
+window.addEventListener("resize", () => {
+	camera.aspect = window.innerWidth / window.innerHeight;
+	camera.updateProjectionMatrix();
+	renderer.setSize(window.innerWidth, window.innerHeight);
 });
 </script>
 </body>
