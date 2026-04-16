@@ -1,5 +1,12 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["src/server/index.ts", "src/client/track.ts", "src/client/practice.ts", "src/client/debug-physics.ts"],
-  "project": ["src/**/*.ts"]
+	"$schema": "https://unpkg.com/knip@5/schema.json",
+	"entry": [
+		"src/server/index.ts",
+		"src/client/track.ts",
+		"src/client/practice.ts",
+		"src/client/debug-physics.ts",
+		"src/client/garage.ts"
+	],
+	"project": ["src/**/*.ts"],
+	"ignore": ["src/client/audio/index.ts", "src/client/vehicle/world/index.ts"]
 }

@@ -121,7 +121,7 @@ document.getElementById("garageBtn")?.addEventListener("click", () => {
 
 document.getElementById("backBtn")?.addEventListener("click", () => {
 	const referrer = document.referrer;
-	if (referrer && referrer.includes("garage")) {
+	if (referrer?.includes("garage")) {
 		window.location.href = referrer;
 	} else {
 		window.location.href = "/garage";

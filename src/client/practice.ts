@@ -6,6 +6,7 @@
  */
 
 import * as THREE from "three";
+import { deriveSoundConfig } from "./audio/audio-profiles.ts";
 import { state } from "./scene.ts";
 import { applyTimeOfDay } from "./sky.ts";
 import { updateTerrainShadows } from "./terrain.ts";
@@ -21,8 +22,8 @@ import type { SpeedDisplay } from "./ui/speed-display.ts";
 import type { SpeedTrap } from "./ui/speed-trap.ts";
 import type { SteerIndicator } from "./ui/steer-indicator.ts";
 import type { WeatherType } from "./utils.ts";
+import { SPORTS_CAR } from "./vehicle/configs.ts";
 import { DEFAULT_INPUT, VehicleController, type VehicleInput } from "./vehicle/index.ts";
-import { SPORTS_CAR } from "./vehicle/types.ts";
 import { updateWeather } from "./weather.ts";
 import { buildWorld, type WorldResult } from "./world.ts";
 
@@ -304,6 +305,23 @@ async function buildPractice(): Promise<void> {
 	world.scene.add(carModel);
 
 	vehicle.setTerrain(world.terrain);
+
+	const startAudio = () => {
+		const soundConfig =
+			carConfig.sound ||
+			deriveSoundConfig({
+				cylinders: 4,
+				idleRPM: carConfig.engine.idleRPM,
+				maxRPM: carConfig.engine.maxRPM,
+				turbo: carConfig.engine.turbo,
+			});
+		vehicle.initAudio(soundConfig);
+		window.removeEventListener("keydown", startAudio);
+		window.removeEventListener("click", startAudio);
+	};
+	window.addEventListener("keydown", startAudio);
+	window.addEventListener("click", startAudio);
+
 	state.headlights = vehicle.headlights;
 	applyTimeOfDay(hour);
 	setupCameraInput(world.renderer);

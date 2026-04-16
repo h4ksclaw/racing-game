@@ -2,157 +2,233 @@
 
 ## Overview
 
-A browser-based procedural racing game built with **Three.js** + **TypeScript**. Tracks are generated using seeded PRNGs and rendered with custom GLSL shaders and instanced meshes. Features include 6 biomes, dynamic weather, day/night cycle, procedural houses, guardrails, and arcade car physics.
+A browser-based procedural racing game built with **Three.js** + **TypeScript** + **Lit**. Tracks are generated using seeded PRNGs and rendered with custom GLSL shaders and instanced meshes. Features include 6 biomes, dynamic weather, day/night cycle, procedural houses, guardrails, custom arcade car physics, and procedural engine sound synthesis.
 
-**Philosophy:** YAGNI, KISS, DRY. Features built for testing/development are real features.
+**Philosophy:** YAGNI, KISS, DRY. Features built for testing/development are real features. No spaghetti code — modular, testable, OOP with clean boundaries.
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                    Browser (Client)                          │
-│                                                              │
-│  practice.ts ──► buildWorld() ──► Three.js Scene             │
-│  track.ts (viewer)                                           │
-│       │                                                      │
-│       ├──── road.ts ──────────► road mesh (instanced)        │
-│       ├──── terrain.ts ───────► heightmap (GLSL shader)      │
-│       ├──── scenery.ts ───────► trees, rocks, grass, lights  │
-│       ├──── buildings.ts ──────► procedural houses            │
-│       ├──── sky.ts ───────────► sky dome, sun, stars         │
-│       ├──── clouds.ts ────────► cloud layer                  │
-│       ├──── weather.ts ───────► rain/snow/fog                │
-│       ├──── biomes.ts ────────► biome config selection       │
-│       └──── effects.ts ───────► bloom post-processing        │
-│                                                              │
-│  vehicle/ ──► CarModel.ts + VehicleController.ts             │
-│    (custom arcade physics, no external physics engine)        │
-└──────────────────────────────────────────────────────────────┘
+                        practice.ts / track.ts / garage.ts
+                                    │
+                         ┌──────────┴──────────┐
+                         ▼                     ▼
+                   VehicleController      world.ts
+                   (composition root)    (scene builder)
+                    ┌────┼────┐
+                    ▼    ▼    ▼
+              Physics  Renderer  Audio
+              (math)   (Three.js) (Web Audio)
+                │
+         ┌──────┼──────┐
+         ▼      ▼      ▼
+      Engine  Tires  Chassis
+      Unit    Brakes  Terrain
+      Gearbox Drag    Handler
+```
+
+### Data Flow (per frame)
+```
+VehicleInput → VehicleController.update()
+  → VehiclePhysics.update(input, delta)
+    → Engine.update(wheelSpeed, gearRatio, wheelRadius)
+    → Gearbox.update(dt, engine, wheelSpeed)
+    → TireModel.compute(velocities, steer)
+    → Brakes.getForce(mass)
+    → DragModel.getForce(speed)
+    → TerrainHandler.sample(x, z, heading)
+    → EngineTelemetry { rpm, gear, throttle, load, boost, grade, clutchEngaged }
+  → VehicleRenderer.sync(position, rotation, wheels)
+  → EngineAudio.update(telemetry, position)
+  → AudioBus.updateListener(camera.position, forward)
+```
+
+### Module Hierarchy
+
+**Sound Engine → Engine Module → Car → World**
+
+- **Sound engine** (`audio/`) observes engine telemetry, renders audio. One-way data flow.
+- **Engine module** (`vehicle/engine/`) computes power, RPM, load, boost. Swappable as a unit.
+- **Car** (`vehicle/`) composes engine + chassis + suspension + aero. Has physics, renderer, audio.
+- **World** (`world.ts`) builds the scene. Cars are added to it. Multiple cars supported.
+
+### Key Design Principles
+
+- **No circular dependencies**: configs.ts ← types.ts (configs imports nothing from vehicle)
+- **Pure math physics**: VehiclePhysics has zero Three.js, zero DOM, zero audio
+- **Pure rendering**: VehicleRenderer has zero physics, zero audio
+- **Observer pattern for audio**: EngineAudio consumes EngineTelemetry, never modifies it
+- **Swap-able engine units**: Change EngineSpec → different powerplant, same chassis
+- **Sound follows engine**: Changing engine specs changes how it sounds automatically
+
+## Directory Structure
+
+```
+src/client/
+  vehicle/                    # Car physics, rendering, types
+    configs.ts                # Spec types (EngineSpec, GearboxSpec, etc.) + car presets
+    types.ts                  # Runtime types (VehicleState, EngineTelemetry, VehicleInput)
+    VehicleController.ts      # Thin composition root (physics + renderer + audio)
+    VehiclePhysics.ts         # Pure math simulation (no Three.js, no audio)
+    VehicleRenderer.ts        # All Three.js code (model loading, markers, wheels, lights)
+    CarModel.ts               # Backward-compat re-exports + buildCarModel() factory
+    engine/
+      Engine.ts               # RPM, torque curve, throttle, rev limiter
+      Gearbox.ts              # Gear ratios, shift state machine, clutch simulation
+      EngineUnit.ts           # Engine + Gearbox as one swap-able unit
+    suspension/
+      TireModel.ts            # Slip angles, lateral forces, grip circle
+      Brakes.ts               # g-based deceleration, handbrake
+    aero/
+      DragModel.ts            # Rolling resistance + aerodynamic drag
+    chassis/
+      Chassis.ts              # Mass, CG, suspension parameters
+    world/
+      TerrainHandler.ts       # Terrain height, normals, pitch/roll, road boundaries
+  audio/                      # Procedural engine sound synthesis
+    audio-types.ts            # EngineSoundConfig, HarmonicDef, NoiseConfig, ExhaustSystem
+    EngineAudio.ts            # Additive harmonics + noise + distortion + reverb + spatial
+    AudioBus.ts               # Shared AudioContext singleton + listener position
+    audio-profiles.ts         # Sound presets + deriveSoundConfig() from engine specs
+  ui/                         # Lit Web Components (shared theme library)
+    theme.ts                  # CSS custom properties (h4ks.com palette)
+    *.ts                      # 17 component files (rpm-bar, speed-display, minimap, etc.)
+    garage-store.ts           # localStorage persistence for vehicle tuning
+  world.ts                    # buildWorld() — orchestrates terrain, road, sky, weather, scenery
+  practice.ts                 # Free-roam driving with chase/orbit camera + engine audio
+  track.ts                    # Track viewer with flyover camera
+  garage.ts                   # Vehicle tuning garage with 3D model viewer
+  road.ts, terrain.ts, sky.ts, weather.ts, scenery.ts, etc.
 ```
 
 ## Pages
 
 | Page | Entry Point | Description |
 |------|------------|-------------|
-| `/` | `pages/index.html` → `src/client/track.ts` | Track viewer with flyover camera |
-| `/practice.html` | `src/client/practice.ts` | Free-roam driving with chase/orbit camera |
-| `/physics-debug.html` | `src/client/debug-physics.ts` | Physics tuning page with gauges and graphs |
+| `/` | `track.ts` | Track viewer with flyover camera |
+| `/practice.html` | `practice.ts` | Free-roam driving with engine audio, chase/orbit camera |
+| `/garage.html` | `garage.ts` | Vehicle tuning garage with 3D model viewer |
+| `/physics-debug.html` | `debug-physics.ts` | Physics tuning page with gauges and graphs |
 
-## Source Files
+## Audio System
 
-### Shared (`src/shared/`)
-| File | Lines | Description |
-|------|-------|-------------|
-| `track.ts` | ~880 | Pure-math procedural track generation. PRNG, noise, spline, sampling, scenery placement. No Three.js dependency. |
+### Architecture
+- **Procedural synthesis** — no audio samples needed, all generated from engine specs
+- **Hybrid approach** — additive harmonics + filtered noise layers + WaveShaper distortion
+- **Spatial audio** — HRTF PannerNode per car, distance attenuation, head shadowing
+- **Multi-car support** — each car = one EngineAudio instance, shared AudioContext
 
-### Client (`src/client/`)
-| File | Lines | Description |
-|------|-------|-------------|
-| `scene.ts` | ~43 | Central mutable state object shared across all modules. |
-| `world.ts` | ~312 | `buildWorld()` — orchestrates terrain, road, sky, weather, scenery, effects. Used by practice.ts. |
-| `track.ts` | ~252 | Track viewer entry point. Loads track, builds scene, flyover camera. |
-| `road.ts` | ~764 | Road mesh: asphalt, kerbs, shoulders, concrete slabs, center line, start/finish checker. |
-| `terrain.ts` | ~700 | Heightmap terrain with custom GLSL shader. 7-layer blend based on height/slope/road distance. |
-| `buildings.ts` | ~352 | Procedural house generation along roads. Per-biome styles. |
-| `biomes.ts` | ~530 | 6 biome configurations. Colors, textures, tints, trees, grass, guardrails, houses, fog, sky. |
-| `scenery.ts` | ~586 | GLB model loading, instanced scenery placement (trees, rocks, grass), guardrails. |
-| `sky.ts` | ~399 | Sky dome, 14 time-of-day keyframes, sun position, stars, fog. |
-| `clouds.ts` | ~43 | Cloud layer (animated noise-based plane). |
-| `weather.ts` | ~479 | Weather system: 6 types (clear/cloudy/rain/heavy_rain/fog/snow), particles, wetness, tint shifts. |
-| `effects.ts` | ~46 | UnrealBloom post-processing with per-object bloom control. |
-| `utils.ts` | ~41 | Shared types (V3, WeatherType, TimeKeyframe), smoothstep utility. |
-| `procedural-scenery.ts` | ~437 | Procedural geometry generators for trees, rocks, grass (fallback when no GLB models). |
+### Sound Chain
+```
+Harmonic Oscillators ─┐
+  (firing freq × N)   │
+Noise Layers (4) ─────┤
+  exhaust, intake,    ├──► WaveShaper ──► Dry/Wet Split ──► Master Gain ──► PannerNode ──► Analyser ──► Output
+  mechanical,          │                     │
+  valvetrain           │              Convolver
+                       │              (room reverb)
+Special Effects ───────┘
+  misfire, backfire, wastegate BOV
+```
 
-### Vehicle Physics (`src/client/vehicle/`)
-| File | Lines | Description |
-|------|-------|-------------|
-| `types.ts` | ~292 | `CarConfig`, `VehicleState`, `VehicleInput`, presets (RACE_CAR, SEDAN_CAR). |
-| `CarModel.ts` | ~405 | `buildCarModel()` factory — Engine, Gearbox, Brakes, TireModel, DragModel. Custom arcade physics. |
-| `VehicleController.ts` | ~342 | Integrates CarModel with Three.js visuals. Input handling, terrain following, visual sync. |
-| `index.ts` | ~17 | Barrel exports. |
+### Key Parameters
+- **Firing frequency**: `f0 = (RPM / 60) × (cylinders / stroke)` for 4-stroke
+- **Load shapes sound**: high load = bass boost + warmth; coasting = thin
+- **Turbo whistle**: dedicated sine oscillator 2.5-5.5kHz, Q=15, ramp with boost
+- **Misfire**: 3-layer noise blast (air burst + LF thump + HF crackle) + volume dip
+- **BOV**: descending bandpass sweep 2000→400 Hz noise burst
 
-### Server (`src/server/`)
-| File | Lines | Description |
-|------|-------|-------------|
-| `index.ts` | ~135 | Express server. `/api/track?seed=N` generates track data. Serves static builds. |
+### Sound Profiles
+| Profile | Cylinders | Character |
+|---------|-----------|-----------|
+| AE86 Trueno | 4, NA | 8 harmonics, warm midrange, moderate distortion |
+| Race Car | 4, NA | Aggressive, louder, higher distortion |
+| Sedan | 4, NA | Muted, low distortion, quiet |
 
-## Car Physics
+Profiles are derived from engine specs via `deriveSoundConfig()` or linked directly in CarConfig.
 
-Custom arcade physics — no external physics engine (cannon-es was removed). Built from composable models:
+## Vehicle Physics
 
-### Components
-| Model | Responsibility |
-|-------|---------------|
-| `Engine` | RPM tracking, torque curve, idle, rev limiter, engine braking |
-| `Gearbox` | 6-speed automatic, shift thresholds from gear ratios |
-| `Brakes` | Braking force, handbrake (rear-biased) |
-| `TireModel` | Grip, lateral slip, handbrake drift |
-| `DragModel` | Rolling resistance (linear) + aero drag (quadratic) |
+Custom arcade physics — no external physics engine. Composable OOP modules:
+
+### Subsystems
+| Module | Responsibility |
+|--------|---------------|
+| `Engine` | RPM tracking, torque curve interpolation, idle, rev limiter, engine braking |
+| `Gearbox` | Shift state machine, auto-upshift/downshift, clutch simulation |
+| `EngineUnit` | Engine + Gearbox as one swap-able powerplant |
+| `TireModel` | Slip angles, lateral forces, grip circle, peak friction |
+| `Brakes` | g-based deceleration, handbrake with rear grip reduction |
+| `DragModel` | Rolling resistance (linear) + aerodynamic drag (quadratic) |
+| `Chassis` | Mass, CG position, yaw inertia |
+| `TerrainHandler` | Terrain height, surface normals, pitch/roll, road boundaries |
 
 ### Car Configs
-| Preset | Mass | Max Engine Force | Top Speed | Gears | Notes |
-|--------|------|-----------------|-----------|-------|-------|
-| RACE_CAR | 800 | 8500 | ~55 m/s (200 km/h) | 6 | High grip, light, responsive |
-| SEDAN_CAR | 1200 | 7000 | ~45 m/s (160 km/h) | 6 | Heavier, more body roll |
+| Preset | Mass | Torque | Top Speed | Gears | Notes |
+|--------|------|--------|-----------|-------|-------|
+| RACE_CAR | 150 kg | 50 Nm | ~55 m/s | 6 | Light arcade car |
+| SEDAN_CAR | 200 kg | 35 Nm | ~45 m/s | 6 | Heavier, stable |
+| SPORTS_CAR | 1000 kg | 145 Nm | ~200 km/h | 5 | AE86 Trueno, marker-based auto-derivation |
 
-### Controls
-| Key | Action |
-|-----|--------|
-| W / ↑ | Accelerate |
-| S / ↓ | Brake / Reverse |
-| A / ← | Steer left |
-| D / → | Steer right |
-| Space | Handbrake |
-| R | Reset to nearest track point |
+### AE86 Trueno Physics
+- 1000 kg, 145 Nm torque, 5-speed, 80000/75000 N/rad cornering stiffness
+- Realistic torque curve: 0.3 @ 850 RPM → 1.0 @ 4800 RPM → 0.85 @ 7600 RPM
+- Weight distribution: 53% front
+- Marker-based auto-derivation from GLB: PhysicsMarker + 4 WheelRig markers
 
-### Physics Debug Page
-`/physics-debug.html` — standalone page with real-time gauges (speed, RPM, gear, forces), rolling-window graphs (speed vs time, RPM vs time), torque curve visualization, and on-screen controls (throttle/brake/steer sliders, car selector). No world loading required.
+### Engine Telemetry (data flow to audio + UI)
+```typescript
+interface EngineTelemetry {
+  rpm: number;           // Current engine RPM
+  gear: number;          // 0-indexed gear (0 = 1st)
+  displayGear: number;   // 1-indexed, -1 for reverse
+  throttle: number;      // 0-1
+  load: number;          // 0-1 (engineForce / maxEngineForce)
+  boost: number;         // 0-1 (simulated for turbo engines)
+  speed: number;         // m/s
+  isShifting: boolean;   // Gearbox mid-shift
+  revLimited: boolean;   // RPM at maxRPM
+  isTurbo: boolean;      // Engine has turbo
+  grade: number;         // Road grade (radians, + = uphill)
+  clutchEngaged: boolean; // Clutch fully engaged (not shifting)
+}
+```
 
-## Biomes (6 total)
-| Biome | Character |
-|-------|-----------|
-| Alpine Meadow | Snowy mountains, pine trees, cool tones, no grass |
-| Autumn Woods | Orange/brown palette, SpotLight posts, warm fog |
-| Temperate Forest | Lush green, broadleaf trees, standard lighting |
-| Desert Canyon | Sandy, sparse vegetation, warm tones, bright fog |
-| Tropical Jungle | Dense green, palms, humid atmosphere |
-| Rural Countryside | Gentle green, mixed trees, farmland, houses with farms |
+## UI Components (Lit Web Components)
 
-Selection: `BIOMES[seed % BIOMES.length]`
+17 components in shared theme library with h4ks.com palette:
+- **Primary**: `#5c9eff` (blue) | **Secondary**: `#ff8c4b` (orange) | **Background**: `#11131c` (navy)
+- No emojis in UI. No experimentalDecorators — uses `declare` keyword for reactive properties.
+- `pointer-events: none` on HUD containers; specific interactive elements get `pointer-events: auto`
 
-## Weather (6 types)
-| Type | Effects |
-|------|---------|
-| Clear | Full sun, no particles |
-| Cloudy | Dimmed sun, cloud layer |
-| Rain | Light particles, road wetness 0.5, darkened terrain |
-| Heavy Rain | Heavy particles, road wetness 1.0, very dark, fog |
-| Fog | Dense fog (near=50, far=400), dim lighting |
-| Snow | Snow particles, terrain brightening, snow overlay on road |
+Key components: `rpm-bar`, `speed-display`, `gear-strip`, `steer-indicator`, `pedal-bars`,
+`session-badge`, `speed-trap`, `race-minimap`, `race-toast`, `loading-screen`,
+`controls-help`, `settings-panel`, `damage-bar`, `tire-temps`, `car-nameplate`,
+`lap-timer`, `system-bar`, `world-controls`, `control-panel`.
 
-## Day/Night Cycle
-- 14 time keyframes (hour 0–24) with interpolated colors/intensities
-- Sun position from elevation angle
-- Street lights activate at night (PointLight or SpotLight)
-- Bloom intensity scales with nightFactor
-- Stars visible at night
+### Garage
+- `garage-store.ts` — localStorage persistence for vehicle tuning overrides
+- 3D model viewer, collapsible tuning sidebar, torque curve canvas
+- Key: `"racing-garage-custom"`, stores `TunableConfig`
 
 ## Testing
 
 ```bash
 npm run test          # vitest watch mode
-npm run test:run      # vitest single run
+npm run test:run      # vitest single run (167 tests)
 ```
 
-### Test Files (116 tests across 6 files)
+### Test Files (167 tests across 8 files)
 | File | Tests | Coverage |
 |------|-------|----------|
 | `track.test.ts` | 14 | PRNG, determinism, sample structure |
 | `biomes.test.ts` | 7 | Biome selection, seed mapping |
 | `road.test.ts` | 10 | Road mesh geometry validation |
 | `VehicleController.test.ts` | 50 | Full vehicle lifecycle, inputs, gears, forces |
+| `vehicle-edge-cases.test.ts` | 30 | Gear shifting, stability, endurance, edge cases |
 | `biomes-validation.test.ts` | 11 | Biome config constraints, guardrails, houses |
-| `vehicle-edge-cases.test.ts` | 24 | Gear shifting, stability, endurance, edge cases |
+| `ui.test.ts` | 36 | Lit component rendering, properties, themes |
+| `audio.test.ts` | 9 | AudioBus singleton, deriveSoundConfig, EXHAUST_SYSTEMS |
 
 ## Development
 
@@ -172,15 +248,31 @@ npm run check        # tsc + biome + knip (full check)
 
 ### Code Quality
 - **TypeScript**: strict mode with `noUnusedLocals` and `noUnusedParameters`
-- **Biome**: formatter + linter
-- **Knip**: dead code / unused dependency detection
-- **Vitest**: unit tests
+- **Biome**: 0 errors, 0 warnings, 0 suggestions enforced
+- **Knip**: zero dead code / unused dependencies
+- **Vitest**: 167 tests across 8 files
 - **Husky + lint-staged**: pre-commit hooks (biome formatting)
 - **GitHub Actions**: typecheck, lint, knip, tests, build, Docker
+
+### Constraints
+- Tabs, double quotes, semicolons, 100 char width
+- No `any`, no `forEach`, no `!` non-null assertions
+- No `experimentalDecorators`
+- No emojis in UI
+
+## Biomes (6 total)
+| Biome | Character |
+|-------|-----------|
+| Alpine Meadow | Snowy mountains, pine trees, cool tones |
+| Autumn Woods | Orange/brown palette, warm fog |
+| Temperate Forest | Lush green, broadleaf trees |
+| Desert Canyon | Sandy, sparse vegetation, warm tones |
+| Tropical Jungle | Dense green, palms, humid atmosphere |
+| Rural Countryside | Gentle green, mixed trees, farmland, houses |
 
 ## Tech Debt
 - `road.ts` (~764 lines) and `terrain.ts` (~700 lines) are large — could split mesh generation vs material setup
 - No GLSL shader compilation tests
 - Track generation in `shared/track.ts` is monolithic (~880 lines)
-- Client-side `generateTrack()` fallback duplicates server logic (intentional for offline dev)
-- `scene.ts` uses `null as X | null` pattern (simple but not type-safe at init)
+- CarModel.ts still has `buildCarModel()` for backward compatibility — could remove when tests migrate
+- EngineAudio not yet tested with real Web Audio (tests mock AudioContext)

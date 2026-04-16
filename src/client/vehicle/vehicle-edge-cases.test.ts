@@ -4,8 +4,9 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { CarConfig } from "./types.ts";
-import { DEFAULT_INPUT, RACE_CAR, SEDAN_CAR } from "./types.ts";
+import type { CarConfig } from "./configs.ts";
+import { RACE_CAR, SEDAN_CAR } from "./configs.ts";
+import { DEFAULT_INPUT } from "./types.ts";
 import { VehicleController } from "./VehicleController.ts";
 
 // Stub Three.js
@@ -429,7 +430,7 @@ describe("CarModel factory — additional tests", () => {
 
 // ─── AE86 Trueno Handling Tests ────────────────────────────────────────
 
-const { SPORTS_CAR } = await import("./types.ts");
+const { SPORTS_CAR } = await import("./configs.ts");
 
 describe("AE86 Trueno handling", () => {
 	function createAE86(): VehicleController {

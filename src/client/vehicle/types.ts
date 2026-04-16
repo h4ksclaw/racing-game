@@ -1,142 +1,11 @@
+/**
+ * Runtime vehicle types — state, input, telemetry.
+ *
+ * These are the data structures that flow through the system each frame.
+ * Spec types and presets live in configs.ts.
+ */
+
 import type * as THREE from "three";
-
-// ─── Engine ────────────────────────────────────────────────────────────
-
-/**
- * Engine specification — defines the powerplant.
- * Torque curve is an array of [RPM, multiplier] breakpoints.
- * Interpolated linearly between points.
- *
- * Example — NA V8 with a fat midrange:
- *   torqueCurve: [
- *     [1000, 0.6], [3000, 0.95], [5000, 1.0], [7000, 0.9], [8000, 0.75],
- *   ]
- *
- * Example — turbo diesel with low-end grunt:
- *   torqueCurve: [
- *     [800, 0.5], [1500, 0.95], [2500, 1.0], [3500, 0.95], [4500, 0.7],
- *   ]
- */
-export interface EngineSpec {
-	/** Peak engine torque in Nm (before torque curve multiplier) */
-	readonly torqueNm: number;
-	/** Idle RPM */
-	readonly idleRPM: number;
-	/** Hard rev limiter — engine cuts power at this RPM */
-	readonly maxRPM: number;
-	/** Upshift trigger as fraction of maxRPM (e.g. 0.85 = shift at 85% of redline) */
-	readonly redlinePct: number;
-	/** Final drive ratio */
-	readonly finalDrive: number;
-	/**
-	 * Torque curve: [RPM, multiplier] breakpoints.
-	 * Multiplier is applied to torqueNm.
-	 * Must include at least idleRPM and maxRPM as endpoints.
-	 */
-	readonly torqueCurve: [number, number][];
-	/** Engine braking strength (0 = coast freely, 1 = strong engine drag) */
-	readonly engineBraking: number;
-}
-
-// ─── Gearbox ───────────────────────────────────────────────────────────
-
-/**
- * Gearbox specification — defines gear ratios and shift behavior.
- * Ratios are transmission ratios (not including final drive).
- * Index 0 = 1st gear.
- */
-export interface GearboxSpec {
-	/** Transmission gear ratios. Index 0 = 1st gear. */
-	readonly gearRatios: number[];
-	/** Shift transition time in seconds */
-	readonly shiftTime: number;
-	/**
-	 * Per-gear downshift speed thresholds in km/h (braking only).
-	 * Gear N downshifts to N-1 when speed drops below thresholds[N].
-	 * thresholds[0] is unused (can't downshift from 1st).
-	 *
-	 * If omitted, defaults are computed from gear ratios so RPM
-	 * stays near redline during braking.
-	 */
-	readonly downshiftThresholds?: number[];
-}
-
-// ─── Brakes ────────────────────────────────────────────────────────────
-
-export interface BrakeSpec {
-	/** Maximum braking deceleration in g */
-	readonly maxBrakeG: number;
-	/** Handbrake deceleration in g */
-	readonly handbrakeG: number;
-	/** Brake bias: fraction of braking force on front axle (0-1) */
-	readonly brakeBias: number;
-}
-
-// ─── Tires ─────────────────────────────────────────────────────────────
-
-export interface TireSpec {
-	/** Front cornering stiffness */
-	readonly corneringStiffnessFront: number;
-	/** Rear cornering stiffness */
-	readonly corneringStiffnessRear: number;
-	/** Peak friction coefficient */
-	readonly peakFriction: number;
-	/**
-	 * Maximum traction force as fraction of weight.
-	 * 0.5 = wheels can push with 50% of car's weight before spinning.
-	 */
-	readonly tractionPct: number;
-}
-
-// ─── Drag ──────────────────────────────────────────────────────────────
-
-export interface DragSpec {
-	/** Rolling resistance (N per m/s) */
-	readonly rollingResistance: number;
-	/** Aerodynamic drag (N per m²/s²) */
-	readonly aeroDrag: number;
-}
-
-// ─── Chassis ───────────────────────────────────────────────────────────
-
-export interface ChassisSpec {
-	readonly mass: number;
-	readonly halfExtents: [number, number, number]; // [width/2, height/2, length/2]
-	readonly wheelRadius: number;
-	readonly wheelPositions: { x: number; y: number; z: number }[];
-	readonly wheelBase: number;
-	readonly maxSteerAngle: number;
-	readonly suspensionStiffness: number;
-	readonly suspensionRestLength: number;
-	readonly dampingRelaxation: number;
-	readonly dampingCompression: number;
-	readonly rollInfluence: number;
-	readonly maxSuspensionTravel: number;
-	/** Center of gravity height in meters (affects weight transfer) */
-	readonly cgHeight: number;
-	/** Front weight distribution fraction (0-1). Default 0.55. */
-	readonly weightFront?: number;
-}
-
-// ─── Car Config (composition root) ────────────────────────────────────
-
-/**
- * Full car definition — composes all subsystem specs.
- * Every field is used. Nothing is dead code.
- * Adding a new car = creating one of these.
- */
-export interface CarConfig {
-	readonly name: string;
-	readonly modelPath: string;
-	/** Scale factor applied to the GLB model before marker auto-derivation. Default 1. */
-	readonly modelScale: number;
-	readonly engine: EngineSpec;
-	readonly gearbox: GearboxSpec;
-	readonly brakes: BrakeSpec;
-	readonly tires: TireSpec;
-	readonly drag: DragSpec;
-	readonly chassis: ChassisSpec;
-}
 
 // ─── Runtime State ─────────────────────────────────────────────────────
 
@@ -170,6 +39,60 @@ export const DEFAULT_INPUT: VehicleInput = {
 	handbrake: false,
 };
 
+// ─── Engine Telemetry ──────────────────────────────────────────────────
+
+/**
+ * Engine telemetry — computed by physics each frame, consumed by audio and UI.
+ * Load and boost are derived from physics state, not set externally.
+ */
+export interface EngineTelemetry {
+	rpm: number;
+	gear: number; // 0-indexed (0 = 1st)
+	displayGear: number; // 1-indexed, -1 for reverse
+	throttle: number; // 0-1
+	load: number; // 0-1 (engineForce / maxEngineForce)
+	boost: number; // 0-1 (simulated for turbo engines)
+	speed: number; // m/s
+	isShifting: boolean;
+	revLimited: boolean;
+	isTurbo: boolean;
+	grade: number;
+	clutchEngaged: boolean;
+}
+
+// ─── Road Boundary ─────────────────────────────────────────────────────
+
+export interface RoadBoundaryInfo {
+	/** Signed distance from road center (negative = left, positive = right) */
+	lateralDist: number;
+	/** Absolute distance from road center */
+	distFromCenter: number;
+	/** Road half-width (meters) */
+	roadHalfWidth: number;
+	/** Kerb outer edge distance from center */
+	kerbEdge: number;
+	/** Guardrail distance from center */
+	guardrailDist: number;
+	/** Whether car is on the road surface */
+	onRoad: boolean;
+	/** Whether car is on the kerb */
+	onKerb: boolean;
+	/** Whether car is on the shoulder/grass */
+	onShoulder: boolean;
+	/** Inward-pointing wall normal (world space, only set when beyond guardrail) */
+	wallNormal?: { x: number; z: number };
+	/** Direct distance from car to nearest guardrail position */
+	distToWall: number;
+}
+
+// ─── Terrain ───────────────────────────────────────────────────────────
+
+export interface TerrainProvider {
+	getHeight(x: number, z: number): number;
+	getNormal?(x: number, z: number): { x: number; y: number; z: number };
+	getRoadBoundary?(x: number, z: number): RoadBoundaryInfo;
+}
+
 // ─── Wheel Visual (for Three.js mesh binding) ──────────────────────────
 
 export interface WheelVisual {
@@ -177,195 +100,3 @@ export interface WheelVisual {
 	isFront: boolean;
 	connectionPoint: { x: number; y: number; z: number };
 }
-
-// ─── Example Cars ──────────────────────────────────────────────────────
-
-export const RACE_CAR: CarConfig = {
-	name: "Race Car",
-	modelScale: 1,
-	modelPath: "/assets/kenney-car-kit/Models/GLB format/race.glb",
-	engine: {
-		torqueNm: 50,
-		idleRPM: 1000,
-		maxRPM: 8500,
-		redlinePct: 0.85,
-		finalDrive: 3.5,
-		torqueCurve: [
-			[1000, 0.3],
-			[1100, 1.0],
-			[8500, 1.0],
-		],
-		engineBraking: 0.3,
-	},
-	gearbox: {
-		gearRatios: [6.67, 3.59, 2.34, 1.77, 1.42, 1.39],
-		shiftTime: 0.12,
-		// downshiftThresholds omitted → auto-computed from gear ratios
-	},
-	brakes: {
-		maxBrakeG: 1.5,
-		handbrakeG: 1.8,
-		brakeBias: 0.6,
-	},
-	tires: {
-		corneringStiffnessFront: 560,
-		corneringStiffnessRear: 515,
-		peakFriction: 1.4,
-		tractionPct: 0.5,
-	},
-	drag: {
-		rollingResistance: 0.3,
-		aeroDrag: 0.03,
-	},
-	chassis: {
-		mass: 150,
-		halfExtents: [0.6, 0.3, 1.2],
-		wheelRadius: 0.3,
-		wheelPositions: [
-			{ x: 0.35, y: -0.1, z: 0.64 },
-			{ x: -0.35, y: -0.1, z: 0.64 },
-			{ x: 0.35, y: -0.1, z: -0.88 },
-			{ x: -0.35, y: -0.1, z: -0.88 },
-		],
-		wheelBase: 1.52,
-		maxSteerAngle: 0.5,
-		suspensionStiffness: 30,
-		suspensionRestLength: 0.3,
-		dampingRelaxation: 2.3,
-		dampingCompression: 4.4,
-		rollInfluence: 0.01,
-		maxSuspensionTravel: 0.3,
-		cgHeight: 0.45,
-	},
-};
-
-export const SEDAN_CAR: CarConfig = {
-	name: "Sedan",
-	modelScale: 1,
-	modelPath: "/assets/kenney-car-kit/Models/GLB format/sedan.glb",
-	engine: {
-		torqueNm: 35,
-		idleRPM: 800,
-		maxRPM: 6500,
-		redlinePct: 0.85,
-		finalDrive: 3.5,
-		torqueCurve: [
-			[800, 0.3],
-			[900, 1.0],
-			[6500, 1.0],
-		],
-		engineBraking: 0.2,
-	},
-	gearbox: {
-		gearRatios: [5.95, 3.25, 2.1, 1.55, 1.3, 1.1],
-		shiftTime: 0.18,
-	},
-	brakes: {
-		maxBrakeG: 0.75,
-		handbrakeG: 0.9,
-		brakeBias: 0.55,
-	},
-	tires: {
-		corneringStiffnessFront: 480,
-		corneringStiffnessRear: 440,
-		peakFriction: 1.2,
-		tractionPct: 0.45,
-	},
-	drag: {
-		rollingResistance: 0.4,
-		aeroDrag: 0.05,
-	},
-	chassis: {
-		mass: 200,
-		halfExtents: [0.7, 0.35, 1.3],
-		wheelRadius: 0.3,
-		wheelPositions: [
-			{ x: 0.35, y: -0.1, z: 0.7 },
-			{ x: -0.35, y: -0.1, z: 0.7 },
-			{ x: 0.35, y: -0.1, z: -0.8 },
-			{ x: -0.35, y: -0.1, z: -0.8 },
-		],
-		wheelBase: 1.5,
-		maxSteerAngle: 0.45,
-		suspensionStiffness: 30,
-		suspensionRestLength: 0.3,
-		dampingRelaxation: 2.3,
-		dampingCompression: 4.4,
-		rollInfluence: 0.02,
-		maxSuspensionTravel: 0.3,
-		cgHeight: 0.5,
-	},
-};
-
-/**
- * Custom sports car with marker-based chassis auto-derivation.
- * WheelRig_* and PhysicsMarker objects in the GLB define wheel positions,
- * radius, wheelbase, and ride height. Chassis values here are fallbacks
- * used only if markers are missing from the model.
- */
-export const SPORTS_CAR: CarConfig = {
-	name: "AE86 Trueno",
-	modelPath: "/assets/custom-cars/sports-car.glb",
-	modelScale: 2.1,
-	engine: {
-		// 4A-GEU 1.6L NA, ~145Nm peak torque
-		torqueNm: 145,
-		idleRPM: 850,
-		maxRPM: 7600,
-		redlinePct: 0.85,
-		finalDrive: 4.3,
-		torqueCurve: [
-			[850, 0.3],
-			[1500, 0.55],
-			[3000, 0.85],
-			[4800, 1.0],
-			[6200, 0.98],
-			[7600, 0.85],
-		],
-		engineBraking: 0.15,
-	},
-	gearbox: {
-		// T50 5-speed
-		gearRatios: [3.59, 2.06, 1.38, 1.0, 0.85],
-		shiftTime: 0.15,
-	},
-	brakes: {
-		maxBrakeG: 0.85,
-		handbrakeG: 1.2,
-		brakeBias: 0.55,
-	},
-	tires: {
-		// Cornering stiffness in N/rad (per axle, 2 tires)
-		// AE86 on 195/60R15: ~80000 front, ~75000 rear
-		corneringStiffnessFront: 80000,
-		corneringStiffnessRear: 75000,
-		peakFriction: 1.0,
-		tractionPct: 0.45,
-	},
-	drag: {
-		rollingResistance: 8.0,
-		aeroDrag: 0.35,
-	},
-	// These chassis values are FALLBACKS — markers + modelScale override them at load time
-	chassis: {
-		mass: 1000,
-		halfExtents: [0.82, 0.67, 2.11],
-		wheelRadius: 0.31,
-		wheelPositions: [
-			{ x: -0.73, y: -0.31, z: 1.22 },
-			{ x: 0.73, y: -0.31, z: 1.22 },
-			{ x: -0.73, y: -0.31, z: -1.26 },
-			{ x: 0.73, y: -0.31, z: -1.26 },
-		],
-		wheelBase: 2.48,
-		maxSteerAngle: 0.55,
-		suspensionStiffness: 40,
-		suspensionRestLength: 0.2,
-		dampingRelaxation: 2.8,
-		dampingCompression: 4.5,
-		rollInfluence: 0.06,
-		maxSuspensionTravel: 0.25,
-		cgHeight: 0.35,
-		weightFront: 0.53,
-	},
-};

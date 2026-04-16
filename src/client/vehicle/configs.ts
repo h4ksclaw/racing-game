@@ -1,0 +1,307 @@
+/**
+ * Car configuration types and presets.
+ *
+ * Spec types define subsystem parameters. CarConfig composes them.
+ * Creating a new car = defining one CarConfig.
+ *
+ * Presets: RACE_CAR, SEDAN_CAR, SPORTS_CAR (AE86 Trueno).
+ */
+
+// ─── Engine ────────────────────────────────────────────────────────────
+
+/**
+ * Engine specification — defines the powerplant.
+ * Torque curve is an array of [RPM, multiplier] breakpoints.
+ * Interpolated linearly between points.
+ */
+export interface EngineSpec {
+	/** Peak engine torque in Nm (before torque curve multiplier) */
+	readonly torqueNm: number;
+	/** Idle RPM */
+	readonly idleRPM: number;
+	/** Hard rev limiter — engine cuts power at this RPM */
+	readonly maxRPM: number;
+	/** Upshift trigger as fraction of maxRPM (e.g. 0.85 = shift at 85% of redline) */
+	readonly redlinePct: number;
+	/** Final drive ratio */
+	readonly finalDrive: number;
+	/**
+	 * Torque curve: [RPM, multiplier] breakpoints.
+	 * Must include at least idleRPM and maxRPM as endpoints.
+	 */
+	readonly torqueCurve: [number, number][];
+	/** Engine braking strength (0 = coast freely, 1 = strong engine drag) */
+	readonly engineBraking: number;
+	/** Turbo/supercharged? Affects audio and boost simulation */
+	readonly turbo?: boolean;
+	/** Boost pressure in bar (peak) for turbo engines */
+	readonly boostBar?: number;
+}
+
+// ─── Gearbox ───────────────────────────────────────────────────────────
+
+export interface GearboxSpec {
+	/** Transmission gear ratios. Index 0 = 1st gear. */
+	readonly gearRatios: number[];
+	/** Shift transition time in seconds */
+	readonly shiftTime: number;
+	readonly downshiftThresholds?: number[];
+}
+
+// ─── Brakes ────────────────────────────────────────────────────────────
+
+export interface BrakeSpec {
+	/** Maximum braking deceleration in g */
+	readonly maxBrakeG: number;
+	/** Handbrake deceleration in g */
+	readonly handbrakeG: number;
+	/** Brake bias: fraction of braking force on front axle (0-1) */
+	readonly brakeBias: number;
+}
+
+// ─── Tires ─────────────────────────────────────────────────────────────
+
+export interface TireSpec {
+	/** Front cornering stiffness */
+	readonly corneringStiffnessFront: number;
+	/** Rear cornering stiffness */
+	readonly corneringStiffnessRear: number;
+	/** Peak friction coefficient */
+	readonly peakFriction: number;
+	/** Maximum traction force as fraction of weight */
+	readonly tractionPct: number;
+}
+
+// ─── Drag ──────────────────────────────────────────────────────────────
+
+export interface DragSpec {
+	/** Rolling resistance (N per m/s) */
+	readonly rollingResistance: number;
+	/** Aerodynamic drag (N per m²/s²) */
+	readonly aeroDrag: number;
+}
+
+// ─── Chassis ───────────────────────────────────────────────────────────
+
+export interface ChassisSpec {
+	readonly mass: number;
+	readonly halfExtents: [number, number, number];
+	readonly wheelRadius: number;
+	readonly wheelPositions: { x: number; y: number; z: number }[];
+	readonly wheelBase: number;
+	readonly maxSteerAngle: number;
+	readonly suspensionStiffness: number;
+	readonly suspensionRestLength: number;
+	readonly dampingRelaxation: number;
+	readonly dampingCompression: number;
+	readonly rollInfluence: number;
+	readonly maxSuspensionTravel: number;
+	/** Center of gravity height in meters */
+	readonly cgHeight: number;
+	/** Front weight distribution fraction (0-1). Default 0.55. */
+	readonly weightFront?: number;
+}
+
+// ─── Car Config (composition root) ────────────────────────────────────
+
+import type { EngineSoundConfig } from "../audio/audio-types.ts";
+
+export interface CarConfig {
+	readonly name: string;
+	readonly modelPath: string;
+	/** Scale factor applied to the GLB model before marker auto-derivation. Default 1. */
+	readonly modelScale: number;
+	readonly engine: EngineSpec;
+	readonly gearbox: GearboxSpec;
+	readonly brakes: BrakeSpec;
+	readonly tires: TireSpec;
+	readonly drag: DragSpec;
+	readonly chassis: ChassisSpec;
+	/** Optional sound profile. If omitted, derived from engine specs. */
+	readonly sound?: EngineSoundConfig;
+}
+
+// ─── Presets ───────────────────────────────────────────────────────────
+
+export const RACE_CAR: CarConfig = {
+	name: "Race Car",
+	modelScale: 1,
+	modelPath: "/assets/kenney-car-kit/Models/GLB format/race.glb",
+	engine: {
+		torqueNm: 50,
+		idleRPM: 1000,
+		maxRPM: 8500,
+		redlinePct: 0.85,
+		finalDrive: 3.5,
+		torqueCurve: [
+			[1000, 0.3],
+			[1100, 1.0],
+			[8500, 1.0],
+		],
+		engineBraking: 0.3,
+	},
+	gearbox: {
+		gearRatios: [6.67, 3.59, 2.34, 1.77, 1.42, 1.39],
+		shiftTime: 0.12,
+	},
+	brakes: {
+		maxBrakeG: 1.5,
+		handbrakeG: 1.8,
+		brakeBias: 0.6,
+	},
+	tires: {
+		corneringStiffnessFront: 560,
+		corneringStiffnessRear: 515,
+		peakFriction: 1.4,
+		tractionPct: 0.5,
+	},
+	drag: {
+		rollingResistance: 0.3,
+		aeroDrag: 0.03,
+	},
+	chassis: {
+		mass: 150,
+		halfExtents: [0.6, 0.3, 1.2],
+		wheelRadius: 0.3,
+		wheelPositions: [
+			{ x: 0.35, y: -0.1, z: 0.64 },
+			{ x: -0.35, y: -0.1, z: 0.64 },
+			{ x: 0.35, y: -0.1, z: -0.88 },
+			{ x: -0.35, y: -0.1, z: -0.88 },
+		],
+		wheelBase: 1.52,
+		maxSteerAngle: 0.5,
+		suspensionStiffness: 30,
+		suspensionRestLength: 0.3,
+		dampingRelaxation: 2.3,
+		dampingCompression: 4.4,
+		rollInfluence: 0.01,
+		maxSuspensionTravel: 0.3,
+		cgHeight: 0.45,
+	},
+};
+
+export const SEDAN_CAR: CarConfig = {
+	name: "Sedan",
+	modelScale: 1,
+	modelPath: "/assets/kenney-car-kit/Models/GLB format/sedan.glb",
+	engine: {
+		torqueNm: 35,
+		idleRPM: 800,
+		maxRPM: 6500,
+		redlinePct: 0.85,
+		finalDrive: 3.5,
+		torqueCurve: [
+			[800, 0.3],
+			[900, 1.0],
+			[6500, 1.0],
+		],
+		engineBraking: 0.2,
+	},
+	gearbox: {
+		gearRatios: [5.95, 3.25, 2.1, 1.55, 1.3, 1.1],
+		shiftTime: 0.18,
+	},
+	brakes: {
+		maxBrakeG: 0.75,
+		handbrakeG: 0.9,
+		brakeBias: 0.55,
+	},
+	tires: {
+		corneringStiffnessFront: 480,
+		corneringStiffnessRear: 440,
+		peakFriction: 1.2,
+		tractionPct: 0.45,
+	},
+	drag: {
+		rollingResistance: 0.4,
+		aeroDrag: 0.05,
+	},
+	chassis: {
+		mass: 200,
+		halfExtents: [0.7, 0.35, 1.3],
+		wheelRadius: 0.3,
+		wheelPositions: [
+			{ x: 0.35, y: -0.1, z: 0.7 },
+			{ x: -0.35, y: -0.1, z: 0.7 },
+			{ x: 0.35, y: -0.1, z: -0.8 },
+			{ x: -0.35, y: -0.1, z: -0.8 },
+		],
+		wheelBase: 1.5,
+		maxSteerAngle: 0.45,
+		suspensionStiffness: 30,
+		suspensionRestLength: 0.3,
+		dampingRelaxation: 2.3,
+		dampingCompression: 4.4,
+		rollInfluence: 0.02,
+		maxSuspensionTravel: 0.3,
+		cgHeight: 0.5,
+	},
+};
+
+/**
+ * AE86 Trueno — custom sports car with marker-based chassis auto-derivation.
+ * WheelRig_* and PhysicsMarker objects in the GLB define wheel positions,
+ * radius, wheelbase, and ride height. Chassis values here are fallbacks.
+ */
+export const SPORTS_CAR: CarConfig = {
+	name: "AE86 Trueno",
+	modelPath: "/assets/custom-cars/sports-car.glb",
+	modelScale: 2.1,
+	engine: {
+		torqueNm: 145,
+		idleRPM: 850,
+		maxRPM: 7600,
+		redlinePct: 0.85,
+		finalDrive: 4.3,
+		torqueCurve: [
+			[850, 0.3],
+			[1500, 0.55],
+			[3000, 0.85],
+			[4800, 1.0],
+			[6200, 0.98],
+			[7600, 0.85],
+		],
+		engineBraking: 0.15,
+	},
+	gearbox: {
+		gearRatios: [3.59, 2.06, 1.38, 1.0, 0.85],
+		shiftTime: 0.15,
+	},
+	brakes: {
+		maxBrakeG: 0.85,
+		handbrakeG: 1.2,
+		brakeBias: 0.55,
+	},
+	tires: {
+		corneringStiffnessFront: 80000,
+		corneringStiffnessRear: 75000,
+		peakFriction: 1.0,
+		tractionPct: 0.45,
+	},
+	drag: {
+		rollingResistance: 8.0,
+		aeroDrag: 0.35,
+	},
+	chassis: {
+		mass: 1000,
+		halfExtents: [0.82, 0.67, 2.11],
+		wheelRadius: 0.31,
+		wheelPositions: [
+			{ x: -0.73, y: -0.31, z: 1.22 },
+			{ x: 0.73, y: -0.31, z: 1.22 },
+			{ x: -0.73, y: -0.31, z: -1.26 },
+			{ x: 0.73, y: -0.31, z: -1.26 },
+		],
+		wheelBase: 2.48,
+		maxSteerAngle: 0.55,
+		suspensionStiffness: 40,
+		suspensionRestLength: 0.2,
+		dampingRelaxation: 2.8,
+		dampingCompression: 4.5,
+		rollInfluence: 0.06,
+		maxSuspensionTravel: 0.25,
+		cgHeight: 0.35,
+		weightFront: 0.53,
+	},
+};

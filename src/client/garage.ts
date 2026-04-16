@@ -7,7 +7,7 @@ import {
 	saveCustomConfig,
 	type TunableConfig,
 } from "./ui/garage-store.ts";
-import { SPORTS_CAR } from "./vehicle/types.ts";
+import { SPORTS_CAR } from "./vehicle/configs.ts";
 
 // ── URL params ──────────────────────────────────────────────────────────
 const urlParams = new URLSearchParams(window.location.search);
@@ -680,16 +680,17 @@ function buildGearChart(sectionFields: FieldDef[]): HTMLDivElement {
 		updateSliderFill(editSlider);
 
 		// Update the bar
-		const entry = bars.find((b) => b.field.key === activeField!.key);
+		const entry = bars.find((b) => b.field.key === activeField?.key);
 		if (entry) {
 			const newMax = Math.max(
 				...bars.map((b) =>
-					b.field.key === activeField!.key ? val : getNestedValue(currentTunable, b.field.path),
+					b.field.key === activeField?.key ? val : getNestedValue(currentTunable, b.field.path),
 				),
 				0.1,
 			);
 			entry.bar.style.height = `${(val / newMax) * 100}%`;
-			entry.bar.nextElementSibling!.textContent = val.toFixed(2);
+			const next = entry.bar.nextElementSibling;
+			if (next) next.textContent = val.toFixed(2);
 			// Resize all bars relative to new max
 			for (const b of bars) {
 				const bv = getNestedValue(currentTunable, b.field.path);
@@ -702,7 +703,7 @@ function buildGearChart(sectionFields: FieldDef[]): HTMLDivElement {
 }
 
 function buildSidebar(): void {
-	sidebar!.innerHTML = "";
+	if (sidebar) sidebar.innerHTML = "";
 
 	for (const section of sections) {
 		const sectionEl = document.createElement("div");
@@ -779,7 +780,7 @@ function buildSidebar(): void {
 
 		sectionEl.appendChild(header);
 		sectionEl.appendChild(body);
-		sidebar!.appendChild(sectionEl);
+		sidebar?.appendChild(sectionEl);
 	}
 
 	requestAnimationFrame(drawTorqueCurve);

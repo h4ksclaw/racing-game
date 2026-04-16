@@ -1,4 +1,4 @@
-import type { CarConfig } from "@client/vehicle/types.ts";
+import type { CarConfig } from "@client/vehicle/configs.ts";
 
 const STORAGE_KEY = "racing-garage-custom";
 

@@ -3,8 +3,10 @@
  * Runs VehicleController headlessly, displays gauges and graphs.
  */
 
-import type { CarConfig, VehicleInput } from "./vehicle/types.ts";
-import { DEFAULT_INPUT, RACE_CAR, SEDAN_CAR, SPORTS_CAR } from "./vehicle/types.ts";
+import type { CarConfig } from "./vehicle/configs.ts";
+import { RACE_CAR, SEDAN_CAR, SPORTS_CAR } from "./vehicle/configs.ts";
+import type { VehicleInput } from "./vehicle/types.ts";
+import { DEFAULT_INPUT } from "./vehicle/types.ts";
 import { VehicleController } from "./vehicle/VehicleController.ts";
 
 // ── Helpers ────────────────────────────────────────────────────────────

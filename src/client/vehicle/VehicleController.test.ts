@@ -7,8 +7,9 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { CarConfig } from "./types.ts";
-import { DEFAULT_INPUT, RACE_CAR, SEDAN_CAR } from "./types.ts";
+import type { CarConfig } from "./configs.ts";
+import { RACE_CAR, SEDAN_CAR } from "./configs.ts";
+import { DEFAULT_INPUT } from "./types.ts";
 import { VehicleController } from "./VehicleController.ts";
 
 // Stub Three.js (VehicleController imports GLTFLoader at top level)
