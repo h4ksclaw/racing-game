@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Racing Game — UI Showcase</title>
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		html, body {
+			width: 100%; height: 100%;
+			overflow: hidden;
+			background: #0a0c12;
+			font-family: system-ui, sans-serif;
+		}
+		canvas {
+			display: block; width: 100%; height: 100%;
+		}
+		.page-title {
+			position: fixed;
+			top: 16px;
+			left: 50%;
+			transform: translateX(-50%);
+			z-index: 50;
+			color: rgba(240,242,245,0.3);
+			font-size: 13px;
+			letter-spacing: 2px;
+			text-transform: uppercase;
+			pointer-events: none;
+		}
+	</style>
+</head>
+<body>
+	<div class="page-title">UI Component Showcase — Lit Web Components</div>
+
+	<!-- HUD: bottom center -->
+	<game-hud speed="142" gear="4" rpm="0.72"></game-hud>
+
+	<!-- Controls help: top right -->
+	<control-panel></control-panel>
+
+	<!-- World controls: top left -->
+	<world-controls seed="42" hour="18.5" weather="clear"></world-controls>
+
+	<!-- Toast: center -->
+	<notification-toast message="Welcome to the UI Showcase" type="success" visible duration="4000"></notification-toast>
+
+	<script type="module" src="/src/client/ui-showcase.ts"></script>
+</body>
+</html>
