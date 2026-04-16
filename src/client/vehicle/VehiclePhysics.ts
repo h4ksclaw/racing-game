@@ -272,24 +272,33 @@ export class VehiclePhysics {
 			const penetration = targetY - this.posY;
 
 			if (penetration > 0) {
-				const springK = chassis.spec.suspensionStiffness * 0.5;
+				const springK = chassis.spec.suspensionStiffness;
 				const dampK = chassis.spec.dampingCompression + chassis.spec.dampingRelaxation;
 				const springForce = springK * penetration - dampK * this.verticalVel;
 
 				this.verticalVel += (springForce / mass) * dt;
 
-				if (this.posY < groundY + wheelRadius * 0.5) {
-					this.posY = groundY + wheelRadius * 0.5;
-					this.verticalVel = this.verticalVel < -1.0 ? this.verticalVel * -0.15 : 0;
+				// Hard floor prevents falling through terrain
+				if (this.posY < groundY + wheelRadius * 0.8) {
+					this.posY = groundY + wheelRadius * 0.8;
+					this.verticalVel = this.verticalVel < -2.0 ? this.verticalVel * -0.1 : 0;
 				}
 
 				this.state.onGround = true;
 			} else {
-				this.state.onGround = false;
+				// Airborne — but still check if we've gone below terrain
+				if (this.posY < groundY + wheelRadius) {
+					this.posY = groundY + wheelRadius;
+					this.verticalVel = Math.max(0, this.verticalVel);
+					this.state.onGround = true;
+				} else {
+					this.state.onGround = false;
+				}
 			}
 
 			if (ts.normal) {
-				const tiltSpeed = 3.0 / (1 + speedKmh / 80);
+				// Faster tilt alignment so car follows slopes better
+				const tiltSpeed = 5.0 + speedKmh * 0.02;
 				this.pitch += (ts.pitch - this.pitch) * Math.min(1, tiltSpeed * dt);
 				this.roll += (ts.roll - this.roll) * Math.min(1, tiltSpeed * dt);
 				this.localVelX += -g * Math.sin(this.pitch) * dt;
