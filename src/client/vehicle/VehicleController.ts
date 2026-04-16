@@ -41,6 +41,8 @@ export interface RoadBoundaryInfo {
 	onShoulder: boolean;
 	/** Inward-pointing wall normal (world space, only set when beyond guardrail) */
 	wallNormal?: { x: number; z: number };
+	/** Direct distance from car to nearest guardrail position */
+	distToWall: number;
 }
 
 export interface TerrainProvider {
@@ -529,10 +531,10 @@ export class VehicleController {
 
 				// Account for car body width — wall distance from car center
 				const carHalfW = chassis.halfExtents[0];
-				const effectiveGuardrail = rb.guardrailDist - carHalfW;
+				// Use direct distance to nearest guardrail mesh position
 
 				// Guardrail: proper wall collision with momentum reflection
-				if (rb.distFromCenter >= effectiveGuardrail && rb.wallNormal) {
+				if (rb.distToWall <= carHalfW && rb.wallNormal) {
 					const wn = rb.wallNormal;
 
 					// Convert velocity to world space

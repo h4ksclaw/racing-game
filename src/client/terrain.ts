@@ -188,50 +188,46 @@ export class TerrainSampler {
 		onKerb: boolean;
 		onShoulder: boolean;
 		wallNormal?: { x: number; z: number };
+		distToWall: number;
 	} {
 		const { sample } = this.nearestRoad(x, z);
+		const d = (p: { x: number; z: number }) => Math.sqrt((x - p.x) ** 2 + (z - p.z) ** 2);
 
-		// Use actual track sample positions for boundaries
-		const tangentX = sample.tangent?.x ?? 0;
-		const tangentZ = sample.tangent?.z ?? 1;
+		const distToCenter = d(sample.point);
+		const distToLeft = d(sample.grassLeft);
+		const distToRight = d(sample.grassRight);
+		const distToKerbL = d(sample.kerbLeft);
+		const distToKerbR = d(sample.kerbRight);
 
-		// Road half-width from kerb positions
-		const dxKerb = sample.kerbRight.x - sample.kerbLeft.x;
-		const dzKerb = sample.kerbRight.z - sample.kerbLeft.z;
-		const roadFullWidth = Math.sqrt(dxKerb * dxKerb + dzKerb * dzKerb);
-		const roadHalfWidth = roadFullWidth / 2;
+		const halfW = Math.sqrt(
+			(sample.kerbLeft.x - sample.point.x) ** 2 + (sample.kerbLeft.z - sample.point.z) ** 2,
+		);
+		const kerbEdgeDist = Math.sqrt(
+			(sample.grassLeft.x - sample.point.x) ** 2 + (sample.grassLeft.z - sample.point.z) ** 2,
+		);
 
-		// Kerb edge from road center to outer kerb
-		const dxKerbEdgeL = sample.kerbLeft.x - sample.point.x;
-		const dzKerbEdgeL = sample.kerbLeft.z - sample.point.z;
-		const kerbEdge = Math.sqrt(dxKerbEdgeL * dxKerbEdgeL + dzKerbEdgeL * dzKerbEdgeL);
+		const isLeft = distToLeft < distToRight;
+		const distToWall = isLeft ? distToLeft : distToRight;
+		const distToNearKerb = isLeft ? distToKerbL : distToKerbR;
 
-		// Guardrail = grassLeft/grassRight position (actual mesh location)
-		const dxGrassL = sample.grassLeft.x - sample.point.x;
-		const dzGrassL = sample.grassLeft.z - sample.point.z;
-		const guardrailDist = Math.sqrt(dxGrassL * dxGrassL + dzGrassL * dzGrassL);
-
-		// Signed lateral distance (which side of road center)
-		const toX = x - sample.point.x;
-		const toZ = z - sample.point.z;
-		const lateralDist = tangentZ * toX - tangentX * toZ;
-		const distFromCenter = Math.abs(lateralDist);
-
-		// Wall normal: perpendicular to road tangent, pointing inward
-		const beyondWall = distFromCenter >= guardrailDist;
-		const sign = lateralDist >= 0 ? 1 : -1;
-		const wallNormal = beyondWall ? { x: -sign * tangentZ, z: sign * tangentX } : undefined;
+		// Wall normal: from nearest guardrail toward car
+		const wall = isLeft ? sample.grassLeft : sample.grassRight;
+		const wnx = x - wall.x;
+		const wnz = z - wall.z;
+		const wnLen = Math.sqrt(wnx * wnx + wnz * wnz);
+		const wallNormal = wnLen > 0.001 ? { x: wnx / wnLen, z: wnz / wnLen } : undefined;
 
 		return {
-			lateralDist,
-			distFromCenter,
-			roadHalfWidth,
-			kerbEdge,
-			guardrailDist,
-			onRoad: distFromCenter < roadHalfWidth,
-			onKerb: distFromCenter >= roadHalfWidth && distFromCenter < kerbEdge,
-			onShoulder: distFromCenter >= kerbEdge && distFromCenter < guardrailDist,
+			lateralDist: isLeft ? -1 : 1,
+			distFromCenter: distToCenter,
+			roadHalfWidth: halfW,
+			kerbEdge: kerbEdgeDist,
+			guardrailDist: kerbEdgeDist,
+			onRoad: distToKerbL > halfW && distToKerbR > halfW,
+			onKerb: distToNearKerb <= kerbEdgeDist && distToWall > 0.5,
+			onShoulder: distToWall <= 2.5,
 			wallNormal,
+			distToWall,
 		};
 	}
 }
