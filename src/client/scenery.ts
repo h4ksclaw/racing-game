@@ -78,14 +78,17 @@ let currentLightModel: string | null = null;
 const lightModelCache = new Map<string, THREE.Group>();
 const LIGHT_MODEL_SCALE = 7;
 
+/** Set the fallback biome name for procedural scenery (when GLB models aren't available). */
 export function setFallbackBiome(biomeName: string): void {
 	fallbackBiomeName = biomeName;
 }
 
+/** Set the light post model path (per-biome). */
 export function setLightModel(modelPath: string | undefined): void {
 	currentLightModel = modelPath ?? null;
 }
 
+/** Load a GLB light post model. Returns when the model is ready for instancing. */
 export function loadLightModel(loader: GLTFLoader, path: string): Promise<void> {
 	return new Promise((resolve) => {
 		if (lightModelCache.has(path)) {
@@ -203,6 +206,7 @@ const EXTRA_MODELS = [
 	"Pebble_Square_1",
 ];
 
+/** Load GLB decoration models (trees, rocks, grass) from biome config paths. */
 export async function loadDecorations(): Promise<void> {
 	if (decorationsLoaded) return;
 	decorationsLoaded = true;
@@ -313,6 +317,7 @@ function loadKenneyFallback(loader: GLTFLoader): Promise<void> {
 	});
 }
 
+/** Place instanced trees, rocks, grass, and light posts along track edges. */
 export function buildInstancedScenery(
 	scenery: SceneryItem[],
 	terrain: TerrainSampler,

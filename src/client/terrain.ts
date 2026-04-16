@@ -578,6 +578,7 @@ void main() {
 
 // ── Build terrain ───────────────────────────────────────────────────────
 
+/** Build terrain mesh with custom GLSL shader (7-layer blend based on height/slope/road distance). */
 export async function buildTerrain(
 	_data: TrackResponse,
 	terrain: TerrainSampler,

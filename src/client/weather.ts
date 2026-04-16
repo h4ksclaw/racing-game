@@ -58,6 +58,7 @@ function makeSnowTexture(): THREE.Texture {
 
 // ── Cloud layer ────────────────────────────────────────────────────────
 
+/** Build a cloud layer group with ~50 procedurally-generated puffy clouds. */
 export function buildCloudLayer(): THREE.Group {
 	const group = new THREE.Group();
 	const cloudCount = 50;
@@ -114,6 +115,7 @@ export function buildCloudLayer(): THREE.Group {
 
 // ── Particle systems ────────────────────────────────────────────────────
 
+/** Build rain particle system. Returns the Points mesh and a velocity array for animation. */
 export function buildRainSystem(): { points: THREE.Points; velocities: Float32Array } {
 	const count = 6000;
 	const positions = new Float32Array(count * 3);
@@ -141,6 +143,7 @@ export function buildRainSystem(): { points: THREE.Points; velocities: Float32Ar
 	return { points: new THREE.Points(geo, mat), velocities };
 }
 
+/** Build snow particle system. Returns the Points mesh and a drift array for animation. */
 export function buildSnowSystem(): { points: THREE.Points; drifts: Float32Array } {
 	const count = 4000;
 	const positions = new Float32Array(count * 3);
@@ -174,14 +177,17 @@ export function buildSnowSystem(): { points: THREE.Points; drifts: Float32Array 
 let rainVelocities: Float32Array | null = null;
 let snowDrifts: Float32Array | null = null;
 
+/** Update rain particle velocities (called each frame by the animation loop). */
 export function setRainVelocities(v: Float32Array): void {
 	rainVelocities = v;
 }
 
+/** Update snow particle drift offsets (called each frame by the animation loop). */
 export function setSnowDrifts(v: Float32Array): void {
 	snowDrifts = v;
 }
 
+/** Advance weather animation by `delta` seconds. Updates rain, snow, clouds, fog. */
 export function updateWeather(delta: number): void {
 	const { scene: sc, camera, rainSystem, snowSystem, currentWeather: weather } = state;
 	if (!sc || !camera) return;
@@ -289,6 +295,7 @@ function applyCloudWeather(weather: WeatherType, cloudLayer: THREE.Group): void 
 	}
 }
 
+/** Switch to a new weather type. Toggles rain/snow visibility, adjusts fog, wetness, lighting, and terrain tint. */
 export function applyWeather(weather: WeatherType): void {
 	const {
 		rainSystem,

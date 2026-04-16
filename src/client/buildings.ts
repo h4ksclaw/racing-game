@@ -208,6 +208,7 @@ function addDoor(
 
 // ── Main builder ────────────────────────────────────────────────────────
 
+/** Build instanced house meshes along track edges based on biome config. */
 export function buildHouses(
 	houses: HouseItem[],
 	config: HouseConfig,

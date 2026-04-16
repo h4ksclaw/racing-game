@@ -185,6 +185,7 @@ function makeGeo(
 
 // ── Build track meshes ──────────────────────────────────────────────────
 
+/** Build instanced road meshes (asphalt, kerbs, shoulders, concrete, center line, start/finish). */
 export async function buildMeshes(
 	data: TrackResponse,
 	rng: () => number,
@@ -645,6 +646,7 @@ export async function buildMeshes(
 
 // ── Guardrails ──────────────────────────────────────────────────────────
 
+/** Build instanced guardrail meshes along track edges. */
 export function buildGuardrails(
 	samples: TrackSample[],
 	terrain: TerrainSampler,

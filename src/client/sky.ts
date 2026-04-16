@@ -162,6 +162,7 @@ function lerpColor(
 	return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 }
 
+/** Interpolate between time keyframes to get the current sky/lighting state for a given hour (0–24). */
 export function getTimeState(hour: number): TimeKeyframe {
 	hour = ((hour % 24) + 24) % 24;
 	let a = timeKeyframes[0];
@@ -191,6 +192,7 @@ export function getTimeState(hour: number): TimeKeyframe {
 	};
 }
 
+/** Build a star field Points mesh (visible at night, hidden during day). */
 export function buildStars(): THREE.Points {
 	const count = 3000;
 	const positions = new Float32Array(count * 3);
@@ -217,6 +219,7 @@ export function buildStars(): THREE.Points {
 	return new THREE.Points(geo, mat);
 }
 
+/** Create sky dome, sun light, and ambient light. Returns references for per-frame updates. */
 export function setupSky(scene: THREE.Scene): {
 	uniforms: Record<string, THREE.IUniform>;
 	mesh: THREE.Mesh;
@@ -244,6 +247,7 @@ export function setupSky(scene: THREE.Scene): {
 	return { uniforms, mesh: sky };
 }
 
+/** Apply time-of-day settings: sun position, light colors/intensity, fog, stars, bloom. */
 export function applyTimeOfDay(hour: number): void {
 	const {
 		scene: sc,

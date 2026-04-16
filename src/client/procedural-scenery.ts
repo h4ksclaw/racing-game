@@ -112,6 +112,7 @@ const PALETTES: Record<string, BiomeColors> = {
 	},
 };
 
+/** Get the color palette for procedural scenery generation in a given biome. */
 export function getPalette(biomeName: string): BiomeColors {
 	return PALETTES[biomeName] ?? PALETTES["Temperate Forest"];
 }
@@ -387,6 +388,7 @@ export type SceneryType =
  * Build all procedural scenery models for a given biome and inject them
  * into the decoration cache. Returns the populated cache.
  */
+/** Build procedural tree, rock, and grass geometry for a biome. Caches results by type. */
 export function buildProceduralScenery(biomeName: string, cache: Map<string, THREE.Group>): void {
 	const palette = getPalette(biomeName);
 
