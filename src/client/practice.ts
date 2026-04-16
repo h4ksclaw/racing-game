@@ -9,6 +9,7 @@ import * as THREE from "three";
 import { state } from "./scene.ts";
 import { applyTimeOfDay } from "./sky.ts";
 import { updateTerrainShadows } from "./terrain.ts";
+import { applyOverrides, loadCustomConfig } from "./ui/garage-store.ts";
 import type { GearStrip } from "./ui/gear-strip.ts";
 import type { LoadingScreen } from "./ui/loading-screen.ts";
 import type { RaceMinimap } from "./ui/minimap.ts";
@@ -285,7 +286,13 @@ async function buildPractice(): Promise<void> {
 		toneMapping: true,
 	});
 
-	vehicle = new VehicleController(SPORTS_CAR);
+	const carParam = urlParams.get("car");
+	const customCfg = loadCustomConfig();
+	const carConfig =
+		customCfg && (carParam === "custom" || !carParam)
+			? applyOverrides(SPORTS_CAR, customCfg)
+			: SPORTS_CAR;
+	vehicle = new VehicleController(carConfig);
 	const carModel = await vehicle.loadModel();
 	carModel.castShadow = true;
 	carModel.traverse((child) => {

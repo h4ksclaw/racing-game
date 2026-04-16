@@ -114,6 +114,11 @@ document.getElementById("practiceBtn")?.addEventListener("click", () => {
 	window.location.href = `/practice?${params.toString()}`;
 });
 
+document.getElementById("garageBtn")?.addEventListener("click", () => {
+	const params = new URLSearchParams(window.location.search);
+	window.location.href = `/garage?${params.toString()}`;
+});
+
 const flyoverSpeed = document.getElementById("flyoverSpeed") as HTMLInputElement | null;
 if (flyoverSpeed) {
 	flyoverSpeed.addEventListener("input", () => {

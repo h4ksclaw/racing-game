@@ -45,14 +45,17 @@ export class ControlsHelp extends LitElement {
 	];
 
 	declare worldUrl: string;
+	declare garageUrl: string;
 
 	constructor() {
 		super();
 		this.worldUrl = "/world";
+		this.garageUrl = "/garage";
 	}
 
 	static override properties = {
 		worldUrl: { type: String },
+		garageUrl: { type: String },
 	};
 
 	override render() {
@@ -61,6 +64,7 @@ export class ControlsHelp extends LitElement {
 			<span class="key">A/D</span> or Left/Right -- Steer<br>
 			<span class="key">Space</span> -- Handbrake<br>
 			<span class="key">R</span> -- Reset position<br>
+			<a class="back-link" href=${this.garageUrl}>Garage</a>
 			<a class="back-link" href=${this.worldUrl}>Back to World</a>
 		`;
 	}

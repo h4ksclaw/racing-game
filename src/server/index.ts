@@ -133,12 +133,11 @@ app.get("/world", (_req, res) => {
 app.get("/practice", (_req, res) => {
 	res.sendFile(path.join(distPath, "practice.html"));
 });
+app.get("/garage", (_req, res) => {
+	res.sendFile(path.join(distPath, "garage.html"));
+});
 app.get("/physics-debug", (_req, res) => {
 	res.sendFile(path.join(distPath, "physics-debug.html"));
-
-	app.get("/ui-showcase", (_req, res) => {
-		res.sendFile(path.join(distPath, "ui-showcase.html"));
-	});
 });
 app.get("*path", (_req, res) => {
 	res.sendFile(path.join(distPath, "world.html"));
