@@ -525,22 +525,18 @@ export class VehicleController {
 			if (this.terrain.getRoadBoundary) {
 				const rb = this.terrain.getRoadBoundary(this.posX, this.posZ);
 
-				// Guardrail collision: push car back onto road
+				// Guardrail: hard wall with small bounce
 				if (rb.distFromCenter >= rb.guardrailDist) {
-					const overshoot = rb.distFromCenter - rb.guardrailDist;
-					// Push car toward road center using the lateral direction
 					const pushDir = rb.lateralDist >= 0 ? -1 : 1;
-					const pushForce = overshoot * 50; // strong spring
-					this.localVelY += pushForce * pushDir * dt;
-					// Kill lateral velocity toward the wall
+					// Kill lateral velocity and add small bounce
 					if (
 						(this.localVelY > 0 && rb.lateralDist > 0) ||
 						(this.localVelY < 0 && rb.lateralDist < 0)
 					) {
-						this.localVelY *= 0.85;
+						this.localVelY = -this.localVelY * 0.1; // small bounce
 					}
-					// Speed penalty for hitting the wall
-					this.localVelX *= 0.98;
+					// Hard push back inside the boundary
+					this.localVelY += pushDir * 80 * dt;
 				}
 				// Off-road (shoulder/grass): slow down
 				else if (rb.onShoulder) {
