@@ -361,6 +361,7 @@ function makeValueEditable(
 	step: number,
 	min: number,
 	max: number,
+	onChange?: () => void,
 ): void {
 	span.addEventListener("click", () => {
 		const input = document.createElement("input");
@@ -382,12 +383,13 @@ function makeValueEditable(
 				updateSliderFill(slider);
 				setNestedValue(currentTunable as unknown as Record<string, unknown>, path, clamped);
 				saveCustomConfig(currentTunable);
+				onChange?.();
 			}
 			const newSpan = document.createElement("span");
 			newSpan.className = "field-value";
 			newSpan.textContent = slider.value;
 			input.replaceWith(newSpan);
-			makeValueEditable(newSpan, slider, path, step, min, max);
+			makeValueEditable(newSpan, slider, path, step, min, max, onChange);
 		}
 
 		input.addEventListener("blur", commit);
@@ -398,7 +400,7 @@ function makeValueEditable(
 				newSpan.className = "field-value";
 				newSpan.textContent = span.textContent;
 				input.replaceWith(newSpan);
-				makeValueEditable(newSpan, slider, path, step, min, max);
+				makeValueEditable(newSpan, slider, path, step, min, max, onChange);
 			}
 		});
 	});
@@ -516,7 +518,7 @@ function drawTorqueCurve(): void {
 	}
 }
 
-function buildSliderField(field: FieldDef): HTMLDivElement {
+function buildSliderField(field: FieldDef, sectionId?: string): HTMLDivElement {
 	const row = document.createElement("div");
 	row.className = "field-row";
 
@@ -558,6 +560,7 @@ function buildSliderField(field: FieldDef): HTMLDivElement {
 		updateSliderFill(slider);
 		setNestedValue(currentTunable as unknown as Record<string, unknown>, field.path, val);
 		saveCustomConfig(currentTunable);
+		if (sectionId === "engine") drawTorqueCurve();
 	});
 
 	// Min/max labels
@@ -578,7 +581,9 @@ function buildSliderField(field: FieldDef): HTMLDivElement {
 	row.appendChild(header);
 	row.appendChild(rangeRow);
 
-	makeValueEditable(valueSpan, slider, field.path, step, min, max);
+	makeValueEditable(valueSpan, slider, field.path, step, min, max, () => {
+		if (sectionId === "engine") drawTorqueCurve();
+	});
 
 	return row;
 }
@@ -722,10 +727,10 @@ function buildSidebar(): void {
 
 			// Shift time as regular slider
 			const shiftField = section.fields.find((f) => f.key === "shiftTime");
-			if (shiftField) body.appendChild(buildSliderField(shiftField));
+			if (shiftField) body.appendChild(buildSliderField(shiftField, "gearbox"));
 		} else {
 			for (const field of section.fields) {
-				body.appendChild(buildSliderField(field));
+				body.appendChild(buildSliderField(field, section.id));
 			}
 		}
 
