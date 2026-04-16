@@ -3,47 +3,624 @@
 <head>
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<title>Racing Game — UI Showcase</title>
+	<title>Racing Game — UI Concepts</title>
 	<style>
+		@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
 		* { margin: 0; padding: 0; box-sizing: border-box; }
-		html, body {
-			width: 100%; height: 100%;
-			overflow: hidden;
-			background: #0a0c12;
-			font-family: system-ui, sans-serif;
+		html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0c12; }
+
+		/* Navigation tabs */
+		.nav {
+			position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+			display: flex; gap: 0; background: rgba(8,10,16,0.95);
+			border-bottom: 1px solid rgba(255,255,255,0.06);
+			backdrop-filter: blur(20px);
+			font-family: 'Inter', sans-serif;
 		}
-		canvas {
-			display: block; width: 100%; height: 100%;
+		.nav-tab {
+			flex: 1; padding: 14px 20px; text-align: center; cursor: pointer;
+			color: rgba(255,255,255,0.4); font-size: 13px; font-weight: 500;
+			letter-spacing: 0.5px; transition: all 0.3s ease;
+			border-bottom: 2px solid transparent; user-select: none;
 		}
-		.page-title {
-			position: fixed;
-			top: 16px;
-			left: 50%;
-			transform: translateX(-50%);
-			z-index: 50;
-			color: rgba(240,242,245,0.3);
-			font-size: 13px;
-			letter-spacing: 2px;
-			text-transform: uppercase;
-			pointer-events: none;
+		.nav-tab:hover { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.03); }
+		.nav-tab.active { color: #fff; }
+
+		/* Concept panels */
+		.concept {
+			position: absolute; inset: 0; display: none;
 		}
+		.concept.active { display: block; }
+
+		/* 3D background canvas */
+		.canvas-bg {
+			position: absolute; inset: 0; z-index: 0;
+		}
+		.canvas-bg canvas { display: block; width: 100%; height: 100%; }
+
+		/* Concept label */
+		.concept-label {
+			position: fixed; bottom: 16px; left: 16px; z-index: 500;
+			font-family: 'Inter', sans-serif; font-size: 11px;
+			letter-spacing: 1.5px; text-transform: uppercase;
+			opacity: 0.25; pointer-events: none;
+		}
+
+		/* Info panel */
+		.info-toggle {
+			position: fixed; top: 60px; right: 16px; z-index: 600;
+			padding: 6px 14px; border-radius: 6px; cursor: pointer;
+			font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
+			border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05);
+			color: rgba(255,255,255,0.5); transition: all 0.2s;
+		}
+		.info-toggle:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8); }
+
+		.info-panel {
+			position: fixed; top: 60px; right: 16px; z-index: 599;
+			width: 300px; max-height: calc(100vh - 80px); overflow-y: auto;
+			background: rgba(10,12,18,0.95); backdrop-filter: blur(20px);
+			border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+			padding: 20px; font-family: 'Inter', sans-serif; color: rgba(255,255,255,0.7);
+			font-size: 13px; line-height: 1.6; display: none;
+		}
+		.info-panel.open { display: block; }
+		.info-panel h3 { color: #fff; font-size: 16px; margin-bottom: 8px; font-weight: 600; }
+		.info-panel h4 { color: rgba(255,255,255,0.9); font-size: 13px; margin: 14px 0 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+		.info-panel ul { padding-left: 16px; }
+		.info-panel li { margin-bottom: 4px; }
+		.info-panel .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; margin: 2px 4px 2px 0; }
 	</style>
 </head>
 <body>
-	<div class="page-title">UI Component Showcase — Lit Web Components</div>
 
-	<!-- HUD: bottom center -->
-	<game-hud speed="142" gear="4" rpm="0.72"></game-hud>
+<div class="nav" id="nav">
+	<div class="nav-tab active" data-concept="1" style="border-bottom-color: #00ff88;">
+		01 / Circuit Digital
+	</div>
+	<div class="nav-tab" data-concept="2" style="border-bottom-color: #ff6b2b;">
+		02 / Tarmac Raw
+	</div>
+	<div class="nav-tab" data-concept="3" style="border-bottom-color: #8b5cf6;">
+		03 / Night Signal
+	</div>
+	<div class="nav-tab" data-concept="4" style="border-bottom-color: #fbbf24;">
+		04 / Retro Garage
+	</div>
+</div>
 
-	<!-- Controls help: top right -->
-	<control-panel></control-panel>
+<button class="info-toggle" id="infoToggle">About this concept</button>
+<div class="info-panel" id="infoPanel"></div>
 
-	<!-- World controls: top left -->
-	<world-controls seed="42" hour="18.5" weather="clear"></world-controls>
+<!-- ============================================================ -->
+<!-- CONCEPT 1: CIRCUIT DIGITAL — Clean, precise, motorsport telemetry -->
+<!-- Inspired by F1 dashboards, race engineer telemetry screens     -->
+<!-- Monospace data, thin rules, surgical precision                -->
+<!-- ============================================================ -->
+<div class="concept active" id="concept1">
+	<div class="canvas-bg"></div>
 
-	<!-- Toast: center -->
-	<notification-toast message="Welcome to the UI Showcase" type="success" visible duration="4000"></notification-toast>
+	<!-- HUD -->
+	<div style="position:fixed; bottom:32px; left:50%; transform:translateX(-50%); z-index:100; pointer-events:none;">
+		<div style="display:flex; align-items:flex-end; gap:2px; font-family:'JetBrains Mono',monospace;">
+			<!-- Gear -->
+			<div style="background:rgba(0,0,0,0.7); border:1px solid rgba(0,255,136,0.2); border-right:none; padding:16px 18px; text-align:center; min-width:64px;">
+				<div style="font-size:10px; color:rgba(0,255,136,0.5); letter-spacing:2px; margin-bottom:4px;">GEAR</div>
+				<div id="c1-gear" style="font-size:44px; font-weight:700; color:#00ff88; line-height:1; font-variant-numeric:tabular-nums;">4</div>
+			</div>
+			<!-- Speed -->
+			<div style="background:rgba(0,0,0,0.7); border:1px solid rgba(0,255,136,0.2); padding:16px 28px; text-align:center; min-width:180px;">
+				<div style="font-size:10px; color:rgba(0,255,136,0.5); letter-spacing:2px; margin-bottom:4px;">VEHICLE SPEED</div>
+				<div id="c1-speed" style="font-size:56px; font-weight:300; color:#fff; line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-2px;">142</div>
+				<div style="font-size:11px; color:rgba(255,255,255,0.3); letter-spacing:3px; margin-top:2px;">KM/H</div>
+				<!-- RPM bar -->
+				<div style="margin-top:12px; height:3px; background:rgba(255,255,255,0.06); position:relative;">
+					<div id="c1-rpm" style="height:100%; background:#00ff88; transition:width 0.05s linear, background 0.3s; width:72%;"></div>
+					<div style="position:absolute; right:25%; top:-3px; width:1px; height:9px; background:rgba(255,255,255,0.15);"></div>
+				</div>
+				<div style="display:flex; justify-content:space-between; margin-top:3px;">
+					<span style="font-size:9px; color:rgba(255,255,255,0.15);">RPM</span>
+					<span style="font-size:9px; color:rgba(255,60,60,0.4);">REDLINE</span>
+				</div>
+			</div>
+		</div>
+	</div>
 
-	<script type="module" src="/src/client/ui-showcase.ts"></script>
+	<!-- Top telemetry strip -->
+	<div style="position:fixed; top:52px; left:50%; transform:translateX(-50%); z-index:100; pointer-events:none; font-family:'JetBrains Mono',monospace;">
+		<div style="display:flex; gap:24px; background:rgba(0,0,0,0.6); border:1px solid rgba(0,255,136,0.1); padding:6px 16px; border-radius:4px;">
+			<span style="font-size:10px; color:rgba(0,255,136,0.4);">LAP <span style="color:rgba(255,255,255,0.6);">3/5</span></span>
+			<span style="font-size:10px; color:rgba(255,255,255,0.1);">|</span>
+			<span style="font-size:10px; color:rgba(0,255,136,0.4);">TIME <span style="color:rgba(255,255,255,0.6);">1:42.307</span></span>
+			<span style="font-size:10px; color:rgba(255,255,255,0.1);">|</span>
+			<span style="font-size:10px; color:rgba(0,255,136,0.4);">BEST <span style="color:#00ff88;">1:41.892</span></span>
+			<span style="font-size:10px; color:rgba(255,255,255,0.1);">|</span>
+			<span style="font-size:10px; color:rgba(0,255,136,0.4);">DELTA <span style="color:#ff6b6b;">+0.415</span></span>
+		</div>
+	</div>
+
+	<!-- Controls hint - minimal -->
+	<div style="position:fixed; bottom:32px; right:24px; z-index:100; font-family:'JetBrains Mono',monospace; pointer-events:none;">
+		<div style="font-size:10px; color:rgba(255,255,255,0.2); text-align:right; line-height:2;">
+			<span style="color:rgba(0,255,136,0.3);">W/S</span> throttle/brake<br>
+			<span style="color:rgba(0,255,136,0.3);">A/D</span> steering<br>
+			<span style="color:rgba(0,255,136,0.3);">SPACE</span> handbrake<br>
+			<span style="color:rgba(0,255,136,0.3);">R</span> reset
+		</div>
+	</div>
+
+	<div class="concept-label" style="color:#00ff88;">01 — CIRCUIT DIGITAL</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- CONCEPT 2: TARMAC RAW — Gritty, automotive, bare metal       -->
+<!-- Inspired by race car cockpits, gauge clusters, raw materials   -->
+<!-- Heavy weight fonts, high contrast, mechanical feel             -->
+<!-- ============================================================ -->
+<div class="concept" id="concept2">
+	<div class="canvas-bg"></div>
+
+	<!-- HUD - centered gauge cluster feel -->
+	<div style="position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:100; pointer-events:none;">
+		<div style="display:flex; align-items:flex-end; gap:16px; font-family:'Bebas Neue',sans-serif;">
+			<!-- Tachometer arc (CSS) -->
+			<div style="position:relative; width:200px; height:110px; overflow:hidden;">
+				<div style="position:absolute; bottom:0; left:0; width:200px; height:200px; border-radius:50%; border:6px solid rgba(255,255,255,0.06); border-bottom-color:transparent; border-left-color:transparent; transform:rotate(225deg);"></div>
+				<div id="c2-rpm-arc" style="position:absolute; bottom:0; left:0; width:200px; height:200px; border-radius:50%; border:6px solid #ff6b2b; border-bottom-color:transparent; border-left-color:transparent; transform:rotate(225deg); transition:clip-path 0.1s;"></div>
+				<div style="position:absolute; bottom:8px; left:50%; transform:translateX(-50%); text-align:center;">
+					<div id="c2-rpm" style="font-size:14px; color:rgba(255,255,255,0.4); letter-spacing:4px; font-family:'Rajdhani',sans-serif; font-weight:600;">7200</div>
+					<div style="font-size:9px; color:rgba(255,255,255,0.15); letter-spacing:3px;">RPM</div>
+				</div>
+			</div>
+
+			<!-- Speed - huge -->
+			<div style="text-align:center;">
+				<div id="c2-speed" style="font-size:96px; line-height:0.85; color:#fff; letter-spacing:2px; font-weight:400;">142</div>
+				<div style="font-size:16px; color:rgba(255,255,255,0.25); letter-spacing:8px;">KM/H</div>
+			</div>
+
+			<!-- Gear - brutal -->
+			<div style="background:#ff6b2b; padding:8px 20px; min-width:56px; text-align:center; clip-path:polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);">
+				<div style="font-size:10px; color:rgba(0,0,0,0.4); letter-spacing:3px; font-family:'Rajdhani',sans-serif;">GEAR</div>
+				<div id="c2-gear" style="font-size:64px; line-height:1; color:#fff;">4</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Minimal top bar -->
+	<div style="position:fixed; top:52px; left:24px; z-index:100; font-family:'Rajdhani',sans-serif; pointer-events:none;">
+		<div style="font-size:14px; font-weight:600; color:rgba(255,255,255,0.15); letter-spacing:6px; text-transform:uppercase;">Free Roam</div>
+	</div>
+
+	<!-- Vignette overlay for gritty feel -->
+	<div style="position:fixed; inset:0; pointer-events:none; z-index:50;
+		background:radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.4) 100%);"></div>
+
+	<!-- Controls -->
+	<div style="position:fixed; bottom:24px; right:24px; z-index:100; font-family:'Rajdhani',sans-serif; pointer-events:none;">
+		<div style="font-size:12px; color:rgba(255,255,255,0.15); text-align:right; line-height:1.8; font-weight:500;">
+			W/S Throttle & Brake<br>
+			A/D Steer &middot; Space Handbrake &middot; R Reset
+		</div>
+	</div>
+
+	<div class="concept-label" style="color:#ff6b2b;">02 — TARMAC RAW</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- CONCEPT 3: NIGHT SIGNAL — Neon, cyberpunk, underground racing -->
+<!-- Inspired by NFS Underground, cyberpunk UI, Tokyo drift nights  -->
+<!-- Glowing edges, dark voids, electric color, high energy         -->
+<!-- ============================================================ -->
+<div class="concept" id="concept3">
+	<div class="canvas-bg"></div>
+
+	<!-- HUD - left aligned, vertical stack -->
+	<div style="position:fixed; bottom:32px; left:32px; z-index:100; pointer-events:none; font-family:'Orbitron',sans-serif;">
+		<!-- Speed -->
+		<div style="position:relative;">
+			<div id="c3-speed" style="font-size:80px; font-weight:900; color:#fff; line-height:1; letter-spacing:-3px;
+				text-shadow:0 0 40px rgba(139,92,246,0.5), 0 0 80px rgba(139,92,246,0.2);">142</div>
+			<div style="display:flex; align-items:baseline; gap:8px; margin-top:-4px;">
+				<div style="font-size:14px; color:rgba(139,92,246,0.6); letter-spacing:6px; font-weight:500;">KM/H</div>
+				<div style="width:60px; height:2px; background:linear-gradient(90deg, #8b5cf6, transparent);"></div>
+			</div>
+		</div>
+
+		<!-- Gear + RPM -->
+		<div style="display:flex; align-items:center; gap:20px; margin-top:16px;">
+			<div style="position:relative;">
+				<div id="c3-gear" style="font-size:36px; font-weight:700; color:#8b5cf6;
+					text-shadow:0 0 20px rgba(139,92,246,0.6);">4</div>
+				<div style="font-size:8px; color:rgba(139,92,246,0.3); letter-spacing:4px;">GEAR</div>
+			</div>
+			<div style="flex:1; width:120px;">
+				<div style="height:4px; background:rgba(139,92,246,0.1); border-radius:2px; overflow:hidden; position:relative;">
+					<div id="c3-rpm" style="height:100%; border-radius:2px; transition:width 0.05s linear, background 0.3s; width:72%;
+						background:linear-gradient(90deg, #8b5cf6, #a78bfa);"></div>
+				</div>
+				<div style="display:flex; justify-content:space-between; margin-top:4px;">
+					<span style="font-size:8px; color:rgba(139,92,246,0.2);">0</span>
+					<span style="font-size:8px; color:rgba(239,68,68,0.3);">8K</span>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Right side - session info -->
+	<div style="position:fixed; bottom:32px; right:32px; z-index:100; pointer-events:none; font-family:'Orbitron',sans-serif; text-align:right;">
+		<div style="font-size:10px; color:rgba(139,92,246,0.3); letter-spacing:3px;">SESSION</div>
+		<div style="font-size:22px; color:rgba(255,255,255,0.6); font-weight:600; letter-spacing:2px;">FREE ROAM</div>
+		<div style="width:100%; height:1px; background:linear-gradient(90deg, transparent, rgba(139,92,246,0.3)); margin:10px 0;"></div>
+		<div style="font-size:10px; color:rgba(255,255,255,0.2); line-height:2;">
+			W/S &middot; THROTTLE / BRAKE<br>
+			A/D &middot; STEER<br>
+			SPACE &middot; HANDBRAKE<br>
+			R &middot; RESET
+		</div>
+	</div>
+
+	<!-- Top center - time -->
+	<div style="position:fixed; top:52px; left:50%; transform:translateX(-50%); z-index:100; pointer-events:none; font-family:'Orbitron',sans-serif;">
+		<div style="font-size:11px; color:rgba(139,92,246,0.3); letter-spacing:4px; text-align:center;">
+			SEED 42 &middot; CLEAR SKIES &middot; 18:30
+		</div>
+	</div>
+
+	<!-- Scanline overlay -->
+	<div style="position:fixed; inset:0; pointer-events:none; z-index:50;
+		background:repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);"></div>
+
+	<div class="concept-label" style="color:#8b5cf6;">03 — NIGHT SIGNAL</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- CONCEPT 4: RETRO GARAGE — Warm, nostalgic, analog racing     -->
+<!-- Inspired by 90s arcade racers, muscle car gauges, warm tones   -->
+<!-- Warm amber, dark wood textures, analog feel, chunky           -->
+<!-- ============================================================ -->
+<div class="concept" id="concept4">
+	<div class="canvas-bg"></div>
+
+	<!-- HUD - centered, warm, analog -->
+	<div style="position:fixed; bottom:28px; left:50%; transform:translateX(-50%); z-index:100; pointer-events:none;">
+		<div style="display:flex; align-items:flex-end; gap:20px; font-family:'Space Grotesk',sans-serif;">
+			<!-- RPM gauge circle -->
+			<div style="width:100px; height:100px; border-radius:50%; border:3px solid rgba(251,191,36,0.15);
+				display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative;
+				background:rgba(20,16,8,0.7);">
+				<!-- Tick marks via border trick -->
+				<div style="position:absolute; inset:4px; border-radius:50%; border:1px dashed rgba(251,191,36,0.1);"></div>
+				<div id="c4-rpm" style="font-size:24px; font-weight:700; color:#fbbf24; line-height:1; font-variant-numeric:tabular-nums;">7.2</div>
+				<div style="font-size:8px; color:rgba(251,191,36,0.35); letter-spacing:2px; margin-top:2px;">x1000</div>
+				<!-- RPM arc indicator -->
+				<svg style="position:absolute; inset:-2px; width:calc(100% + 4px); height:calc(100% + 4px); transform:rotate(-90deg);" viewBox="0 0 104 104">
+					<circle cx="52" cy="52" r="48" fill="none" stroke="rgba(251,191,36,0.08)" stroke-width="3"/>
+					<circle id="c4-rpm-arc" cx="52" cy="52" r="48" fill="none" stroke="#fbbf24" stroke-width="3"
+						stroke-dasharray="301.6" stroke-dashoffset="84.4" stroke-linecap="round"
+						style="transition:stroke-dashoffset 0.1s linear;"/>
+				</svg>
+			</div>
+
+			<!-- Speed - big warm number -->
+			<div style="text-align:center;">
+				<div id="c4-speed" style="font-size:72px; font-weight:700; color:#fbbf24; line-height:0.9;
+					text-shadow:0 0 30px rgba(251,191,36,0.15); font-variant-numeric:tabular-nums;">142</div>
+				<div style="font-size:12px; color:rgba(251,191,36,0.3); letter-spacing:6px; font-weight:500;">KM/H</div>
+			</div>
+
+			<!-- Gear - circular badge -->
+			<div style="width:64px; height:64px; border-radius:50%; border:2px solid rgba(251,191,36,0.2);
+				display:flex; flex-direction:column; align-items:center; justify-content:center;
+				background:rgba(20,16,8,0.7);">
+				<div id="c4-gear" style="font-size:28px; font-weight:700; color:#fff; line-height:1;">4</div>
+				<div style="font-size:7px; color:rgba(251,191,36,0.3); letter-spacing:2px;">GEAR</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- Warm vignette -->
+	<div style="position:fixed; inset:0; pointer-events:none; z-index:50;
+		background:radial-gradient(ellipse at center, transparent 40%, rgba(20,16,8,0.5) 100%);"></div>
+
+	<!-- Top bar - retro style -->
+	<div style="position:fixed; top:52px; left:50%; transform:translateX(-50%); z-index:100; pointer-events:none; font-family:'Space Grotesk',sans-serif;">
+		<div style="background:rgba(20,16,8,0.6); border:1px solid rgba(251,191,36,0.1); padding:6px 20px; border-radius:20px;
+			font-size:11px; color:rgba(251,191,36,0.4); letter-spacing:2px; text-align:center;">
+			Free Roam &middot; Seed 42 &middot; 18:30
+		</div>
+	</div>
+
+	<!-- Controls -->
+	<div style="position:fixed; bottom:28px; right:24px; z-index:100; font-family:'Space Grotesk',sans-serif; pointer-events:none;">
+		<div style="font-size:11px; color:rgba(251,191,36,0.15); text-align:right; line-height:2; font-weight:500;">
+			W/S Throttle &middot; Brake<br>
+			A/D Steer &middot; Space Handbrake<br>
+			R Reset
+		</div>
+	</div>
+
+	<div class="concept-label" style="color:#fbbf24;">04 — RETRO GARAGE</div>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+
+// ── Concept info data ────────────────────────────────────────────
+const conceptInfo = {
+	1: {
+		name: "Circuit Digital",
+		philosophy: "Surgical precision. Every pixel is data. The UI is a telemetry readout, not decoration.",
+		inspired: "F1 TV graphics, race engineer dashboards, Motec telemetry, WEC timing screens",
+		typography: "JetBrains Mono (monospace) — every character the same width, like a digital readout",
+		layout: "Bottom-center cluster, thin 1px borders, minimal padding, left-aligned labels above values",
+		colors: "#00ff88 on black. Green = go. One accent only. Maximum contrast, zero warmth.",
+		personality: "Cold, precise, professional. This is the UI of someone who optimizes brake bias.",
+		pros: ["Most readable at a glance", "Minimal visual noise", "Feels authentic to racing", "Scales to complex data"],
+		cons: ["Can feel clinical", "Less personality", "May not suit casual/free-roam"],
+		identity: "The Engineer's Dashboard",
+		tags: [
+			{ text: "Telemetry", bg: "rgba(0,255,136,0.1)", color: "#00ff88" },
+			{ text: "Precision", bg: "rgba(0,255,136,0.1)", color: "#00ff88" },
+			{ text: "Monospace", bg: "rgba(0,255,136,0.1)", color: "#00ff88" },
+			{ text: "Minimal", bg: "rgba(0,255,136,0.1)", color: "#00ff88" },
+		]
+	},
+	2: {
+		name: "Tarmac Raw",
+		philosophy: "Raw power, bare metal. The UI feels like it was bolted into the car, not designed on a screen.",
+		inspired: "Race car gauge clusters, bare carbon fiber dashes, Hoonigan branding, Gymkhana",
+		typography: "Bebas Neue (display) + Rajdhani (body) — tall, heavy, industrial. No curves where straight lines work.",
+		layout: "Massive speed number dominates. Gear in an angular badge. Controls as plain text, no boxes.",
+		colors: "#ff6b2b (industrial orange) on black. Heat and danger. No pastels, no subtlety.",
+		personality: "Loud, aggressive, unapologetic. This is the UI of someone who drifts for fun.",
+		pros: ["Strong visual identity", "High energy", "Memorable", "Great for arcade feel"],
+		cons: ["Can be heavy/tiring", "Less information density", "May clash with realistic world"],
+		identity: "The Street Racer's Cockpit",
+		tags: [
+			{ text: "Industrial", bg: "rgba(255,107,43,0.1)", color: "#ff6b2b" },
+			{ text: "Heavy", bg: "rgba(255,107,43,0.1)", color: "#ff6b2b" },
+			{ text: "Angular", bg: "rgba(255,107,43,0.1)", color: "#ff6b2b" },
+			{ text: "Raw", bg: "rgba(255,107,43,0.1)", color: "#ff6b2b" },
+		]
+	},
+	3: {
+		name: "Night Signal",
+		philosophy: "Underground energy. The city glows at night and so does everything else. Electric, not mechanical.",
+		inspired: "NFS Underground, Tokyo neon streets, cyberpunk interfaces, Tron light trails",
+		typography: "Orbitron (geometric sans) — futuristic, wide letterforms, built for glowing text",
+		layout: "Asymmetric: speed/gear bottom-left, session info bottom-right. Negative space is intentional.",
+		colors: "#8b5cf6 (electric purple) on deep void. Glow effects. No flat surfaces — everything breathes light.",
+		personality: "Underground, stylish, electric. This is the UI of someone who races at 2AM.",
+		pros: ["Strong mood/atmosphere", "Distinctive look", "Great for night scenes", "Very modern"],
+		cons: ["Glow effects can hurt readability", "Harder to implement well", "May not suit daytime"],
+		identity: "The Midnight Street Scene",
+		tags: [
+			{ text: "Neon", bg: "rgba(139,92,246,0.1)", color: "#8b5cf6" },
+			{ text: "Cyberpunk", bg: "rgba(139,92,246,0.1)", color: "#8b5cf6" },
+			{ text: "Glow", bg: "rgba(139,92,246,0.1)", color: "#8b5cf6" },
+			{ text: "Underground", bg: "rgba(139,92,246,0.1)", color: "#8b5cf6" },
+		]
+	},
+	4: {
+		name: "Retro Garage",
+		philosophy: "Warm nostalgia. Analog gauges, warm amber light, the smell of motor oil and old leather.",
+		inspired: "90s arcade racers, classic car instrument clusters, warm workshop lighting, vintage racing posters",
+		typography: "Space Grotesk (geometric, friendly) — clean but with character. Circular badges for gear/RPM.",
+		layout: "Centered circular gauges. Everything rounded. Warm vignette. Pill-shaped info bar.",
+		colors: "#fbbf24 (warm amber) on dark warm brown. Like gauges lit by incandescent bulbs.",
+		personality: "Warm, inviting, nostalgic. This is the UI of someone who loves cars, not just speed.",
+		pros: ["Unique and charming", "Great atmosphere", "Works day and night", "Memorable"],
+		cons: ["Lower contrast", "Less sharp/professional", "May feel too casual for competitive"],
+		identity: "The Sunday Drive",
+		tags: [
+			{ text: "Warm", bg: "rgba(251,191,36,0.1)", color: "#fbbf24" },
+			{ text: "Analog", bg: "rgba(251,191,36,0.1)", color: "#fbbf24" },
+			{ text: "Nostalgic", bg: "rgba(251,191,36,0.1)", color: "#fbbf24" },
+			{ text: "Rounded", bg: "rgba(251,191,36,0.1)", color: "#fbbf24" },
+		]
+	}
+};
+
+// ── Three.js backgrounds ─────────────────────────────────────────
+const scenes = {};
+const cameras = {};
+const renderers = {};
+
+function initBg(id, bgColor, fogColor, accentHex) {
+	const container = document.querySelector(`#concept${id} .canvas-bg`);
+	const scene = new THREE.Scene();
+	scene.background = new THREE.Color(bgColor);
+	scene.fog = new THREE.FogExp2(fogColor, 0.004);
+
+	const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+	camera.position.set(0, 60, 140);
+
+	const renderer = new THREE.WebGLRenderer({ antialias: true });
+	renderer.setSize(window.innerWidth, window.innerHeight);
+	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+	renderer.toneMapping = THREE.ACESFilmicToneMapping;
+	renderer.toneMappingExposure = 1.0;
+	container.appendChild(renderer.domElement);
+
+	// Lights
+	scene.add(new THREE.HemisphereLight(0x88bbff, 0x445511, 0.3));
+	const dir = new THREE.DirectionalLight(0xffffcc, 0.8);
+	dir.position.set(100, 150, 50);
+	scene.add(dir);
+
+	// Accent point light
+	const accent = new THREE.PointLight(new THREE.Color(accentHex), 2, 300);
+	accent.position.set(0, 30, 0);
+	scene.add(accent);
+
+	// Ground plane
+	const ground = new THREE.Mesh(
+		new THREE.PlaneGeometry(2000, 2000),
+		new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 })
+	);
+	ground.rotation.x = -Math.PI / 2;
+	ground.position.y = -20;
+	scene.add(ground);
+
+	// Floating geometry
+	const geo = new THREE.TorusKnotGeometry(15, 4, 128, 32);
+	const mat = new THREE.MeshStandardMaterial({
+		color: new THREE.Color(accentHex),
+		metalness: 0.6, roughness: 0.3,
+		emissive: new THREE.Color(accentHex),
+		emissiveIntensity: 0.1
+	});
+	const mesh = new THREE.Mesh(geo, mat);
+	scene.add(mesh);
+
+	scenes[id] = { scene, camera, renderer, mesh, accent };
+}
+
+initBg(1, 0x050505, 0x050505, 0x00ff88);
+initBg(2, 0x0a0806, 0x0a0806, 0xff6b2b);
+initBg(3, 0x06040a, 0x06040a, 0x8b5cf6);
+initBg(4, 0x0a0804, 0x0a0804, 0xfbbf24);
+
+let activeConcept = 1;
+let t = 0;
+
+function animate() {
+	requestAnimationFrame(animate);
+	t += 0.016;
+
+	// Only render active concept
+	const bg = scenes[activeConcept];
+	if (!bg) return;
+	bg.mesh.rotation.x += 0.002;
+	bg.mesh.rotation.y += 0.004;
+	bg.accent.intensity = 2 + Math.sin(t * 2) * 0.5;
+	bg.renderer.render(bg.scene, bg.camera);
+
+	// Animate HUD values
+	const speed = 60 + Math.sin(t * 0.5) * 80 + Math.sin(t * 1.3) * 20;
+	const rpm = 0.3 + Math.abs(Math.sin(t * 0.8)) * 0.65;
+	const gear = Math.min(Math.floor(Math.max(0, speed) / 40), 4) + 1;
+
+	// Concept 1
+	const c1spd = document.getElementById('c1-speed');
+	const c1gear = document.getElementById('c1-gear');
+	const c1rpm = document.getElementById('c1-rpm');
+	if (c1spd) c1spd.textContent = Math.max(0, Math.round(speed));
+	if (c1gear) c1gear.textContent = gear;
+	if (c1rpm) {
+		c1rpm.style.width = `${rpm * 100}%`;
+		c1rpm.style.background = rpm > 0.85 ? '#ff6b6b' : rpm > 0.7 ? '#fbbf24' : '#00ff88';
+	}
+
+	// Concept 2
+	const c2spd = document.getElementById('c2-speed');
+	const c2gear = document.getElementById('c2-gear');
+	const c2rpm = document.getElementById('c2-rpm');
+	if (c2spd) c2spd.textContent = Math.max(0, Math.round(speed));
+	if (c2gear) c2gear.textContent = gear;
+	if (c2rpm) c2rpm.textContent = Math.round(rpm * 7600);
+
+	// Concept 3
+	const c3spd = document.getElementById('c3-speed');
+	const c3gear = document.getElementById('c3-gear');
+	const c3rpm = document.getElementById('c3-rpm');
+	if (c3spd) c3spd.textContent = Math.max(0, Math.round(speed));
+	if (c3gear) c3gear.textContent = gear;
+	if (c3rpm) {
+		c3rpm.style.width = `${rpm * 100}%`;
+		c3rpm.style.background = rpm > 0.85
+			? 'linear-gradient(90deg, #8b5cf6, #ef4444)'
+			: 'linear-gradient(90deg, #8b5cf6, #a78bfa)';
+	}
+
+	// Concept 4
+	const c4spd = document.getElementById('c4-speed');
+	const c4gear = document.getElementById('c4-gear');
+	const c4rpm = document.getElementById('c4-rpm');
+	const c4arc = document.getElementById('c4-rpm-arc');
+	if (c4spd) c4spd.textContent = Math.max(0, Math.round(speed));
+	if (c4gear) c4gear.textContent = gear;
+	if (c4rpm) c4rpm.textContent = (rpm * 8).toFixed(1);
+	if (c4arc) c4arc.setAttribute('stroke-dashoffset', String(301.6 * (1 - rpm)));
+}
+
+animate();
+
+// ── Tab switching ────────────────────────────────────────────────
+const tabs = document.querySelectorAll('.nav-tab');
+const concepts = document.querySelectorAll('.concept');
+const infoPanel = document.getElementById('infoPanel');
+const infoToggle = document.getElementById('infoToggle');
+
+function showInfo(n) {
+	const c = conceptInfo[n];
+	infoPanel.innerHTML = `
+		<h3>${c.name}</h3>
+		<p style="margin-bottom:12px; font-style:italic; opacity:0.8;">${c.identity}</p>
+		<p style="margin-bottom:12px;">${c.philosophy}</p>
+		<h4>Inspired by</h4>
+		<p style="margin-bottom:12px;">${c.inspired}</p>
+		<h4>Typography</h4>
+		<p style="margin-bottom:12px;">${c.typography}</p>
+		<h4>Layout</h4>
+		<p style="margin-bottom:12px;">${c.typography.includes('layout') ? '' : c.layout}</p>
+		<h4>Colors</h4>
+		<p style="margin-bottom:12px;">${c.colors}</p>
+		<h4>Personality</h4>
+		<p style="margin-bottom:12px;">${c.personality}</p>
+		<h4>Strengths</h4>
+		<ul style="margin-bottom:12px;">${c.pros.map(p => `<li>${p}</li>`).join('')}</ul>
+		<h4>Trade-offs</h4>
+		<ul style="margin-bottom:16px;">${c.cons.map(p => `<li>${p}</li>`).join('')}</ul>
+		<div>${c.tags.map(t => `<span class="tag" style="background:${t.bg}; color:${t.color};">${t.text}</span>`).join('')}</div>
+	`;
+}
+
+tabs.forEach(tab => {
+	tab.addEventListener('click', () => {
+		const n = tab.dataset.concept;
+		activeConcept = Number(n);
+
+		tabs.forEach(t => { t.classList.remove('active'); t.style.borderBottomColor = 'transparent'; });
+		tab.classList.add('active');
+
+		concepts.forEach(c => c.classList.remove('active'));
+		document.getElementById(`concept${n}`).classList.add('active');
+
+		// Set accent color on nav
+		const colors = { 1: '#00ff88', 2: '#ff6b2b', 3: '#8b5cf6', 4: '#fbbf24' };
+		tab.style.borderBottomColor = colors[n];
+
+		// Resize active renderer
+		const bg = scenes[activeConcept];
+		if (bg) {
+			bg.renderer.setSize(window.innerWidth, window.innerHeight);
+			bg.camera.aspect = window.innerWidth / window.innerHeight;
+			bg.camera.updateProjectionMatrix();
+		}
+
+		showInfo(activeConcept);
+	});
+});
+
+infoToggle.addEventListener('click', () => {
+	infoPanel.classList.toggle('open');
+	infoToggle.textContent = infoPanel.classList.contains('open') ? 'Close' : 'About this concept';
+});
+
+// Init info panel
+showInfo(1);
+
+// Resize handling
+window.addEventListener('resize', () => {
+	Object.values(scenes).forEach(bg => {
+		bg.renderer.setSize(window.innerWidth, window.innerHeight);
+		bg.camera.aspect = window.innerWidth / window.innerHeight;
+		bg.camera.updateProjectionMatrix();
+	});
+});
+</script>
 </body>
 </html>
