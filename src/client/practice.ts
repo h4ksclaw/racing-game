@@ -9,6 +9,16 @@ import * as THREE from "three";
 import { state } from "./scene.ts";
 import { applyTimeOfDay } from "./sky.ts";
 import { updateTerrainShadows } from "./terrain.ts";
+import type { GearStrip } from "./ui/gear-strip.ts";
+import type { LoadingScreen } from "./ui/loading-screen.ts";
+import type { RaceMinimap } from "./ui/minimap.ts";
+import type { PedalBars } from "./ui/pedal-bars.ts";
+import type { RaceToast } from "./ui/race-toast.ts";
+import type { RpmBar } from "./ui/rpm-bar.ts";
+import type { SessionBadge } from "./ui/session-badge.ts";
+import type { SpeedDisplay } from "./ui/speed-display.ts";
+import type { SpeedTrap } from "./ui/speed-trap.ts";
+import type { SteerIndicator } from "./ui/steer-indicator.ts";
 import type { WeatherType } from "./utils.ts";
 import { DEFAULT_INPUT, VehicleController, type VehicleInput } from "./vehicle/index.ts";
 import { SPORTS_CAR } from "./vehicle/types.ts";
@@ -21,18 +31,61 @@ const seed = Number(urlParams.get("seed")) || 42;
 const hour = Number(urlParams.get("hour")) || 14;
 const weather = (urlParams.get("weather") as WeatherType) || "clear";
 
-// Wire world link to preserve URL params
-const worldLink = document.getElementById("worldLink") as HTMLAnchorElement | null;
-if (worldLink) {
-	worldLink.href = `/world?${urlParams.toString()}`;
+// ── UI component refs ───────────────────────────────────────────────────
+let uiReady = false;
+let sessionStart = 0;
+let topSpeed = 0;
+
+let speedDisplay: SpeedDisplay | null = null;
+let rpmBarEl: RpmBar | null = null;
+let gearStripEl: GearStrip | null = null;
+let steerEl: SteerIndicator | null = null;
+let pedalsEl: PedalBars | null = null;
+let sessionEl: SessionBadge | null = null;
+let trapEl: SpeedTrap | null = null;
+let mapEl: RaceMinimap | null = null;
+
+function initUI(): void {
+	speedDisplay = document.querySelector("speed-display");
+	rpmBarEl = document.querySelector("rpm-bar");
+	gearStripEl = document.querySelector("gear-strip");
+	steerEl = document.querySelector("steer-indicator");
+	pedalsEl = document.querySelector("pedal-bars");
+	sessionEl = document.querySelector("session-badge");
+	trapEl = document.querySelector("speed-trap");
+	mapEl = document.querySelector("race-minimap");
 }
 
-// ── HUD elements ────────────────────────────────────────────────────────
-const speedEl = document.getElementById("speedometer");
-const gearEl = document.getElementById("gear-display");
-const rpmBar = document.getElementById("rpm-bar");
-const hudEl = document.getElementById("hud");
-const loadingEl = document.getElementById("loading");
+function updateUI(
+	speed: number,
+	gear: number,
+	rpmFrac: number,
+	steerInput: number,
+	throttle: number,
+	brake: number,
+): void {
+	if (!uiReady) return;
+
+	const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
+	if (sessionEl) sessionEl.elapsed = elapsed;
+	if (speedDisplay) {
+		speedDisplay.speed = speed;
+		speedDisplay.gear = gear;
+		speedDisplay.rpm = rpmFrac;
+	}
+	if (rpmBarEl) rpmBarEl.rpm = rpmFrac;
+	if (gearStripEl) gearStripEl.gear = gear;
+	if (steerEl) steerEl.input = steerInput;
+	if (pedalsEl) {
+		pedalsEl.throttle = throttle;
+		pedalsEl.brake = brake;
+	}
+
+	const absSpeed = Math.abs(Math.round(speed));
+	if (absSpeed > topSpeed) topSpeed = absSpeed;
+	if (trapEl) trapEl.topSpeed = topSpeed;
+	if (mapEl) mapEl.speed = absSpeed;
+}
 
 // ── Input ───────────────────────────────────────────────────────────────
 const input: VehicleInput = { ...DEFAULT_INPUT };
@@ -216,32 +269,15 @@ function updateCamera(): void {
 	}
 }
 
-// ── HUD ─────────────────────────────────────────────────────────────────
-
-function updateHUD(): void {
-	if (!vehicle || !speedEl) return;
-	const kmh = Math.abs(Math.round(vehicle.state.speed * 3.6));
-	speedEl.innerHTML = `${kmh} <span class="unit">km/h</span>`;
-
-	const gear =
-		vehicle.state.gear === -1 ? "R" : vehicle.state.speed < 0.5 ? "N" : String(vehicle.state.gear);
-	if (gearEl) gearEl.textContent = gear;
-
-	const rpmPct =
-		((vehicle.state.rpm - vehicle.config.engine.idleRPM) /
-			(vehicle.config.engine.maxRPM - vehicle.config.engine.idleRPM)) *
-		100;
-	if (rpmBar) rpmBar.style.width = `${Math.max(0, Math.min(100, rpmPct))}%`;
-}
-
 // ── Build ───────────────────────────────────────────────────────────────
 
 async function buildPractice(): Promise<void> {
+	const loading = document.querySelector("loading-screen") as LoadingScreen | null;
+
 	world = await buildWorld({
 		seed,
 		hour,
 		weather,
-		// Practice-specific overrides
 		pixelRatioCap: 2,
 		shadowResolution: 2048,
 		shadowExtent: 100,
@@ -249,7 +285,6 @@ async function buildPractice(): Promise<void> {
 		toneMapping: true,
 	});
 
-	// Vehicle (page-specific)
 	vehicle = new VehicleController(SPORTS_CAR);
 	const carModel = await vehicle.loadModel();
 	carModel.castShadow = true;
@@ -263,13 +298,19 @@ async function buildPractice(): Promise<void> {
 
 	vehicle.setTerrain(world.terrain);
 	state.headlights = vehicle.headlights;
-	// Re-apply time of day now that headlights are registered
 	applyTimeOfDay(hour);
 	setupCameraInput(world.renderer);
 	resetCar();
 
-	if (loadingEl) loadingEl.style.display = "none";
-	if (hudEl) hudEl.style.display = "flex";
+	initUI();
+
+	if (loading) loading.visible = false;
+
+	uiReady = true;
+	sessionStart = Date.now();
+
+	const toast = document.querySelector("race-toast") as RaceToast | null;
+	if (toast) toast.show("WORLD LOADED");
 }
 
 // ── Resize ──────────────────────────────────────────────────────────────
@@ -295,9 +336,28 @@ function animate(): void {
 		vehicle.update(input, delta);
 		vehicle.syncVisuals();
 		updateCamera();
-		updateHUD();
 
-		// Move shadow camera to follow car
+		const speed = Math.abs(vehicle.state.speed * 3.6);
+		const gear = vehicle.state.gear;
+		const rpmFrac =
+			(vehicle.state.rpm - vehicle.config.engine.idleRPM) /
+			(vehicle.config.engine.maxRPM - vehicle.config.engine.idleRPM);
+		const clampedRpm = Math.max(0, Math.min(1, rpmFrac));
+
+		const steerInput = (input.left ? -1 : 0) + (input.right ? 1 : 0);
+		const throttle = input.forward ? 1 : 0;
+		const brake = input.backward ? 1 : 0;
+
+		updateUI(speed, gear, clampedRpm, steerInput, throttle, brake);
+
+		if (mapEl) {
+			const pos = vehicle.getPosition();
+			mapEl.playerX = pos.x;
+			mapEl.playerZ = pos.z;
+			const fwd = vehicle.getForward();
+			mapEl.heading = Math.atan2(fwd.x, fwd.z);
+		}
+
 		if (state.sun && vehicle.model) {
 			const cp = vehicle.model.position;
 			state.sun.position.set(cp.x + 100, cp.y + 150, cp.z + 50);
@@ -324,5 +384,6 @@ buildPractice()
 	})
 	.catch((err) => {
 		console.error("Failed to build practice scene:", err);
-		if (loadingEl) loadingEl.textContent = "Error loading track. Check console.";
+		const loading = document.querySelector("loading-screen") as LoadingScreen | null;
+		if (loading) loading.message = "Error loading track. Check console.";
 	});

@@ -1,17 +1,16 @@
-/**
- * Racing game UI — Lit-based overlay components.
- *
- * Design system:
- * - Dark, semi-transparent panels that float over the 3D canvas
- * - Accent color: #00e5a0 (neon green) — feels sporty/racing
- * - Secondary: #ff6b35 (orange) for warnings/speed
- * - Glass-morphism: backdrop-filter blur + semi-transparent backgrounds
- * - Mobile-first, touch-friendly sizing
- * - All components are Web Components — drop into any HTML
- */
-
-export { ControlPanel } from "./control-panel.ts";
-export { GameHud } from "./game-hud.ts";
-export { NotificationToast } from "./notification-toast.ts";
-export { SettingsPanel } from "./settings-panel.ts";
-export { WorldControls } from "./world-controls.ts";
+export { CarNameplate } from "./car-nameplate.ts";
+export { ControlsHelp } from "./controls-help.ts";
+export { DamageBar } from "./damage-bar.ts";
+export { GearStrip } from "./gear-strip.ts";
+export { LapTimer } from "./lap-timer.ts";
+export { LoadingScreen } from "./loading-screen.ts";
+export { RaceMinimap } from "./minimap.ts";
+export { PedalBars } from "./pedal-bars.ts";
+export { RaceToast } from "./race-toast.ts";
+export { RpmBar } from "./rpm-bar.ts";
+export { SessionBadge } from "./session-badge.ts";
+export { SpeedDisplay } from "./speed-display.ts";
+export { SpeedTrap } from "./speed-trap.ts";
+export { SteerIndicator } from "./steer-indicator.ts";
+export { SystemBar } from "./system-bar.ts";
+export { TireTemps } from "./tire-temps.ts";

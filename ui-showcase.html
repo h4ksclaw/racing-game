@@ -4,251 +4,20 @@
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	<title>Racing Game — UI Concept</title>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 	<style>
-		@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
-
 		* { margin: 0; padding: 0; box-sizing: border-box; }
 		html, body { width: 100%; height: 100%; overflow: hidden; background: #06040a; }
 
 		.canvas-bg { position: absolute; inset: 0; z-index: 0; }
 		.canvas-bg canvas { display: block; width: 100%; height: 100%; }
 
-		/* ── Shared tokens ────────────────────────────────────── */
-		:root {
-			--purple: #8b5cf6;
-			--purple-dim: rgba(139,92,246,0.35);
-			--purple-faint: rgba(139,92,246,0.12);
-			--purple-ghost: rgba(139,92,246,0.06);
-			--purple-glow: rgba(139,92,246,0.04);
-			--red: rgba(244,63,94,0.6);
-			--red-dim: rgba(244,63,94,0.06);
-			--green: rgba(163,230,53,0.6);
-			--green-dim: rgba(163,230,53,0.15);
-			--amber: rgba(251,191,36,0.7);
-			--amber-dim: rgba(251,191,36,0.15);
-			--panel: rgba(10,8,18,0.82);
-			--panel-solid: rgba(10,8,18,0.9);
-			--text: rgba(255,255,255,0.45);
-			--text-bright: rgba(255,255,255,0.7);
-			--text-white: #fff;
-			--mono: 'JetBrains Mono', monospace;
-			--sans: 'Inter', sans-serif;
-			--border: 1px solid var(--purple-faint);
-			--radius: 4px;
-		}
-
-		/* ── TOP BAR ──────────────────────────────────────────── */
-		.top-bar {
-			position: fixed; top: 0; left: 0; right: 0; z-index: 100; pointer-events: none;
-			font-family: var(--mono); display: flex; align-items: center;
-			background: var(--panel-solid); backdrop-filter: blur(12px);
-			border-bottom: 1px solid var(--purple-faint); padding: 7px 20px;
-		}
-		.top-bar .lbl { font-size: 9px; color: var(--purple-dim); letter-spacing: 3px; }
-		.top-bar .val { font-size: 9px; color: var(--text); margin-left: 6px; }
-		.top-bar .sep { font-size: 9px; color: var(--purple-ghost); margin: 0 14px; }
-		.top-bar .controls { margin-left: auto; font-size: 9px; color: rgba(139,92,246,0.15); letter-spacing: 1px; }
-
-		/* ── VIEWPORT CORNERS ─────────────────────────────────── */
+		/* ── Viewport corners ────────────────────────────────────── */
 		.corner { position:fixed; width:14px; height:14px; pointer-events:none; z-index:90; }
-		.c-tl { top:32px; left:4px; border-left:2px solid var(--purple-faint); border-top:2px solid var(--purple-faint); }
-		.c-tr { top:32px; right:4px; border-right:2px solid var(--purple-faint); border-top:2px solid var(--purple-faint); }
-		.c-bl { bottom:4px; left:4px; border-left:2px solid var(--purple-faint); border-bottom:2px solid var(--purple-faint); }
-		.c-br { bottom:4px; right:4px; border-right:2px solid var(--purple-faint); border-bottom:2px solid var(--purple-faint); }
-
-		/* ── PANEL BASE ───────────────────────────────────────── */
-		.panel {
-			background: var(--panel); backdrop-filter: blur(10px);
-			border: var(--border); font-family: var(--sans);
-		}
-
-		/* ── BOTTOM LEFT: NAMEPLATE + DATA ────────────────────── */
-		.hud-left {
-			position: fixed; bottom: 16px; left: 16px; z-index: 100; pointer-events: none;
-		}
-		.nameplate { display: flex; align-items: stretch; }
-		.nameplate .num {
-			background: rgba(139,92,246,0.85); padding: 5px 12px;
-			display: flex; align-items: center;
-		}
-		.nameplate .num span { font-size: 15px; font-weight: 800; color: #fff; letter-spacing: 1px; }
-		.nameplate .car {
-			padding: 5px 14px; display: flex; align-items: center;
-			border: 1px solid var(--purple-faint); border-left: none;
-			background: var(--panel);
-		}
-		.nameplate .car span { font-size: 12px; font-weight: 600; color: var(--text-bright); letter-spacing: 0.5px; }
-
-		.data-row {
-			margin-top: 5px; padding: 7px 14px;
-			display: inline-flex; align-items: baseline; gap: 6px;
-		}
-		.data-row .speed-val { font-size: 30px; font-weight: 700; color: var(--text-white); font-variant-numeric: tabular-nums; letter-spacing: -1px; }
-		.data-row .speed-unit { font-size: 10px; color: var(--purple-dim); font-weight: 500; letter-spacing: 1px; }
-		.data-row .sep { margin: 0 6px; color: var(--purple-faint); }
-		.data-row .lbl { font-size: 9px; color: rgba(139,92,246,0.3); font-weight: 600; letter-spacing: 1px; }
-		.data-row .val { font-size: 17px; font-weight: 700; color: var(--purple-dim); font-variant-numeric: tabular-nums; }
-		.data-row .val-w { font-size: 17px; font-weight: 700; color: var(--text-bright); font-variant-numeric: tabular-nums; }
-
-		/* ── BOTTOM RIGHT: SESSION + RPM ──────────────────────── */
-		.hud-right {
-			position: fixed; bottom: 16px; right: 16px; z-index: 100; pointer-events: none;
-			text-align: right; font-family: var(--sans);
-		}
-		.session-badge {
-			padding: 6px 14px; display: inline-flex; align-items: center; gap: 8px;
-		}
-		.session-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--purple); animation: pulse 2s infinite; }
-		.session-badge .timer { font-size: 13px; color: var(--text-bright); font-weight: 600; font-variant-numeric: tabular-nums; font-family: var(--mono); }
-		.session-badge .type { font-size: 9px; color: rgba(139,92,246,0.3); font-weight: 600; letter-spacing: 1px; }
-
-		.rpm-strip {
-			margin-top: 5px; padding: 7px 14px;
-			display: flex; align-items: center; gap: 8px;
-		}
-		.rpm-strip .lbl { font-size: 9px; color: rgba(139,92,246,0.3); font-weight: 600; letter-spacing: 2px; }
-		.rpm-strip .segments { display: flex; gap: 2px; flex: 1; height: 7px; }
-		.rpm-strip .seg { flex: 1; background: var(--purple-ghost); transition: background 0.05s; }
-		.rpm-strip .seg.red { background: var(--red-dim); }
-		.rpm-strip .rpm-val { font-size: 10px; color: rgba(139,92,246,0.5); min-width: 28px; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
-
-		/* ── LEFT COLUMN: STEERING INDICATOR ──────────────────── */
-		.steer-indicator {
-			position: fixed; bottom: 110px; left: 16px; z-index: 100; pointer-events: none;
-		}
-		.steer-bar {
-			padding: 8px 12px; width: 44px;
-			display: flex; flex-direction: column; align-items: center; gap: 6px;
-		}
-		.steer-track {
-			width: 4px; height: 60px; background: var(--purple-ghost); border-radius: 2px;
-			position: relative;
-		}
-		.steer-needle {
-			position: absolute; left: -4px; width: 12px; height: 3px;
-			background: var(--purple); border-radius: 1px;
-			top: 50%; transform: translateY(-50%); transition: top 0.1s;
-			box-shadow: 0 0 8px rgba(139,92,246,0.4);
-		}
-		.steer-labels {
-			font-family: var(--mono); font-size: 8px; color: rgba(139,92,246,0.2);
-			letter-spacing: 2px; text-align: center;
-		}
-
-		/* ── LEFT COLUMN: THROTTLE/BRAKE BARS ─────────────────── */
-		.input-bars {
-			position: fixed; bottom: 200px; left: 16px; z-index: 100; pointer-events: none;
-		}
-		.input-bars .bar-group {
-			display: flex; align-items: flex-end; gap: 6px; margin-bottom: 6px;
-		}
-		.input-bars .bar-label {
-			font-family: var(--mono); font-size: 8px; color: rgba(139,92,246,0.2);
-			letter-spacing: 2px; width: 28px; text-align: right; padding-bottom: 4px;
-		}
-		.input-bars .bar-track {
-			width: 8px; height: 40px; background: var(--purple-ghost); border-radius: 2px;
-			position: relative; overflow: hidden;
-		}
-		.input-bars .bar-fill {
-			position: absolute; bottom: 0; width: 100%; border-radius: 2px;
-			transition: height 0.08s;
-		}
-		.input-bars .thr-fill { background: var(--purple); }
-		.input-bars .brk-fill { background: var(--red); }
-
-		/* ── RIGHT COLUMN: MINIMAP ────────────────────────────── */
-		.minimap {
-			position: fixed; top: 36px; right: 16px; z-index: 100; pointer-events: none;
-		}
-		.minimap .map-frame {
-			padding: 6px; width: 120px; height: 120px;
-		}
-		.minimap canvas {
-			width: 100%; height: 100%; border-radius: 2px;
-			background: rgba(139,92,246,0.03);
-		}
-		.minimap .coords {
-			margin-top: 4px; font-family: var(--mono); font-size: 8px;
-			color: rgba(139,92,246,0.2); letter-spacing: 1px; text-align: center;
-		}
-
-		/* ── RIGHT COLUMN: GEAR SHIFT INDICATOR ───────────────── */
-		.gear-display {
-			position: fixed; top: 176px; right: 16px; z-index: 100; pointer-events: none;
-		}
-		.gear-strip {
-			padding: 8px 10px;
-			display: flex; flex-direction: column; align-items: center; gap: 2px;
-		}
-		.gear-strip .g-item {
-			width: 32px; height: 20px; display: flex; align-items: center; justify-content: center;
-			font-family: var(--mono); font-size: 10px; font-weight: 600;
-			color: rgba(139,92,246,0.15); border-radius: 2px;
-			transition: all 0.15s;
-		}
-		.gear-strip .g-item.active {
-			color: var(--purple); background: rgba(139,92,246,0.1);
-			text-shadow: 0 0 8px rgba(139,92,246,0.4);
-		}
-		.gear-strip .g-item.rev { color: rgba(244,63,94,0.3); }
-		.gear-strip .g-item.rev.active { color: var(--red); background: rgba(244,63,94,0.1); }
-		.gear-strip .g-item.neutral { color: rgba(139,92,246,0.1); font-size: 8px; }
-		.gear-strip .g-item.neutral.active { color: rgba(139,92,246,0.4); }
-
-		/* ── TOP CENTER: LAP TIMER ────────────────────────────── */
-		.lap-timer {
-			position: fixed; top: 36px; left: 50%; transform: translateX(-50%);
-			z-index: 100; pointer-events: none; font-family: var(--mono);
-		}
-		.lap-timer .timer-row {
-			padding: 6px 16px; display: flex; align-items: center; gap: 12px;
-		}
-		.lap-timer .t-lbl { font-size: 9px; color: rgba(139,92,246,0.3); letter-spacing: 2px; }
-		.lap-timer .t-val { font-size: 12px; color: var(--text-bright); font-variant-numeric: tabular-nums; }
-		.lap-timer .t-val.best { color: var(--green); }
-		.lap-timer .t-val.delta-neg { color: var(--green); }
-		.lap-timer .t-val.delta-pos { color: var(--red); }
-		.lap-timer .t-sep { color: var(--purple-ghost); }
-
-		/* ── TOP LEFT: TIRE TEMPS ─────────────────────────────── */
-		.tire-temps {
-			position: fixed; top: 36px; left: 16px; z-index: 100; pointer-events: none;
-		}
-		.tire-temps .temps-frame {
-			padding: 8px 10px;
-		}
-		.tire-temps .temps-title {
-			font-family: var(--mono); font-size: 8px; color: rgba(139,92,246,0.2);
-			letter-spacing: 3px; text-align: center; margin-bottom: 6px;
-		}
-		.tire-temps .axle {
-			display: flex; justify-content: center; gap: 16px; margin-bottom: 4px;
-		}
-		.tire-temps .tire {
-			text-align: center;
-		}
-		.tire-temps .tire-icon {
-			font-size: 9px; color: rgba(139,92,246,0.15); margin-bottom: 2px;
-		}
-		.tire-temps .tire-val {
-			font-family: var(--mono); font-size: 10px; font-variant-numeric: tabular-nums;
-		}
-		.tire-temps .tire-val.cold { color: rgba(59,130,246,0.6); }
-		.tire-temps .tire-val.opt { color: var(--green); }
-		.tire-temps .tire-val.hot { color: var(--amber); }
-		.tire-temps .tire-val.over { color: var(--red); }
-
-		/* ── NOTIFICATION TOAST ───────────────────────────────── */
-		.toast {
-			position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-			z-index: 200; pointer-events: none; font-family: var(--mono);
-			background: var(--panel-solid); backdrop-filter: blur(12px);
-			border: 1px solid var(--purple-faint);
-			padding: 10px 22px;
-			font-size: 10px; color: rgba(139,92,246,0.5); letter-spacing: 2px;
-		}
-		.toast .ok { color: var(--green); margin-right: 8px; }
+		.c-tl { top:32px; left:4px; border-left:2px solid rgba(139,92,246,0.12); border-top:2px solid rgba(139,92,246,0.12); }
+		.c-tr { top:32px; right:4px; border-right:2px solid rgba(139,92,246,0.12); border-top:2px solid rgba(139,92,246,0.12); }
+		.c-bl { bottom:4px; left:4px; border-left:2px solid rgba(139,92,246,0.12); border-bottom:2px solid rgba(139,92,246,0.12); }
+		.c-br { bottom:4px; right:4px; border-right:2px solid rgba(139,92,246,0.12); border-bottom:2px solid rgba(139,92,246,0.12); }
 
 		/* ── RPM EDGE BAR ─────────────────────────────────────── */
 		.rpm-edge {
@@ -258,52 +27,11 @@
 		.rpm-edge .track { height: 100%; background: rgba(255,255,255,0.02); }
 		.rpm-edge .fill { height: 100%; transition: width 0.05s linear; background: linear-gradient(90deg, rgba(139,92,246,0.2), rgba(139,92,246,0.5), rgba(244,63,94,0.5)); }
 
-		/* ── DAMAGE INDICATOR ─────────────────────────────────── */
-		.damage-bar {
-			position: fixed; bottom: 72px; left: 16px; z-index: 100; pointer-events: none;
-		}
-		.damage-bar .frame {
-			padding: 6px 12px; display: flex; align-items: center; gap: 8px;
-		}
-		.damage-bar .lbl {
-			font-family: var(--mono); font-size: 8px; color: rgba(139,92,246,0.2);
-			letter-spacing: 2px;
-		}
-		.damage-bar .bar-track {
-			width: 60px; height: 3px; background: var(--purple-ghost); border-radius: 1px;
-			overflow: hidden;
-		}
-		.damage-bar .bar-fill {
-			height: 100%; border-radius: 1px; transition: width 0.3s, background 0.3s;
-		}
-		.damage-bar .pct {
-			font-family: var(--mono); font-size: 9px; font-variant-numeric: tabular-nums;
-		}
-
-		/* ── SPEED TRAP / BEST SPEED ──────────────────────────── */
-		.speed-trap {
-			position: fixed; bottom: 72px; right: 16px; z-index: 100; pointer-events: none;
-		}
-		.speed-trap .frame {
-			padding: 6px 12px; display: flex; align-items: center; gap: 8px;
-		}
-		.speed-trap .lbl {
-			font-family: var(--mono); font-size: 8px; color: rgba(139,92,246,0.2);
-			letter-spacing: 2px;
-		}
-		.speed-trap .val {
-			font-family: var(--mono); font-size: 11px; font-weight: 600;
-			font-variant-numeric: tabular-nums;
-		}
-		.speed-trap .val.best { color: var(--green); }
-
 		/* ── SCANLINES ────────────────────────────────────────── */
 		.scanlines {
 			position: fixed; inset: 0; pointer-events: none; z-index: 50;
 			background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.02) 2px, rgba(0,0,0,0.02) 4px);
 		}
-
-		@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 	</style>
 </head>
 <body>
@@ -317,175 +45,32 @@
 <div class="corner c-bl"></div>
 <div class="corner c-br"></div>
 
-<!-- ── TOP BAR ──────────────────────────────────────────────── -->
-<div class="top-bar">
-	<span class="lbl">SEED</span><span class="val">0042</span>
-	<span class="sep">|</span>
-	<span class="lbl">TIME</span><span class="val">18:30</span>
-	<span class="sep">|</span>
-	<span class="lbl">WX</span><span class="val">CLEAR</span>
-	<span class="sep">|</span>
-	<span class="lbl">SURFACE</span><span class="val">DRY</span>
-	<span class="sep">|</span>
-	<span class="lbl">POS</span><span class="val" id="pos">142.3 / 88.1 / 12.0</span>
-	<span class="controls">W/S A/D SPACE R</span>
-</div>
-
-<!-- ── TOP CENTER: LAP TIMER ────────────────────────────────── -->
-<div class="lap-timer">
-	<div class="timer-row panel">
-		<span class="t-lbl">LAP</span>
-		<span class="t-val" id="lap-cur">3/5</span>
-		<span class="t-sep">|</span>
-		<span class="t-lbl">TIME</span>
-		<span class="t-val" id="lap-time">1:42.307</span>
-		<span class="t-sep">|</span>
-		<span class="t-lbl">BEST</span>
-		<span class="t-val best" id="lap-best">1:41.892</span>
-		<span class="t-sep">|</span>
-		<span class="t-lbl">DELTA</span>
-		<span class="t-val delta-pos" id="lap-delta">+0.415</span>
-	</div>
-</div>
-
-<!-- ── TOP LEFT: TIRE TEMPERATURES ──────────────────────────── -->
-<div class="tire-temps">
-	<div class="temps-frame panel">
-		<div class="temps-title">TIRES</div>
-		<div class="axle">
-			<div class="tire">
-				<div class="tire-icon">FL</div>
-				<div class="tire-val opt" id="t-fl">82</div>
-			</div>
-			<div class="tire">
-				<div class="tire-icon">FR</div>
-				<div class="tire-val opt" id="t-fr">84</div>
-			</div>
-		</div>
-		<div class="axle">
-			<div class="tire">
-				<div class="tire-icon">RL</div>
-				<div class="tire-val hot" id="t-rl">91</div>
-			</div>
-			<div class="tire">
-				<div class="tire-icon">RR</div>
-				<div class="tire-val hot" id="t-rr">89</div>
-			</div>
-		</div>
-	</div>
-</div>
-
-<!-- ── RIGHT COLUMN: MINIMAP ────────────────────────────────── -->
-<div class="minimap">
-	<div class="map-frame panel">
-		<canvas id="minimap" width="108" height="108"></canvas>
-	</div>
-	<div class="coords" id="minimap-coords">X:142 Z:88</div>
-</div>
-
-<!-- ── RIGHT COLUMN: GEAR STRIP ─────────────────────────────── -->
-<div class="gear-display">
-	<div class="gear-strip panel">
-		<div class="g-item rev" id="g-r">R</div>
-		<div class="g-item neutral" id="g-n">N</div>
-		<div class="g-item" id="g-1">1</div>
-		<div class="g-item" id="g-2">2</div>
-		<div class="g-item" id="g-3">3</div>
-		<div class="g-item" id="g-4">4</div>
-		<div class="g-item" id="g-5">5</div>
-	</div>
-</div>
-
-<!-- ── LEFT COLUMN: THROTTLE/BRAKE BARS ─────────────────────── -->
-<div class="input-bars">
-	<div class="bar-group">
-		<div class="bar-label">THR</div>
-		<div class="bar-track"><div class="bar-fill thr-fill" id="thr-bar" style="height:0%"></div></div>
-	</div>
-	<div class="bar-group">
-		<div class="bar-label">BRK</div>
-		<div class="bar-track"><div class="bar-fill brk-fill" id="brk-bar" style="height:0%"></div></div>
-	</div>
-</div>
-
-<!-- ── LEFT COLUMN: STEERING INDICATOR ──────────────────────── -->
-<div class="steer-indicator">
-	<div class="steer-bar panel">
-		<div class="steer-labels">L</div>
-		<div class="steer-track">
-			<div class="steer-needle" id="steer-needle"></div>
-		</div>
-		<div class="steer-labels">R</div>
-	</div>
-</div>
-
-<!-- ── BOTTOM LEFT: NAMEPLATE + DATA ────────────────────────── -->
-<div class="hud-left">
-	<div class="nameplate">
-		<div class="num"><span>86</span></div>
-		<div class="car"><span>AE86 TRUENO</span></div>
-	</div>
-	<div class="data-row panel">
-		<span class="speed-val" id="speed">142</span>
-		<span class="speed-unit">km/h</span>
-		<span class="sep">|</span>
-		<span class="lbl">GEAR</span>
-		<span class="val" id="gear">4</span>
-		<span class="sep">|</span>
-		<span class="lbl">RPM</span>
-		<span class="val-w" id="rpm">7200</span>
-	</div>
-</div>
-
-<!-- ── DAMAGE BAR ───────────────────────────────────────────── -->
-<div class="damage-bar">
-	<div class="frame panel">
-		<span class="lbl">DMG</span>
-		<div class="bar-track"><div class="bar-fill" id="dmg-bar" style="width:100%; background:var(--green);"></div></div>
-		<span class="pct" id="dmg-pct" style="color:var(--green);">100%</span>
-	</div>
-</div>
-
-<!-- ── BOTTOM RIGHT: SESSION + RPM ──────────────────────────── -->
-<div class="hud-right">
-	<div class="session-badge panel">
-		<div class="dot"></div>
-		<span class="type">FREE ROAM</span>
-		<span class="timer" id="session-time">00:00:00</span>
-	</div>
-	<div class="rpm-strip panel">
-		<span class="lbl">RPM</span>
-		<div class="segments">
-			<div class="seg" id="s1"></div><div class="seg" id="s2"></div>
-			<div class="seg" id="s3"></div><div class="seg" id="s4"></div>
-			<div class="seg" id="s5"></div><div class="seg" id="s6"></div>
-			<div class="seg red" id="s7"></div><div class="seg red" id="s8"></div>
-		</div>
-		<span class="rpm-val" id="rpm-val">7200</span>
-	</div>
-</div>
-
-<!-- ── SPEED TRAP / TOP SPEED ───────────────────────────────── -->
-<div class="speed-trap">
-	<div class="frame panel">
-		<span class="lbl">TOP</span>
-		<span class="val best" id="top-speed">187</span>
-		<span style="font-family:var(--mono);font-size:8px;color:rgba(139,92,246,0.2);">km/h</span>
-	</div>
-</div>
+<!-- ── Lit UI Components ─────────────────────────────────────────── -->
+<system-bar seed="42" time="18:30" weather="clear" surface="dry" pos-x="142.3" pos-z="88.1" pos-y="12.0"></system-bar>
+<lap-timer lap="3/5" time="1:42.307" best="1:41.892" delta="+0.415"></lap-timer>
+<tire-temps fl="82" fr="84" rl="91" rr="89"></tire-temps>
+<race-minimap player-x="142" player-z="88" heading="0" speed="142"></race-minimap>
+<gear-strip gear="4"></gear-strip>
+<pedal-bars throttle="0" brake="0"></pedal-bars>
+<steer-indicator input="0"></steer-indicator>
+<car-nameplate number="86" name="AE86 TRUENO"></car-nameplate>
+<speed-display speed="142" gear="4" rpm="0.72"></speed-display>
+<damage-bar health="100"></damage-bar>
+<session-badge type="FREE ROAM" elapsed="0"></session-badge>
+<rpm-bar rpm="0.72"></rpm-bar>
+<speed-trap top-speed="187"></speed-trap>
+<race-toast message="WORLD LOADED" type="ok" visible></race-toast>
 
 <!-- RPM edge bar -->
 <div class="rpm-edge">
 	<div class="track"><div class="fill" id="rpm-edge-fill" style="width:72%"></div></div>
 </div>
 
-<!-- Toast -->
-<div class="toast"><span class="ok">[OK]</span> WORLD LOADED</div>
-
 <script type="module">
-import * as THREE from "three";
+import "./src/client/ui/index.ts";
 
 // ── Three.js background ──────────────────────────────────────
+const THREE = await import("three");
 const container = document.getElementById("bg");
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x06040a);
@@ -510,53 +95,22 @@ ground.rotation.x = -Math.PI / 2; ground.position.y = -20; scene.add(ground);
 const mesh = new THREE.Mesh(new THREE.TorusKnotGeometry(15, 4, 128, 32), new THREE.MeshStandardMaterial({ color: 0x8b5cf6, metalness: 0.6, roughness: 0.3, emissive: 0x8b5cf6, emissiveIntensity: 0.1 }));
 scene.add(mesh);
 
-// ── Minimap canvas ───────────────────────────────────────────
-const minimapCanvas = document.getElementById("minimap");
-const mctx = minimapCanvas.getContext("2d");
+// ── Component refs ───────────────────────────────────────────
+const $ = (sel) => document.querySelector(sel);
+const speedDisplay = $("speed-display");
+const rpmBar = $("rpm-bar");
+const gearStrip = $("gear-strip");
+const steerInd = $("steer-indicator");
+const pedalBars = $("pedal-bars");
+const tireTemps = $("tire-temps");
+const damageBar = $("damage-bar");
+const sessionBadge = $("session-badge");
+const speedTrap = $("speed-trap");
+const minimap = $("race-minimap");
+const systemBar = $("system-bar");
+const lapTimer = $("lap-timer");
+const rpmEdgeFill = document.getElementById("rpm-edge-fill");
 
-function drawMinimap(px, pz, heading, speed) {
-	const w = 108, h = 108;
-	mctx.clearRect(0, 0, w, h);
-
-	// Road path (sine wave)
-	mctx.strokeStyle = "rgba(139,92,246,0.15)";
-	mctx.lineWidth = 4;
-	mctx.beginPath();
-	for (let x = 0; x <= w; x += 2) {
-		const y = h / 2 + Math.sin((x + px * 0.3) * 0.06) * 25;
-		x === 0 ? mctx.moveTo(x, y) : mctx.lineTo(x, y);
-	}
-	mctx.stroke();
-
-	// Player dot
-	const dotX = w / 2;
-	const dotY = h / 2;
-	mctx.save();
-	mctx.translate(dotX, dotY);
-	mctx.rotate(heading);
-	// Arrow shape
-	mctx.fillStyle = "#8b5cf6";
-	mctx.shadowColor = "rgba(139,92,246,0.6)";
-	mctx.shadowBlur = 6;
-	mctx.beginPath();
-	mctx.moveTo(0, -5);
-	mctx.lineTo(3, 4);
-	mctx.lineTo(-3, 4);
-	mctx.closePath();
-	mctx.fill();
-	mctx.restore();
-
-	// Speed ring
-	const ringRadius = 20 + (speed / 200) * 30;
-	mctx.strokeStyle = `rgba(139,92,246,${0.05 + (speed / 200) * 0.1})`;
-	mctx.lineWidth = 1;
-	mctx.beginPath();
-	mctx.arc(dotX, dotY, ringRadius, 0, Math.PI * 2);
-	mctx.stroke();
-}
-
-// ── Animation loop ───────────────────────────────────────────
-const $ = (id) => document.getElementById(id);
 let t = 0;
 let topSpeed = 187;
 let sessionStart = Date.now();
@@ -575,7 +129,6 @@ function animate() {
 	const absSpeed = Math.max(0, Math.round(speed));
 	const rpm = 0.3 + Math.abs(Math.sin(t * 0.8)) * 0.65;
 	const gear = Math.min(Math.floor(Math.max(0, speed) / 40), 4) + 1;
-	const rpmVal = Math.round(rpm * 8000);
 	const steer = Math.sin(t * 0.3) * 0.8;
 	const throttle = Math.max(0, Math.sin(t * 0.25));
 	const brake = Math.max(0, -Math.sin(t * 0.7) * 0.4);
@@ -583,103 +136,65 @@ function animate() {
 
 	if (absSpeed > topSpeed) topSpeed = absSpeed;
 
-	// ── Update HUD elements ──
-
-	// Speed / gear / rpm
-	if ($("speed")) $("speed").textContent = absSpeed;
-	if ($("gear")) $("gear").textContent = gear;
-	if ($("rpm")) $("rpm").textContent = rpmVal;
-	if ($("rpm-val")) $("rpm-val").textContent = rpmVal;
-	if ($("rpm-edge-fill")) $("rpm-edge-fill").style.width = `${rpm * 100}%`;
-
-	// Top speed
-	if ($("top-speed")) $("top-speed").textContent = topSpeed;
-
-	// Segmented RPM
-	for (let i = 1; i <= 8; i++) {
-		const seg = $(`s${i}`);
-		if (!seg) continue;
-		const filled = (rpm * 8) >= i;
-		const isRed = i >= 7;
-		seg.style.background = filled
-			? (isRed ? "rgba(244,63,94,0.6)" : "rgba(139,92,246,0.5)")
-			: (isRed ? "rgba(244,63,94,0.06)" : "rgba(139,92,246,0.06)");
+	// ── Update Lit components ──
+	if (speedDisplay) {
+		speedDisplay.speed = absSpeed;
+		speedDisplay.gear = gear;
+		speedDisplay.rpm = rpm;
+	}
+	if (rpmBar) rpmBar.rpm = rpm;
+	if (gearStrip) gearStrip.gear = gear;
+	if (steerInd) steerInd.input = steer;
+	if (pedalBars) {
+		pedalBars.throttle = throttle;
+		pedalBars.brake = brake;
 	}
 
-	// Gear strip
-	["g-r","g-n","g-1","g-2","g-3","g-4","g-5"].forEach(id => {
-		const el = $(id);
-		if (el) el.classList.remove("active");
-	});
-	const gearMap: Record<string, string> = { "-1": "g-r", "0": "g-n", "1": "g-1", "2": "g-2", "3": "g-3", "4": "g-4", "5": "g-5" };
-	const activeGear = gearMap[String(gear)];
-	if (activeGear) $(activeGear)?.classList.add("active");
-
-	// Steering needle (0=top, 1=bottom; steer -1=left, 1=right)
-	if ($("steer-needle")) {
-		const pct = 50 - (steer * 40);
-		$("steer-needle").style.top = `${Math.max(5, Math.min(95, pct))}%`;
-	}
-
-	// Throttle / brake bars
-	if ($("thr-bar")) $("thr-bar").style.height = `${throttle * 100}%`;
-	if ($("brk-bar")) $("brk-bar").style.height = `${brake * 100}%`;
-
-	// Tire temps (simulated)
+	// Tire temps
 	const flTemp = 78 + Math.round(Math.sin(t * 0.1) * 8 + speed * 0.03);
 	const frTemp = 80 + Math.round(Math.sin(t * 0.12 + 1) * 6 + speed * 0.04);
 	const rlTemp = 85 + Math.round(Math.sin(t * 0.08 + 2) * 10 + speed * 0.05);
 	const rrTemp = 83 + Math.round(Math.sin(t * 0.09 + 3) * 7 + speed * 0.04);
-	function tempClass(temp) {
-		if (temp < 75) return "cold";
-		if (temp < 88) return "opt";
-		if (temp < 100) return "hot";
-		return "over";
+	if (tireTemps) {
+		tireTemps.fl = flTemp;
+		tireTemps.fr = frTemp;
+		tireTemps.rl = rlTemp;
+		tireTemps.rr = rrTemp;
 	}
-	[["t-fl", flTemp], ["t-fr", frTemp], ["t-rl", rlTemp], ["t-rr", rrTemp]].forEach(([id, temp]) => {
-		const el = $(id as string);
-		if (el) {
-			el.textContent = temp;
-			el.className = `tire-val ${tempClass(temp as number)}`;
-		}
-	});
 
-	// Damage (slowly decreasing simulation)
+	// Damage
 	const dmg = Math.max(0, 100 - t * 0.5 + Math.sin(t * 0.2) * 5);
-	const dmgPct = Math.round(dmg);
-	if ($("dmg-bar")) {
-		$("dmg-bar").style.width = `${dmgPct}%`;
-		$("dmg-bar").style.background = dmgPct > 60 ? "rgba(163,230,53,0.5)" : dmgPct > 30 ? "rgba(251,191,36,0.5)" : "rgba(244,63,94,0.5)";
-	}
-	if ($("dmg-pct")) {
-		$("dmg-pct").textContent = `${dmgPct}%`;
-		$("dmg-pct").style.color = dmgPct > 60 ? "rgba(163,230,53,0.6)" : dmgPct > 30 ? "rgba(251,191,36,0.7)" : "rgba(244,63,94,0.6)";
-	}
+	if (damageBar) damageBar.health = dmg;
 
 	// Session timer
 	const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
-	const hrs = String(Math.floor(elapsed / 3600)).padStart(2, "0");
-	const mins = String(Math.floor((elapsed % 3600) / 60)).padStart(2, "0");
-	const secs = String(elapsed % 60).padStart(2, "0");
-	if ($("session-time")) $("session-time").textContent = `${hrs}:${mins}:${secs}`;
+	if (sessionBadge) sessionBadge.elapsed = elapsed;
 
-	// Lap delta oscillation
-	const delta = (Math.sin(t * 0.15) * 2).toFixed(3);
-	const deltaEl = $("lap-delta");
-	if (deltaEl) {
-		const isNeg = Number.parseFloat(delta) < 0;
-		deltaEl.textContent = `${isNeg ? "" : "+"}${delta}`;
-		deltaEl.className = `t-val ${isNeg ? "delta-neg" : "delta-pos"}`;
-	}
-
-	// Position coords
-	const posX = (142.3 + Math.sin(t * 0.2) * 20).toFixed(1);
-	const posZ = (88.1 + Math.cos(t * 0.15) * 15).toFixed(1);
-	if ($("pos")) $("pos").textContent = `${posX} / ${posZ} / 12.0`;
-	if ($("minimap-coords")) $("minimap-coords").textContent = `X:${posX} Z:${posZ}`;
+	// Top speed
+	if (speedTrap) speedTrap.topSpeed = topSpeed;
 
 	// Minimap
-	drawMinimap(parseFloat(posX), parseFloat(posZ), heading, absSpeed);
+	const posX = 142.3 + Math.sin(t * 0.2) * 20;
+	const posZ = 88.1 + Math.cos(t * 0.15) * 15;
+	if (minimap) {
+		minimap.playerX = posX;
+		minimap.playerZ = posZ;
+		minimap.heading = heading;
+		minimap.speed = absSpeed;
+	}
+
+	// System bar position
+	if (systemBar) {
+		systemBar.posX = posX;
+		systemBar.posZ = posZ;
+	}
+
+	// Lap delta
+	const delta = (Math.sin(t * 0.15) * 2).toFixed(3);
+	if (lapTimer) lapTimer.delta = delta;
+
+	// RPM edge bar
+	if (rpmEdgeFill) rpmEdgeFill.style.width = `${rpm * 100}%`;
 }
 
 animate();
