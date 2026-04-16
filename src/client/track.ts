@@ -125,6 +125,7 @@ if (timeSlider) {
 		state.currentTime = hour;
 		setURLParam("hour", String(hour));
 		applyTimeOfDay(hour);
+		applyWeather(state.currentWeather);
 		updateTimeLabel(hour);
 	});
 }

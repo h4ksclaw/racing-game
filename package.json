@@ -4,9 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:full": "bash dev.sh",
     "dev:server": "tsx src/server/index.ts",
-    "build:debug": "vite build --config vite-debug-v2.config.ts",
-    "dev:debug": "vite --config vite-debug-v2.config.ts",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "biome check src/",
@@ -38,7 +37,6 @@
     "vitest": "^4.1.4"
   },
   "dependencies": {
-    "cannon-es": "^0.20.0",
     "express": "^5.2.1",
     "simplex-noise": "^4.0.3",
     "three": "^0.183.2"

@@ -434,17 +434,6 @@ export function applyWeather(weather: WeatherType): void {
 				dt.setRGB(dt.r * 0.85, dt.g * 0.85, dt.b * 0.93);
 				break;
 			case "snow":
-				// Snow brightens and cools terrain slightly
-				gt.setRGB(
-					Math.min(gt.r * 1.05, 1.2),
-					Math.min(gt.g * 1.05, 1.2),
-					Math.min(gt.b * 1.1, 1.3),
-				);
-				rt.setRGB(
-					Math.min(rt.r * 1.05, 1.2),
-					Math.min(rt.g * 1.05, 1.2),
-					Math.min(rt.b * 1.1, 1.3),
-				);
 				break;
 			case "fog":
 				// Fog desaturates slightly

@@ -42,7 +42,8 @@
     "node_modules",
     "dist",
     "vite.config.ts",
-    "vite-debug-v2.config.ts",
-    "_archive"
+    "",
+    "_archive",
+    "track"
   ]
 }
