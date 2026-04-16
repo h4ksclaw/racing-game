@@ -20,6 +20,7 @@ export const state = {
 	skyMesh: null as THREE.Mesh | null,
 	stars: null as THREE.Points | null,
 	streetLights: [] as THREE.Light[],
+	headlights: [] as THREE.SpotLight[],
 	lightFixtures: [] as THREE.Mesh[],
 	houseWindows: [] as THREE.Mesh[],
 	cloudLayer: null as THREE.Group | null,

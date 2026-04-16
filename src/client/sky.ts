@@ -256,6 +256,7 @@ export function applyTimeOfDay(hour: number): void {
 		skyUniforms,
 		stars,
 		streetLights,
+		headlights,
 		lightFixtures,
 		terrainMaterial,
 		roadMaterial,
@@ -321,6 +322,14 @@ export function applyTimeOfDay(hour: number): void {
 		// SpotLights need higher intensity to match PointLight coverage
 		const mult = light instanceof THREE.SpotLight ? 3 : 1;
 		light.intensity = nightFactor * 30 * mult;
+	}
+
+	// Car headlights — wider cycle than street lights (on earlier, off later)
+	const headlightFactor = Math.max(0, Math.min(1, (0.6 - st.sunIntensity) / 0.3));
+	const weatherHlMult =
+		state.currentWeather === "fog" || state.currentWeather === "heavy_rain" ? 1.3 : 1;
+	for (const hl of headlights) {
+		hl.intensity = headlightFactor * 40 * weatherHlMult;
 	}
 	for (const fixture of lightFixtures) {
 		const mat = fixture.material as THREE.MeshLambertMaterial;

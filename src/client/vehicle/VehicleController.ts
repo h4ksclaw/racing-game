@@ -54,6 +54,7 @@ export interface TerrainProvider {
 export class VehicleController {
 	model: THREE.Group | null = null;
 	private wheelMeshes: THREE.Object3D[] = [];
+	headlights: THREE.SpotLight[] = [];
 	private terrain: TerrainProvider | null = null;
 
 	state: VehicleState = {
@@ -141,6 +142,9 @@ export class VehicleController {
 				child.receiveShadow = true;
 			}
 		});
+
+		// ── Add headlights ──────────────────────────────────────────────
+		this.addHeadlights();
 
 		// ── Auto-derive chassis from marker objects ─────────────────────
 		this.autoDeriveChassis();
@@ -335,6 +339,33 @@ export class VehicleController {
 
 			this.model.add(tireMesh);
 			this.wheelMeshes.push(tireMesh);
+		}
+	}
+
+	/**
+	 * Add two spotlights as headlights, attached to the car model.
+	 * Positioned at the front, angled slightly down.
+	 * Intensity is controlled externally by applyTimeOfDay().
+	 */
+	private addHeadlights(): void {
+		if (!this.model) return;
+
+		const ch = this.config.chassis;
+		const frontZ = ch.halfExtents[2]; // front of car (Z+ in model space)
+		const halfW = ch.halfExtents[0];
+		const y = ch.halfExtents[1] * 0.6; // slightly above center height
+
+		for (const side of [-1, 1] as const) {
+			const light = new THREE.SpotLight(0xfff5e6, 0, 80, Math.PI / 5, 0.4, 1.5);
+			light.position.set(side * halfW * 0.65, y, frontZ);
+			// Aim forward and slightly down
+			const target = new THREE.Object3D();
+			target.position.set(side * halfW * 0.3, -2, frontZ + 20);
+			this.model.add(target);
+			light.target = target;
+			light.castShadow = false; // skip shadow maps for perf
+			this.model.add(light);
+			this.headlights.push(light);
 		}
 	}
 

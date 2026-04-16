@@ -260,6 +260,7 @@ async function buildPractice(): Promise<void> {
 	world.scene.add(carModel);
 
 	vehicle.setTerrain(world.terrain);
+	state.headlights = vehicle.headlights;
 	setupCameraInput(world.renderer);
 	resetCar();
 
