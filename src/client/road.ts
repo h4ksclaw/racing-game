@@ -4,7 +4,7 @@ import type { BiomeConfig, GuardrailConfig } from "./biomes.ts";
 import { DEFAULT_GUARDRAIL_CONFIG } from "./biomes.ts";
 import { state } from "./scene.ts";
 import type { TerrainSampler } from "./terrain.ts";
-import type { TrackResponse } from "./utils.ts";
+import type { WorldResponse } from "./utils.ts";
 
 // ── Texture helpers ───────────────────────────────────────────────────
 
@@ -187,7 +187,7 @@ function makeGeo(
 
 /** Build instanced road meshes (asphalt, kerbs, shoulders, concrete, center line, start/finish). */
 export async function buildMeshes(
-	data: TrackResponse,
+	data: WorldResponse,
 	rng: () => number,
 	biome?: BiomeConfig,
 	avgRoadY?: number,

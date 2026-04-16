@@ -2,7 +2,7 @@
  * Express lobby server.
  *
  * - Lobby management: /api/lobby
- * - Track generation: /api/track
+ * - Track generation: /api/world
  * - Serves frontend static files from dist/ in production
  */
 
@@ -94,7 +94,7 @@ app.post("/api/lobby/:code/leave", (req, res) => {
 
 // ── Track route ──────────────────────────────────────────────────────────
 
-app.get("/api/track", (req, res) => {
+app.get("/api/world", (req, res) => {
 	const seed = Number(req.query.seed) || 42;
 	const data = generateTrack(seed, {
 		width: Number(req.query.width) || undefined,
@@ -126,9 +126,9 @@ const distPath = path.join(projectRoot, "dist");
 // In production, Express serves both.
 app.use(express.static(distPath));
 
-// Clean URL routing: /track → track.html, /practice → practice.html
-app.get("/track", (_req, res) => {
-	res.sendFile(path.join(distPath, "track.html"));
+// Clean URL routing: /world → world.html, /practice → practice.html
+app.get("/world", (_req, res) => {
+	res.sendFile(path.join(distPath, "world.html"));
 });
 app.get("/practice", (_req, res) => {
 	res.sendFile(path.join(distPath, "practice.html"));
@@ -137,7 +137,7 @@ app.get("/physics-debug", (_req, res) => {
 	res.sendFile(path.join(distPath, "physics-debug.html"));
 });
 app.get("*path", (_req, res) => {
-	res.sendFile(path.join(distPath, "track.html"));
+	res.sendFile(path.join(distPath, "world.html"));
 });
 
 const PORT = Number(process.env.PORT ?? 3001);

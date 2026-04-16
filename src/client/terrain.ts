@@ -4,7 +4,7 @@ import { createNoise2D } from "simplex-noise";
 import * as THREE from "three";
 import type { BiomeConfig } from "./biomes.ts";
 import { state } from "./scene.ts";
-import type { TrackResponse } from "./utils.ts";
+import type { WorldResponse } from "./utils.ts";
 import { smoothstep } from "./utils.ts";
 
 // ── Texture loading helpers ─────────────────────────────────────────────
@@ -655,7 +655,7 @@ void main() {
 
 /** Build terrain mesh with custom GLSL shader (7-layer blend based on height/slope/road distance). */
 export async function buildTerrain(
-	_data: TrackResponse,
+	_data: WorldResponse,
 	terrain: TerrainSampler,
 	biome: BiomeConfig,
 	worldSize: number,

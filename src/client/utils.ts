@@ -6,7 +6,7 @@ export interface V3 {
 	z: number;
 }
 
-export interface TrackResponse {
+export interface WorldResponse {
 	controlPoints3D: V3[];
 	samples: TrackSample[];
 	splinePoints: V3[];

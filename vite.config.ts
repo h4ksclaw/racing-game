@@ -13,7 +13,7 @@ export default defineConfig({
 		sourcemap: true,
 		rollupOptions: {
 			input: {
-				track: resolve(__dirname, "track.html"),
+				world: resolve(__dirname, "world.html"),
 				practice: resolve(__dirname, "practice.html"),
 				"physics-debug": resolve(__dirname, "pages/physics-debug.html"),
 			},

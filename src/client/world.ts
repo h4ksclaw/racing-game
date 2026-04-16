@@ -25,7 +25,7 @@ import {
 } from "./scenery.ts";
 import { applyTimeOfDay, buildStars, setupSky } from "./sky.ts";
 import { buildTerrain, TerrainSampler } from "./terrain.ts";
-import type { TrackResponse } from "./utils.ts";
+import type { WorldResponse } from "./utils.ts";
 import {
 	applyWeather,
 	buildCloudLayer,
@@ -66,7 +66,7 @@ export interface WorldResult {
 	/** The WebGL renderer (already appended to body) */
 	renderer: THREE.WebGLRenderer;
 	/** The full track data */
-	trackData: TrackResponse;
+	trackData: WorldResponse;
 	/** The biome config used */
 	biome: ReturnType<typeof getBiomeForSeed>;
 	/** Scenery items placed in the world */
@@ -94,16 +94,16 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 	state.currentWeather = weather;
 
 	// ── Fetch or generate track data ──
-	let trackData: TrackResponse;
+	let trackData: WorldResponse;
 	try {
-		const resp = await fetch(`/api/track?seed=${seed}`);
+		const resp = await fetch(`/api/world?seed=${seed}`);
 		if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 		trackData = await resp.json();
 	} catch {
 		const gen = (await import("@shared/track.ts")).generateTrack(seed);
 		trackData = { ...gen, seed };
 	}
-	state.trackSamples = trackData.samples;
+	state.worldSamples = trackData.samples;
 
 	// ── Biome ──
 	const biome = getBiomeForSeed(seed);

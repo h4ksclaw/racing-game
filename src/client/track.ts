@@ -160,8 +160,8 @@ function updateTerrainStreetLights(): void {
 // ── Flyover ─────────────────────────────────────────────────────────────
 
 function updateFlyover(delta: number): void {
-	const { flyover, camera, controls, trackSamples } = state;
-	if (!flyover.active || !camera || !trackSamples.length) return;
+	const { flyover, camera, controls, worldSamples } = state;
+	if (!flyover.active || !camera || !worldSamples.length) return;
 	if (controls) controls.enabled = false;
 
 	const speedMs = (flyover.speed / 3.6) * delta;
@@ -170,10 +170,10 @@ function updateFlyover(delta: number): void {
 	let walked = 0;
 	let idx = 0;
 	let segLen = 0;
-	for (let i = 1; i < trackSamples.length; i++) {
-		const dx = trackSamples[i].point.x - trackSamples[i - 1].point.x;
-		const dy = trackSamples[i].point.y - trackSamples[i - 1].point.y;
-		const dz = trackSamples[i].point.z - trackSamples[i - 1].point.z;
+	for (let i = 1; i < worldSamples.length; i++) {
+		const dx = worldSamples[i].point.x - worldSamples[i - 1].point.x;
+		const dy = worldSamples[i].point.y - worldSamples[i - 1].point.y;
+		const dz = worldSamples[i].point.z - worldSamples[i - 1].point.z;
 		segLen = Math.sqrt(dx * dx + dy * dy + dz * dz);
 		if (walked + segLen >= flyover.distance) {
 			idx = i;
@@ -186,8 +186,8 @@ function updateFlyover(delta: number): void {
 		idx = 1;
 	}
 
-	const s = trackSamples[idx];
-	const prev = trackSamples[idx - 1];
+	const s = worldSamples[idx];
+	const prev = worldSamples[idx - 1];
 	const t = segLen > 0 ? (flyover.distance - walked) / segLen : 0;
 
 	const px = prev.point.x + (s.point.x - prev.point.x) * t;

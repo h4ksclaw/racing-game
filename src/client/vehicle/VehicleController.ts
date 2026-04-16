@@ -390,7 +390,11 @@ export class VehicleController {
 		// ═══════════════════════════════════════════════════════════
 		// 3. BRAKE INPUT
 		// ═══════════════════════════════════════════════════════════
-		brakes.isBraking = input.backward && this.localVelX > -0.1;
+		brakes.isBraking = input.backward && !input.forward && this.localVelX > 0.1;
+		// When both forward+backward pressed at speed: brake wins
+		if (input.backward && input.forward && this.localVelX > 0.5) {
+			brakes.isBraking = true;
+		}
 		brakes.isHandbrake = !!input.handbrake;
 
 		// ═══════════════════════════════════════════════════════════
@@ -411,7 +415,7 @@ export class VehicleController {
 		// ═══════════════════════════════════════════════════════════
 		// 5. ENGINE + GEARBOX + DRIVETRAIN
 		// ═══════════════════════════════════════════════════════════
-		const isReversing = !!input.backward && !input.forward && this.localVelX < 0.5;
+		const isReversing = !!input.backward && !input.forward && this.localVelX < 1.0;
 		engine.throttle = input.forward ? 1 : isReversing ? 0.5 : 0;
 
 		// Gearbox first (determines gear ratio for this frame)
@@ -565,7 +569,12 @@ export class VehicleController {
 
 					// Hard push back inside
 					const pushDir = rb.lateralDist >= 0 ? -1 : 1;
-					this.localVelY += pushDir * 60 * dt;
+					this.localVelY += pushDir * 80 * dt;
+
+					// Emergency: if completely past the wall, kill all lateral velocity and push hard
+					if (!rb.onRoad && !rb.onKerb && !rb.onShoulder) {
+						this.localVelY = pushDir * 5;
+					}
 				}
 				// Off-road (shoulder/grass): slow down
 				else if (rb.onShoulder) {
