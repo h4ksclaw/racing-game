@@ -94,8 +94,19 @@ export class VehicleController {
 		this.model = gltf.scene;
 
 		// ── Apply model scale if specified ─────────────────────────────
-		if (this.config.modelScale && this.config.modelScale !== 1) {
-			this.model.scale.setScalar(this.config.modelScale);
+		const scale =
+			this.config.modelScale && this.config.modelScale !== 1 ? this.config.modelScale : 1;
+		if (scale !== 1) {
+			// Scale geometry directly (more reliable than group transform)
+			this.model.traverse((child) => {
+				if (child instanceof THREE.Mesh) {
+					child.geometry.applyMatrix4(new THREE.Matrix4().makeScale(scale, scale, scale));
+				}
+				// Also scale marker positions
+				if (child.position.lengthSq() > 0) {
+					child.position.multiplyScalar(scale);
+				}
+			});
 			this.model.updateMatrixWorld(true);
 		}
 
@@ -287,12 +298,8 @@ export class VehicleController {
 			const rimMesh = new THREE.Mesh(rimGeom, rimMat);
 			tireMesh.add(rimMesh);
 
-			// Position at marker's world position (model-local)
-			const worldPos = new THREE.Vector3();
-			marker.getWorldPosition(worldPos);
-			const rootPos = new THREE.Vector3();
-			this.model.getWorldPosition(rootPos);
-			tireMesh.position.set(worldPos.x - rootPos.x, worldPos.y - rootPos.y, worldPos.z - rootPos.z);
+			// Position at marker's local position (already scaled)
+			tireMesh.position.copy(marker.position);
 
 			this.model.add(tireMesh);
 			this.wheelMeshes.push(tireMesh);
@@ -315,7 +322,8 @@ export class VehicleController {
 		// 1. STEERING
 		// ═══════════════════════════════════════════════════════════
 		const speedKmh = Math.abs(this.localVelX) * 3.6;
-		const speedReduction = Math.max(0.3, 1 - (speedKmh / 300) * 0.7);
+		// Speed-dependent steering reduction (more aggressive at high speed)
+		const speedReduction = Math.max(0.15, 1 - (speedKmh / 140) ** 1.5);
 		const targetSteer =
 			((input.left ? 1 : 0) - (input.right ? 1 : 0)) * chassis.maxSteerAngle * speedReduction;
 
