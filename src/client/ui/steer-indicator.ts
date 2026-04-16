@@ -26,7 +26,7 @@ export class SteerIndicator extends LitElement {
 			.track {
 				width: 4px;
 				height: 60px;
-				background: var(--ui-purple-ghost);
+				background: var(--ui-accent-ghost);
 				border-radius: 2px;
 				position: relative;
 			}
@@ -35,15 +35,15 @@ export class SteerIndicator extends LitElement {
 				left: -4px;
 				width: 12px;
 				height: 3px;
-				background: var(--ui-purple);
+				background: var(--ui-accent);
 				border-radius: 1px;
-				box-shadow: 0 0 8px rgba(139,92,246,0.4);
+				box-shadow: 0 0 8px rgba(92,158,255,0.4);
 				transition: top 0.1s;
 			}
 			.labels {
 				font-family: var(--ui-mono);
 				font-size: 8px;
-				color: rgba(139,92,246,0.2);
+				color: rgba(92,158,255,0.2);
 				letter-spacing: 2px;
 				text-align: center;
 			}

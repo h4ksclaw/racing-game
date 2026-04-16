@@ -22,13 +22,13 @@ export class DamageBar extends LitElement {
 			.lbl {
 				font-family: var(--ui-mono);
 				font-size: 8px;
-				color: rgba(139,92,246,0.2);
+				color: rgba(92,158,255,0.2);
 				letter-spacing: 2px;
 			}
 			.bar-track {
 				width: 60px;
 				height: 3px;
-				background: var(--ui-purple-ghost);
+				background: var(--ui-accent-ghost);
 				border-radius: 1px;
 				overflow: hidden;
 			}

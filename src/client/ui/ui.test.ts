@@ -221,7 +221,7 @@ describe("UI Components", () => {
 		it("components apply CSS custom properties", async () => {
 			const el = await mk("speed-display");
 			const style = el.shadowRoot?.querySelector("style")?.textContent ?? "";
-			expect(style).toContain("--ui-purple");
+			expect(style).toContain("--ui-accent");
 			expect(style).toContain("--ui-panel");
 			rm(el);
 		});

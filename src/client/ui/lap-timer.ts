@@ -23,7 +23,7 @@ export class LapTimer extends LitElement {
 			}
 			.t-lbl {
 				font-size: 9px;
-				color: rgba(139,92,246,0.3);
+				color: rgba(92,158,255,0.3);
 				letter-spacing: 2px;
 			}
 			.t-val {
@@ -41,7 +41,7 @@ export class LapTimer extends LitElement {
 				color: var(--ui-red);
 			}
 			.t-sep {
-				color: var(--ui-purple-ghost);
+				color: var(--ui-accent-ghost);
 			}
 		`,
 	];

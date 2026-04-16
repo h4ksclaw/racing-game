@@ -22,7 +22,7 @@ export class RpmBar extends LitElement {
 			}
 			.lbl {
 				font-size: 9px;
-				color: rgba(139,92,246,0.3);
+				color: rgba(92,158,255,0.3);
 				font-weight: 600;
 				letter-spacing: 2px;
 			}
@@ -34,11 +34,11 @@ export class RpmBar extends LitElement {
 			}
 			.seg {
 				flex: 1;
-				background: var(--ui-purple-ghost);
+				background: var(--ui-accent-ghost);
 				transition: background 0.05s;
 			}
 			.seg.filled {
-				background: rgba(139,92,246,0.5);
+				background: rgba(92,158,255,0.5);
 			}
 			.seg.filled.red {
 				background: rgba(244,63,94,0.6);
@@ -48,7 +48,7 @@ export class RpmBar extends LitElement {
 			}
 			.rpm-val {
 				font-size: 10px;
-				color: rgba(139,92,246,0.5);
+				color: rgba(92,158,255,0.5);
 				min-width: 28px;
 				text-align: right;
 				font-family: var(--ui-mono);

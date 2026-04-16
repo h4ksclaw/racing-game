@@ -13,7 +13,7 @@ export class LoadingScreen extends LitElement {
 				justify-content: center;
 				flex-direction: column;
 				gap: 20px;
-				background: rgba(10, 8, 18, 1);
+				background: rgba(17, 19, 28, 1);
 				z-index: 1000;
 				pointer-events: none;
 				font-family: var(--ui-sans);
@@ -25,8 +25,8 @@ export class LoadingScreen extends LitElement {
 			.spinner {
 				width: 32px;
 				height: 32px;
-				border: 2px solid rgba(139, 92, 246, 0.12);
-				border-top-color: rgba(139, 92, 246, 0.6);
+				border: 2px solid rgba(92, 158, 255, 0.12);
+				border-top-color: rgba(92, 158, 255, 0.6);
 				border-radius: 50%;
 				animation: spin 0.8s linear infinite;
 			}

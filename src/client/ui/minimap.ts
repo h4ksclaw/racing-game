@@ -21,13 +21,13 @@ export class RaceMinimap extends LitElement {
 				width: 100%;
 				height: 100%;
 				border-radius: 2px;
-				background: rgba(139,92,246,0.03);
+				background: rgba(92,158,255,0.03);
 			}
 			.coords {
 				margin-top: 4px;
 				font-family: var(--ui-mono);
 				font-size: 8px;
-				color: rgba(139,92,246,0.2);
+				color: rgba(92,158,255,0.2);
 				letter-spacing: 1px;
 				text-align: center;
 			}
@@ -78,7 +78,7 @@ export class RaceMinimap extends LitElement {
 		ctx.clearRect(0, 0, w, h);
 
 		// Road path
-		ctx.strokeStyle = "rgba(139,92,246,0.15)";
+		ctx.strokeStyle = "rgba(92,158,255,0.15)";
 		ctx.lineWidth = 4;
 		ctx.beginPath();
 		for (let x = 0; x <= w; x += 2) {
@@ -94,8 +94,8 @@ export class RaceMinimap extends LitElement {
 		ctx.save();
 		ctx.translate(dotX, dotY);
 		ctx.rotate(this.heading);
-		ctx.fillStyle = "rgba(139,92,246,1)";
-		ctx.shadowColor = "rgba(139,92,246,0.6)";
+		ctx.fillStyle = "rgba(92,158,255,1)";
+		ctx.shadowColor = "rgba(92,158,255,0.6)";
 		ctx.shadowBlur = 6;
 		ctx.beginPath();
 		ctx.moveTo(0, -5);
@@ -107,7 +107,7 @@ export class RaceMinimap extends LitElement {
 
 		// Speed ring
 		const ringRadius = 20 + (this.speed / 200) * 30;
-		ctx.strokeStyle = `rgba(139,92,246,${0.05 + (this.speed / 200) * 0.1})`;
+		ctx.strokeStyle = `rgba(92,158,255,${0.05 + (this.speed / 200) * 0.1})`;
 		ctx.lineWidth = 1;
 		ctx.beginPath();
 		ctx.arc(dotX, dotY, ringRadius, 0, Math.PI * 2);

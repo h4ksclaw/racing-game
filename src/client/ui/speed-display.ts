@@ -30,24 +30,24 @@ export class SpeedDisplay extends LitElement {
 			}
 			.speed-unit {
 				font-size: 10px;
-				color: var(--ui-purple-dim);
+				color: var(--ui-accent-dim);
 				font-weight: 500;
 				letter-spacing: 1px;
 			}
 			.sep {
 				margin: 0 6px;
-				color: var(--ui-purple-faint);
+				color: var(--ui-accent-faint);
 			}
 			.lbl {
 				font-size: 9px;
-				color: rgba(139,92,246,0.3);
+				color: rgba(92,158,255,0.3);
 				font-weight: 600;
 				letter-spacing: 1px;
 			}
 			.val {
 				font-size: 17px;
 				font-weight: 700;
-				color: var(--ui-purple-dim);
+				color: var(--ui-accent-dim);
 				font-variant-numeric: tabular-nums;
 				font-family: var(--ui-mono);
 			}

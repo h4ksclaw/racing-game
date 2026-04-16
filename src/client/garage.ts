@@ -54,7 +54,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x08060f);
+scene.background = new THREE.Color(0x11131c);
 
 const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(4, 2.5, 5);
@@ -69,14 +69,14 @@ orbitControls.minDistance = 2;
 orbitControls.maxDistance = 15;
 
 // Lighting
-const hemi = new THREE.HemisphereLight(0x8b5cf6, 0x1a0a2e, 0.6);
+const hemi = new THREE.HemisphereLight(0x5c9eff, 0x0d1525, 0.6);
 scene.add(hemi);
 
 const dir = new THREE.DirectionalLight(0xffffff, 1.5);
 dir.position.set(5, 8, 4);
 scene.add(dir);
 
-const ambient = new THREE.AmbientLight(0x3b2070, 0.4);
+const ambient = new THREE.AmbientLight(0x1a2a4a, 0.4);
 scene.add(ambient);
 
 // Ground plane (subtle grid)
@@ -351,7 +351,7 @@ function updateSliderFill(slider: HTMLInputElement): void {
 	const max = Number(slider.max) || 100;
 	const val = Number(slider.value);
 	const pct = ((val - min) / (max - min)) * 100;
-	slider.style.background = `linear-gradient(to right, rgba(139,92,246,0.4) 0%, rgba(139,92,246,0.4) ${pct}%, rgba(139,92,246,0.08) ${pct}%, rgba(139,92,246,0.08) 100%)`;
+	slider.style.background = `linear-gradient(to right, rgba(92,158,255,0.4) 0%, rgba(92,158,255,0.4) ${pct}%, rgba(92,158,255,0.08) ${pct}%, rgba(92,158,255,0.08) 100%)`;
 }
 
 function makeValueEditable(
@@ -425,7 +425,7 @@ function drawTorqueCurve(): void {
 	const plotW = w - pad.left - pad.right;
 	const plotH = h - pad.top - pad.bottom;
 
-	ctx.fillStyle = "rgba(10,8,18,0.9)";
+	ctx.fillStyle = "rgba(17,19,28,0.9)";
 	ctx.fillRect(0, 0, w, h);
 
 	const curve = activeConfig.engine.torqueCurve;
@@ -438,7 +438,7 @@ function drawTorqueCurve(): void {
 	const redlineRPM = activeConfig.engine.maxRPM * activeConfig.engine.redlinePct;
 
 	// Grid lines
-	ctx.strokeStyle = "rgba(139,92,246,0.08)";
+	ctx.strokeStyle = "rgba(92,158,255,0.08)";
 	ctx.lineWidth = 0.5;
 	for (let i = 0; i <= 4; i++) {
 		const y = pad.top + (plotH * i) / 4;
@@ -486,16 +486,16 @@ function drawTorqueCurve(): void {
 	ctx.lineTo(pad.left, pad.top + plotH);
 	ctx.closePath();
 	const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
-	grad.addColorStop(0, "rgba(139,92,246,0.2)");
-	grad.addColorStop(1, "rgba(139,92,246,0.02)");
+	grad.addColorStop(0, "rgba(92,158,255,0.2)");
+	grad.addColorStop(1, "rgba(92,158,255,0.02)");
 	ctx.fillStyle = grad;
 	ctx.fill();
 
 	// Curve line with glow
 	ctx.save();
-	ctx.shadowColor = "rgba(139,92,246,0.6)";
+	ctx.shadowColor = "rgba(92,158,255,0.6)";
 	ctx.shadowBlur = 6;
-	ctx.strokeStyle = "rgba(139,92,246,0.9)";
+	ctx.strokeStyle = "rgba(92,158,255,0.9)";
 	ctx.lineWidth = 1.5;
 	ctx.beginPath();
 	for (let i = 0; i < curve.length; i++) {
@@ -508,7 +508,7 @@ function drawTorqueCurve(): void {
 	ctx.restore();
 
 	// RPM labels
-	ctx.fillStyle = "rgba(139,92,246,0.5)";
+	ctx.fillStyle = "rgba(92,158,255,0.5)";
 	ctx.font = "8px JetBrains Mono, monospace";
 	ctx.textAlign = "center";
 	const rpmStep = Math.round((maxRPM - minRPM) / 3 / 500) * 500 || 1000;

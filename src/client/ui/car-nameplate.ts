@@ -16,7 +16,7 @@ export class CarNameplate extends LitElement {
 				font-family: var(--ui-sans);
 			}
 			.num {
-				background: rgba(139,92,246,0.85);
+				background: rgba(92,158,255,0.85);
 				padding: 5px 12px;
 				display: flex;
 				align-items: center;
@@ -32,7 +32,7 @@ export class CarNameplate extends LitElement {
 				padding: 5px 14px;
 				display: flex;
 				align-items: center;
-				border: 1px solid var(--ui-purple-faint);
+				border: 1px solid var(--ui-accent-faint);
 				border-left: none;
 				background: var(--ui-panel);
 			}

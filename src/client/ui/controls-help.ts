@@ -34,7 +34,7 @@ export class ControlsHelp extends LitElement {
 				display: block;
 				padding: 6px 14px;
 				background: rgba(255, 255, 255, 0.05);
-				border: 1px solid rgba(139, 92, 246, 0.15);
+				border: 1px solid rgba(92, 158, 255, 0.15);
 				border-radius: 4px;
 				color: var(--ui-text-bright);
 				text-decoration: none;
@@ -44,7 +44,7 @@ export class ControlsHelp extends LitElement {
 				transition: background 0.15s;
 			}
 			.back-link:hover {
-				background: rgba(139, 92, 246, 0.1);
+				background: rgba(92, 158, 255, 0.1);
 			}
 		`,
 	];

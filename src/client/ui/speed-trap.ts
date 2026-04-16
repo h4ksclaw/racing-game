@@ -22,7 +22,7 @@ export class SpeedTrap extends LitElement {
 			.lbl {
 				font-family: var(--ui-mono);
 				font-size: 8px;
-				color: rgba(139,92,246,0.2);
+				color: rgba(92,158,255,0.2);
 				letter-spacing: 2px;
 			}
 			.val {
@@ -35,7 +35,7 @@ export class SpeedTrap extends LitElement {
 			.unit {
 				font-family: var(--ui-mono);
 				font-size: 8px;
-				color: rgba(139,92,246,0.2);
+				color: rgba(92,158,255,0.2);
 			}
 		`,
 	];

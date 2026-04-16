@@ -26,7 +26,7 @@ export class TireTemps extends LitElement {
 			.title {
 				font-family: var(--ui-mono);
 				font-size: 8px;
-				color: rgba(139,92,246,0.2);
+				color: rgba(92,158,255,0.2);
 				letter-spacing: 3px;
 				text-align: center;
 				margin-bottom: 6px;
@@ -42,7 +42,7 @@ export class TireTemps extends LitElement {
 			}
 			.tire-icon {
 				font-size: 9px;
-				color: rgba(139,92,246,0.15);
+				color: rgba(92,158,255,0.15);
 				margin-bottom: 2px;
 			}
 			.tire-val {

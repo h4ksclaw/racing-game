@@ -31,22 +31,22 @@ export class GearStrip extends LitElement {
 				font-family: var(--ui-mono);
 				font-size: 10px;
 				font-weight: 600;
-				color: rgba(139,92,246,0.15);
+				color: rgba(92,158,255,0.15);
 				border-radius: 2px;
 				transition: all 0.15s;
 			}
 			.g-item.active {
-				color: var(--ui-purple);
-				background: rgba(139,92,246,0.1);
-				text-shadow: 0 0 8px rgba(139,92,246,0.4);
+				color: var(--ui-accent);
+				background: rgba(92,158,255,0.1);
+				text-shadow: 0 0 8px rgba(92,158,255,0.4);
 			}
 			.g-item.rev { color: rgba(244,63,94,0.3); }
 			.g-item.rev.active {
 				color: var(--ui-red);
 				background: rgba(244,63,94,0.1);
 			}
-			.g-item.neutral { color: rgba(139,92,246,0.1); font-size: 8px; }
-			.g-item.neutral.active { color: rgba(139,92,246,0.4); }
+			.g-item.neutral { color: rgba(92,158,255,0.1); font-size: 8px; }
+			.g-item.neutral.active { color: rgba(92,158,255,0.4); }
 		`,
 	];
 

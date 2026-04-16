@@ -21,7 +21,7 @@ export class PedalBars extends LitElement {
 			.bar-label {
 				font-family: var(--ui-mono);
 				font-size: 8px;
-				color: rgba(139,92,246,0.2);
+				color: rgba(92,158,255,0.2);
 				letter-spacing: 2px;
 				width: 28px;
 				text-align: right;
@@ -30,7 +30,7 @@ export class PedalBars extends LitElement {
 			.bar-track {
 				width: 8px;
 				height: 40px;
-				background: var(--ui-purple-ghost);
+				background: var(--ui-accent-ghost);
 				border-radius: 2px;
 				position: relative;
 				overflow: hidden;
@@ -42,7 +42,7 @@ export class PedalBars extends LitElement {
 				border-radius: 2px;
 				transition: height 0.08s;
 			}
-			.thr-fill { background: var(--ui-purple); }
+			.thr-fill { background: var(--ui-accent); }
 			.brk-fill { background: var(--ui-red); }
 		`,
 	];

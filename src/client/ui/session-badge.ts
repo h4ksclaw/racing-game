@@ -24,12 +24,12 @@ export class SessionBadge extends LitElement {
 				width: 5px;
 				height: 5px;
 				border-radius: 50%;
-				background: var(--ui-purple);
+				background: var(--ui-accent);
 				animation: pulse 2s infinite;
 			}
 			.type {
 				font-size: 9px;
-				color: rgba(139,92,246,0.3);
+				color: rgba(92,158,255,0.3);
 				font-weight: 600;
 				letter-spacing: 1px;
 			}

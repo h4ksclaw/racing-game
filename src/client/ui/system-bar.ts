@@ -17,12 +17,12 @@ export class SystemBar extends LitElement {
 				font-family: var(--ui-mono);
 				background: var(--ui-panel-solid);
 				backdrop-filter: blur(12px);
-				border-bottom: 1px solid var(--ui-purple-faint);
+				border-bottom: 1px solid var(--ui-accent-faint);
 				padding: 7px 20px;
 			}
 			.lbl {
 				font-size: 9px;
-				color: var(--ui-purple-dim);
+				color: var(--ui-accent-dim);
 				letter-spacing: 3px;
 			}
 			.val {
@@ -33,13 +33,13 @@ export class SystemBar extends LitElement {
 			}
 			.sep {
 				font-size: 9px;
-				color: var(--ui-purple-ghost);
+				color: var(--ui-accent-ghost);
 				margin: 0 14px;
 			}
 			.controls {
 				margin-left: auto;
 				font-size: 9px;
-				color: rgba(139,92,246,0.15);
+				color: rgba(92,158,255,0.15);
 				letter-spacing: 1px;
 			}
 		`,

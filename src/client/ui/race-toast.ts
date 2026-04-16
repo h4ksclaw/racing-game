@@ -15,10 +15,10 @@ export class RaceToast extends LitElement {
 				font-family: var(--ui-mono);
 				background: var(--ui-panel-solid);
 				backdrop-filter: blur(12px);
-				border: 1px solid var(--ui-purple-faint);
+				border: 1px solid var(--ui-accent-faint);
 				padding: 10px 22px;
 				font-size: 10px;
-				color: rgba(139,92,246,0.5);
+				color: rgba(92,158,255,0.5);
 				letter-spacing: 2px;
 				transition: opacity 0.3s;
 			}
