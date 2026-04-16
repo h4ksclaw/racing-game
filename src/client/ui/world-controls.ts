@@ -84,7 +84,7 @@ export class WorldControls extends LitElement {
 				<div class="title">World Generator</div>
 				<div class="seed-row"><span class="label">Seed</span><span class="seed-value">${this.seed}</span></div>
 				<button class="btn btn-primary" @click=${this._gen}>New World</button>
-				<button class="btn btn-secondary" @click=${this._fly}>${this.flyoverActive ? "⏹ Stop Preview" : "▶ Preview World"}</button>
+				<button class="btn btn-secondary" @click=${this._fly}>${this.flyoverActive ? "Stop Preview" : "Preview World"}</button>
 				<div class="field">
 					<div class="range-row"><span class="label">Flyover Speed</span><span class="range-value">120 km/h</span></div>
 					<input type="range" min="80" max="500" step="10" value="120" @input=${this._spd} />
@@ -102,7 +102,7 @@ export class WorldControls extends LitElement {
 						<option value="fog">Fog</option><option value="snow">Snow</option>
 					</select>
 				</div>
-				<button class="btn btn-drive" @click=${this._prac}>🏎️ Drive This World</button>
+				<button class="btn btn-drive" @click=${this._prac}>Drive This World</button>
 			</div>
 		`;
 	}

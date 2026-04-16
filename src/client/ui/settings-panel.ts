@@ -77,7 +77,7 @@ export class SettingsPanel extends LitElement {
 			<div class="panel">
 				<div class="header">
 					<div class="title">Settings</div>
-					<button class="close-btn" @click=${this._close}>✕</button>
+					<button class="close-btn" @click=${this._close}>X</button>
 				</div>
 				<div class="section">
 					<div class="section-title">Graphics</div>

@@ -53,8 +53,8 @@ export class NotificationToast extends LitElement {
 	}
 
 	render() {
-		const icons: Record<string, string> = { success: "✓", warning: "⚠", error: "✕", info: "ℹ" };
-		return html`<div class="toast ${this.type}"><span class="icon">${icons[this.type] || "ℹ"}</span>${this.message}</div>`;
+		const icons: Record<string, string> = { success: "+", warning: "!", error: "X", info: "i" };
+		return html`<div class="toast ${this.type}"><span class="icon">${icons[this.type] || "i"}</span>${this.message}</div>`;
 	}
 
 	show(message?: string, duration?: number) {
