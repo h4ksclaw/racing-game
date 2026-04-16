@@ -119,6 +119,15 @@ document.getElementById("garageBtn")?.addEventListener("click", () => {
 	window.location.href = `/garage?${params.toString()}`;
 });
 
+document.getElementById("backBtn")?.addEventListener("click", () => {
+	const referrer = document.referrer;
+	if (referrer && referrer.includes("garage")) {
+		window.location.href = referrer;
+	} else {
+		window.location.href = "/garage";
+	}
+});
+
 const flyoverSpeed = document.getElementById("flyoverSpeed") as HTMLInputElement | null;
 if (flyoverSpeed) {
 	flyoverSpeed.addEventListener("input", () => {
