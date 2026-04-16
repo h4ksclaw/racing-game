@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { Sky } from "three/addons/objects/Sky.js";
 import { state } from "./scene.ts";
-import type { TimeKeyframe } from "./utils.ts";
+import type { TimeKeyframe, WeatherType } from "./utils.ts";
 
 // ── Time keyframes ──────────────────────────────────────────────────────
 
@@ -265,35 +265,37 @@ export function applyTimeOfDay(hour: number): void {
 	if (!sc || !sun || !ambient) return;
 	const st = getTimeState(hour);
 
-	function getWeatherMult(type: string): { sun: number; ambient: number } {
-		switch (type) {
-			case "heavy_rain":
-				return { sun: 0.15, ambient: 0.4 };
-			case "rain":
-				return { sun: 0.4, ambient: 0.7 };
-			case "fog":
-				return { sun: 0.2, ambient: 0.4 };
-			case "cloudy":
-				return { sun: 0.6, ambient: 0.8 };
-			case "snow":
-				return { sun: 0.5, ambient: 0.8 };
-			default:
-				return { sun: 1.0, ambient: 1.0 };
-		}
-	}
+	// Weather multipliers for sun/ambient intensity
+	const WEATHER_MULT: Record<WeatherType, { sun: number; ambient: number }> = {
+		clear: { sun: 1.0, ambient: 1.0 },
+		cloudy: { sun: 0.6, ambient: 0.8 },
+		rain: { sun: 0.4, ambient: 0.7 },
+		heavy_rain: { sun: 0.15, ambient: 0.4 },
+		fog: { sun: 0.2, ambient: 0.4 },
+		snow: { sun: 0.5, ambient: 0.8 },
+	};
+	const STAR_MULT: Record<WeatherType, number> = {
+		clear: 1.0,
+		cloudy: 0.4,
+		rain: 0.0,
+		heavy_rain: 0.0,
+		fog: 0.1,
+		snow: 0.0,
+	};
 
-	sun.color.setRGB(...st.sunColor);
-	const wm = getWeatherMult(state.currentWeather);
-	sun.intensity = st.sunIntensity * wm.sun;
+	const wm = WEATHER_MULT[state.currentWeather];
 	const sunElev = THREE.MathUtils.degToRad(st.sunElevation);
-	// Sun arcs across the sky — azimuth rotates 180° from sunrise (6h) to sunset (18h)
 	const sunAzimuth = THREE.MathUtils.degToRad(((hour - 6) / 12) * 180);
-	const sunDist = 300;
-	sun.position.set(
-		Math.cos(sunElev) * Math.sin(sunAzimuth) * sunDist,
-		Math.sin(sunElev) * sunDist,
-		Math.cos(sunElev) * Math.cos(sunAzimuth) * sunDist,
+	const sunDir = new THREE.Vector3(
+		Math.cos(sunElev) * Math.sin(sunAzimuth),
+		Math.sin(sunElev),
+		Math.cos(sunElev) * Math.cos(sunAzimuth),
 	);
+
+	// ── Sun light ───────────────────────────────────────────────────────
+	sun.color.setRGB(...st.sunColor);
+	sun.intensity = st.sunIntensity * wm.sun;
+	sun.position.copy(sunDir).multiplyScalar(300);
 
 	ambient.color.setRGB(...st.ambientColor);
 	ambient.intensity = st.ambientIntensity * wm.ambient;
@@ -306,29 +308,12 @@ export function applyTimeOfDay(hour: number): void {
 	if (skyUniforms) {
 		skyUniforms.turbidity.value = st.turbidity;
 		skyUniforms.rayleigh.value = st.rayleigh;
-		// Sky sun direction must match the directional light — use same azimuth + elevation
-		const sunAzimuth = THREE.MathUtils.degToRad(((hour - 6) / 12) * 180);
-		const sunElev = THREE.MathUtils.degToRad(st.sunElevation);
-		skyUniforms.sunPosition.value.set(
-			Math.cos(sunElev) * Math.sin(sunAzimuth),
-			Math.sin(sunElev),
-			Math.cos(sunElev) * Math.cos(sunAzimuth),
-		);
-		// Cloud coverage — higher turbidity for overcast (clouds aren't in the sky shader,
-		// so we fake it by making the sky hazier/whiter)
+		skyUniforms.sunPosition.value.copy(sunDir);
 	}
 
 	if (stars) {
-		// Stars less visible in bad weather
-		const weatherStarMult =
-			state.currentWeather === "clear"
-				? 1.0
-				: state.currentWeather === "cloudy"
-					? 0.4
-					: state.currentWeather === "fog"
-						? 0.1
-						: 0.0;
-		(stars.material as THREE.PointsMaterial).opacity = st.starsOpacity * weatherStarMult;
+		(stars.material as THREE.PointsMaterial).opacity =
+			st.starsOpacity * STAR_MULT[state.currentWeather];
 	}
 
 	const nightFactor = Math.max(0, 1 - st.sunIntensity / 0.3);
@@ -351,42 +336,39 @@ export function applyTimeOfDay(hour: number): void {
 		mat.emissiveIntensity = nightFactor * 2.5 * bloomMult;
 	}
 
+	const sunDirNorm = sunDir.clone().normalize();
 	if (terrainMaterial) {
-		terrainMaterial.uniforms.uSunDir.value
-			.set(Math.cos(sunElev) * 300, Math.sin(sunElev) * 300, 100)
-			.normalize();
-		terrainMaterial.uniforms.uSunIntensity.value = st.sunIntensity;
-		terrainMaterial.uniforms.uSunColor.value.setRGB(...st.sunColor);
-		terrainMaterial.uniforms.uAmbientColor.value.setRGB(...st.ambientColor);
-		terrainMaterial.uniforms.uAmbientIntensity.value = st.ambientIntensity;
-		terrainMaterial.uniforms.uFogColor.value.setRGB(...st.fogColor);
-		terrainMaterial.uniforms.uFogNear.value = st.fogNear;
-		terrainMaterial.uniforms.uFogFar.value = st.fogFar;
-		terrainMaterial.uniforms.uStreetLightIntensity.value = nightFactor;
+		const u = terrainMaterial.uniforms;
+		u.uSunDir.value.copy(sunDirNorm);
+		u.uSunIntensity.value = st.sunIntensity;
+		u.uSunColor.value.setRGB(...st.sunColor);
+		u.uAmbientColor.value.setRGB(...st.ambientColor);
+		u.uAmbientIntensity.value = st.ambientIntensity;
+		u.uFogColor.value.setRGB(...st.fogColor);
+		u.uFogNear.value = st.fogNear;
+		u.uFogFar.value = st.fogFar;
+		u.uStreetLightIntensity.value = nightFactor;
 	}
 
 	if (roadSnowOverlayMaterial) {
-		roadSnowOverlayMaterial.uniforms.uSunDir.value
-			.set(Math.cos(sunElev) * 300, Math.sin(sunElev) * 300, 100)
-			.normalize();
-		roadSnowOverlayMaterial.uniforms.uSunColor.value.setRGB(...st.sunColor);
-		roadSnowOverlayMaterial.uniforms.uSunIntensity.value = st.sunIntensity;
-		roadSnowOverlayMaterial.uniforms.uAmbientColor.value.setRGB(...st.ambientColor);
-		roadSnowOverlayMaterial.uniforms.uAmbientIntensity.value = st.ambientIntensity;
-		roadSnowOverlayMaterial.uniforms.uFogColor.value.setRGB(...st.fogColor);
-		roadSnowOverlayMaterial.uniforms.uFogNear.value = st.fogNear;
-		roadSnowOverlayMaterial.uniforms.uFogFar.value = st.fogFar;
+		const u = roadSnowOverlayMaterial.uniforms;
+		u.uSunDir.value.copy(sunDirNorm);
+		u.uSunColor.value.setRGB(...st.sunColor);
+		u.uSunIntensity.value = st.sunIntensity;
+		u.uAmbientColor.value.setRGB(...st.ambientColor);
+		u.uAmbientIntensity.value = st.ambientIntensity;
+		u.uFogColor.value.setRGB(...st.fogColor);
+		u.uFogNear.value = st.fogNear;
+		u.uFogFar.value = st.fogFar;
 	}
 
-	const concreteSlabMaterial = state.concreteSlabMaterial;
-	if (concreteSlabMaterial) {
-		concreteSlabMaterial.uniforms.uSunDir.value
-			.set(Math.cos(sunElev) * 300, Math.sin(sunElev) * 300, 100)
-			.normalize();
-		concreteSlabMaterial.uniforms.uSunColor.value.setRGB(...st.sunColor);
-		concreteSlabMaterial.uniforms.uAmbient.value.setRGB(...st.ambientColor);
-		concreteSlabMaterial.uniforms.uFogColor.value.setRGB(...st.fogColor);
-		concreteSlabMaterial.uniforms.uFogDensity.value = 1.0 / Math.max(1, st.fogFar - st.fogNear);
+	if (state.concreteSlabMaterial) {
+		const u = state.concreteSlabMaterial.uniforms;
+		u.uSunDir.value.copy(sunDirNorm);
+		u.uSunColor.value.setRGB(...st.sunColor);
+		u.uAmbient.value.setRGB(...st.ambientColor);
+		u.uFogColor.value.setRGB(...st.fogColor);
+		u.uFogDensity.value = 1.0 / Math.max(1, st.fogFar - st.fogNear);
 	}
 
 	if (renderer) {

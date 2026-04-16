@@ -311,16 +311,15 @@ export function applyWeather(weather: WeatherType): void {
 	if (!rainSystem || !snowSystem) return;
 	state.currentWeather = weather;
 
-	const rainVisible = weather === "rain" || weather === "heavy_rain";
-	const snowVisible = weather === "snow";
-	rainSystem.visible = rainVisible;
-	snowSystem.visible = snowVisible;
+	// ── Particle visibility ─────────────────────────────────────────────
+	rainSystem.visible = weather === "rain" || weather === "heavy_rain";
+	snowSystem.visible = weather === "snow";
 
-	// Clouds
 	if (cloudLayer) {
 		applyCloudWeather(weather, cloudLayer);
 	}
 
+	// Night dimming for particles
 	const nightDim = currentTime > 20 || currentTime < 5 ? 0.3 : currentTime > 18 ? 0.6 : 1.0;
 	(rainSystem.material as THREE.PointsMaterial).color.setRGB(
 		0.67 * nightDim,
@@ -329,7 +328,6 @@ export function applyWeather(weather: WeatherType): void {
 	);
 	(rainSystem.material as THREE.PointsMaterial).opacity =
 		(weather === "heavy_rain" ? 0.8 : 0.5) * nightDim;
-	// Snow: dim and blue-shift at night
 	(snowSystem.material as THREE.PointsMaterial).color.setRGB(
 		0.7 + 0.3 * nightDim,
 		0.7 + 0.3 * nightDim,
@@ -339,91 +337,75 @@ export function applyWeather(weather: WeatherType): void {
 
 	if (!sun || !ambient || !sc) return;
 
-	switch (weather) {
-		case "clear":
-			break;
-		case "cloudy":
-			if (skyUniforms) {
-				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 10);
-			}
-			break;
-		case "rain": {
-			if (skyUniforms) {
-				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 15);
-			}
-			const fogR = sc.fog as THREE.Fog;
-			fogR.far = Math.min(fogR.far, 600);
-			fogR.near = Math.max(fogR.near, 100);
-			break;
+	// ── Fog & sky config per weather type ────────────────────────────────
+	const isNight = currentTime > 20 || currentTime < 5;
+	const fog = sc.fog as THREE.Fog;
+
+	const WEATHER_FOG: Partial<
+		Record<
+			WeatherType,
+			{ turbidity: number; far: number; near: number; color?: [number, number, number] }
+		>
+	> = {
+		clear: { turbidity: 0, far: Infinity, near: 0 },
+		cloudy: { turbidity: 10, far: Infinity, near: 0 },
+		rain: { turbidity: 15, far: 600, near: 100 },
+		heavy_rain: {
+			turbidity: 20,
+			far: 250,
+			near: 10,
+			color: isNight ? [0.05, 0.05, 0.07] : [0.18, 0.19, 0.22],
+		},
+		fog: {
+			turbidity: 15,
+			far: 120,
+			near: 1,
+			color: isNight ? [0.12, 0.12, 0.15] : [0.65, 0.67, 0.7],
+		},
+		snow: { turbidity: 8, far: 500, near: 30, color: [0.6, 0.62, 0.68] },
+	};
+
+	const fogCfg = WEATHER_FOG[weather];
+	if (fogCfg && skyUniforms) {
+		if (fogCfg.turbidity > 0) {
+			skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, fogCfg.turbidity);
 		}
-		case "heavy_rain": {
-			if (skyUniforms) {
-				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 20);
-			}
-			const fogH = sc.fog as THREE.Fog;
-			fogH.far = 250;
-			fogH.near = 10;
-			const isNight = currentTime > 20 || currentTime < 5;
-			fogH.color.setRGB(isNight ? 0.05 : 0.18, isNight ? 0.05 : 0.19, isNight ? 0.07 : 0.22);
-			break;
+		if (fogCfg.far < Infinity) {
+			fog.far = Math.min(fog.far, fogCfg.far);
+			fog.near = Math.max(fog.near, fogCfg.near);
 		}
-		case "fog": {
-			if (skyUniforms) {
-				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 15);
-			}
-			const fogF = sc.fog as THREE.Fog;
-			fogF.far = 120;
-			fogF.near = 1;
-			const isNightF = state.currentTime > 20 || state.currentTime < 5;
-			fogF.color.setRGB(isNightF ? 0.12 : 0.65, isNightF ? 0.12 : 0.67, isNightF ? 0.15 : 0.7);
-			break;
-		}
-		case "snow": {
-			if (skyUniforms) {
-				skyUniforms.turbidity.value = Math.max(skyUniforms.turbidity.value, 8);
-			}
-			const fogS = sc.fog as THREE.Fog;
-			fogS.far = Math.min(fogS.far, 500);
-			fogS.near = Math.max(fogS.near, 30);
-			fogS.color.setRGB(0.6, 0.62, 0.68);
-			break;
+		if (fogCfg.color) {
+			fog.color.setRGB(...fogCfg.color);
 		}
 	}
-	// Sync terrain shader fog and lighting uniforms with weather
+
+	// ── Terrain shader sync ─────────────────────────────────────────────
+	const WEATHER_LIGHTING: Record<WeatherType, { sun: number; ambient: number }> = {
+		clear: { sun: 1.0, ambient: 1.0 },
+		cloudy: { sun: 0.6, ambient: 0.8 },
+		rain: { sun: 0.4, ambient: 0.7 },
+		heavy_rain: { sun: 0.2, ambient: 0.5 },
+		fog: { sun: 0.3, ambient: 0.6 },
+		snow: { sun: 0.5, ambient: 0.8 },
+	};
+
+	const WEATHER_ROAD: Record<WeatherType, { roughness: number; wetness: number }> = {
+		clear: { roughness: 0.8, wetness: 0.0 },
+		cloudy: { roughness: 0.8, wetness: 0.0 },
+		rain: { roughness: 0.25, wetness: 0.7 },
+		heavy_rain: { roughness: 0.15, wetness: 1.0 },
+		fog: { roughness: 0.7, wetness: 0.2 },
+		snow: { roughness: 0.9, wetness: 0.0 },
+	};
+
 	if (state.terrainMaterial) {
-		if (sc?.fog) {
-			const tf = sc.fog as THREE.Fog;
-			state.terrainMaterial.uniforms.uFogColor.value.copy(tf.color);
-			state.terrainMaterial.uniforms.uFogNear.value = tf.near;
-			state.terrainMaterial.uniforms.uFogFar.value = tf.far;
-		}
-		// Dim terrain sun/ambient to match weather
-		const weatherSunMult =
-			weather === "heavy_rain"
-				? 0.2
-				: weather === "rain"
-					? 0.4
-					: weather === "fog"
-						? 0.3
-						: weather === "cloudy"
-							? 0.6
-							: weather === "snow"
-								? 0.5
-								: 1.0;
-		const weatherAmbMult =
-			weather === "heavy_rain"
-				? 0.5
-				: weather === "rain"
-					? 0.7
-					: weather === "fog"
-						? 0.6
-						: weather === "cloudy"
-							? 0.8
-							: weather === "snow"
-								? 0.8
-								: 1.0;
-		state.terrainMaterial.uniforms.uSunIntensity.value *= weatherSunMult;
-		state.terrainMaterial.uniforms.uAmbientIntensity.value *= weatherAmbMult;
+		state.terrainMaterial.uniforms.uFogColor.value.copy(fog.color);
+		state.terrainMaterial.uniforms.uFogNear.value = fog.near;
+		state.terrainMaterial.uniforms.uFogFar.value = fog.far;
+
+		const lighting = WEATHER_LIGHTING[weather];
+		state.terrainMaterial.uniforms.uSunIntensity.value *= lighting.sun;
+		state.terrainMaterial.uniforms.uAmbientIntensity.value *= lighting.ambient;
 
 		// Weather-based terrain tint shifts
 		const gt = state.terrainMaterial.uniforms.uGrassTint.value;
@@ -431,7 +413,6 @@ export function applyWeather(weather: WeatherType): void {
 		const rt = state.terrainMaterial.uniforms.uRockTint.value;
 		switch (weather) {
 			case "heavy_rain":
-				// Wet ground — darker, slightly blue-shifted
 				gt.setRGB(gt.r * 0.85, gt.g * 0.85, gt.b * 0.95);
 				dt.setRGB(dt.r * 0.8, dt.g * 0.8, dt.b * 0.9);
 				rt.setRGB(rt.r * 0.85, rt.g * 0.85, rt.b * 0.92);
@@ -440,47 +421,20 @@ export function applyWeather(weather: WeatherType): void {
 				gt.setRGB(gt.r * 0.9, gt.g * 0.9, gt.b * 0.97);
 				dt.setRGB(dt.r * 0.85, dt.g * 0.85, dt.b * 0.93);
 				break;
-			case "snow":
-				break;
 			case "fog":
-				// Fog desaturates slightly
 				gt.setRGB(gt.r * 0.95, gt.g * 0.95, gt.b * 0.98);
 				break;
 		}
 	}
 
-	// Weather effects on road surface
-	switch (weather) {
-		case "heavy_rain":
-			state.roadRoughnessBase = 0.15;
-			state.roadWetness = 1.0;
-			break;
-		case "rain":
-			state.roadRoughnessBase = 0.25;
-			state.roadWetness = 0.7;
-			break;
-		case "snow":
-			state.roadRoughnessBase = 0.9;
-			state.roadWetness = 0.0;
-			break;
-		case "fog":
-			state.roadRoughnessBase = 0.7;
-			state.roadWetness = 0.2;
-			break;
-		default:
-			state.roadRoughnessBase = 0.8;
-			state.roadWetness = 0.0;
-	}
+	// ── Road surface ─────────────────────────────────────────────────────
+	const road = WEATHER_ROAD[weather];
+	state.roadRoughnessBase = road.roughness;
+	state.roadWetness = road.wetness;
 
-	// Hide sky dome in low-visibility weather so distant mountains aren't visible behind fog
-	if (sc) {
-		const fog = sc.fog as THREE.Fog;
-		if (weather === "heavy_rain" || weather === "fog" || weather === "rain" || weather === "snow") {
-			if (skyMesh) skyMesh.visible = false;
-			sc.background = fog.color.clone();
-		} else {
-			if (skyMesh) skyMesh.visible = true;
-			sc.background = new THREE.Color(0x87ceeb);
-		}
-	}
+	// ── Sky dome visibility ─────────────────────────────────────────────
+	const lowVisibility =
+		weather === "heavy_rain" || weather === "fog" || weather === "rain" || weather === "snow";
+	if (skyMesh) skyMesh.visible = !lowVisibility;
+	sc.background = lowVisibility ? fog.color.clone() : new THREE.Color(0x87ceeb);
 }
