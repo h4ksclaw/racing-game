@@ -329,7 +329,7 @@ export function applyTimeOfDay(hour: number): void {
 	const weatherHlMult =
 		state.currentWeather === "fog" || state.currentWeather === "heavy_rain" ? 1.3 : 1;
 	for (const hl of headlights) {
-		hl.intensity = headlightFactor * 40 * weatherHlMult;
+		hl.intensity = headlightFactor * 120 * weatherHlMult;
 	}
 	for (const fixture of lightFixtures) {
 		const mat = fixture.material as THREE.MeshLambertMaterial;
