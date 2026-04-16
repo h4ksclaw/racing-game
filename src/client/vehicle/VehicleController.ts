@@ -22,9 +22,29 @@ import { buildCarModel, type CarModel } from "./CarModel.ts";
 import type { CarConfig, VehicleInput, VehicleState } from "./types.ts";
 import { RACE_CAR } from "./types.ts";
 
+export interface RoadBoundaryInfo {
+	/** Signed distance from road center (negative = left, positive = right) */
+	lateralDist: number;
+	/** Absolute distance from road center */
+	distFromCenter: number;
+	/** Road half-width (meters) */
+	roadHalfWidth: number;
+	/** Kerb outer edge distance from center */
+	kerbEdge: number;
+	/** Guardrail distance from center */
+	guardrailDist: number;
+	/** Whether car is on the road surface */
+	onRoad: boolean;
+	/** Whether car is on the kerb */
+	onKerb: boolean;
+	/** Whether car is on the shoulder/grass */
+	onShoulder: boolean;
+}
+
 export interface TerrainProvider {
 	getHeight(x: number, z: number): number;
 	getNormal?(x: number, z: number): { x: number; y: number; z: number };
+	getRoadBoundary?(x: number, z: number): RoadBoundaryInfo;
 }
 
 export class VehicleController {
@@ -109,6 +129,14 @@ export class VehicleController {
 			});
 			this.model.updateMatrixWorld(true);
 		}
+
+		// Enable shadows on all meshes
+		this.model.traverse((child) => {
+			if (child instanceof THREE.Mesh) {
+				child.castShadow = true;
+				child.receiveShadow = true;
+			}
+		});
 
 		// ── Auto-derive chassis from marker objects ─────────────────────
 		this.autoDeriveChassis();
@@ -490,6 +518,38 @@ export class VehicleController {
 					this.pitch += (Math.atan2(fwdSlope, normal.y) - this.pitch) * Math.min(1, tiltSpeed * dt);
 					this.roll += (Math.atan2(rightSlope, normal.y) - this.roll) * Math.min(1, tiltSpeed * dt);
 					this.localVelX += -g * Math.sin(this.pitch) * dt;
+				}
+			}
+
+			// ── Road boundary collisions ─────────────────────────────
+			if (this.terrain.getRoadBoundary) {
+				const rb = this.terrain.getRoadBoundary(this.posX, this.posZ);
+
+				// Guardrail collision: push car back onto road
+				if (rb.distFromCenter >= rb.guardrailDist) {
+					const overshoot = rb.distFromCenter - rb.guardrailDist;
+					// Push car toward road center using the lateral direction
+					const pushDir = rb.lateralDist >= 0 ? -1 : 1;
+					const pushForce = overshoot * 50; // strong spring
+					this.localVelY += pushForce * pushDir * dt;
+					// Kill lateral velocity toward the wall
+					if (
+						(this.localVelY > 0 && rb.lateralDist > 0) ||
+						(this.localVelY < 0 && rb.lateralDist < 0)
+					) {
+						this.localVelY *= 0.85;
+					}
+					// Speed penalty for hitting the wall
+					this.localVelX *= 0.98;
+				}
+				// Off-road (shoulder/grass): slow down
+				else if (rb.onShoulder) {
+					// Extra rolling resistance on grass
+					this.localVelX *= 1 - 1.5 * dt;
+				}
+				// Kerb: slight speed penalty
+				else if (rb.onKerb) {
+					this.localVelX *= 1 - 0.3 * dt;
 				}
 			}
 		}

@@ -174,6 +174,54 @@ export class TerrainSampler {
 		const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
 		return { x: nx / len, y: ny / len, z: nz / len };
 	}
+
+	getRoadBoundary(
+		x: number,
+		z: number,
+	): {
+		lateralDist: number;
+		distFromCenter: number;
+		roadHalfWidth: number;
+		kerbEdge: number;
+		guardrailDist: number;
+		onRoad: boolean;
+		onKerb: boolean;
+		onShoulder: boolean;
+	} {
+		const { sample } = this.nearestRoad(x, z);
+
+		// Estimate road half-width from kerb positions
+		const dx = sample.kerbRight.x - sample.kerbLeft.x;
+		const dz = sample.kerbRight.z - sample.kerbLeft.z;
+		const roadFullWidth = Math.sqrt(dx * dx + dz * dz);
+		const roadHalfWidth = roadFullWidth / 2;
+		const kerbWidth = 0.8;
+		const shoulderWidth = 2.0;
+
+		// Signed lateral distance (which side of road center)
+		const toX = x - sample.point.x;
+		const toZ = z - sample.point.z;
+		// Road direction
+		const tangentX = sample.tangent?.x ?? 0;
+		const tangentZ = sample.tangent?.z ?? 1;
+		// Cross product gives signed lateral distance
+		const lateralDist = tangentZ * toX - tangentX * toZ;
+		const distFromCenter = Math.abs(lateralDist);
+
+		const kerbEdge = roadHalfWidth + kerbWidth;
+		const guardrailDist = kerbEdge + shoulderWidth;
+
+		return {
+			lateralDist,
+			distFromCenter,
+			roadHalfWidth,
+			kerbEdge,
+			guardrailDist,
+			onRoad: distFromCenter < roadHalfWidth,
+			onKerb: distFromCenter >= roadHalfWidth && distFromCenter < kerbEdge,
+			onShoulder: distFromCenter >= kerbEdge && distFromCenter < guardrailDist,
+		};
+	}
 }
 
 // ── Terrain textures ────────────────────────────────────────────────────
