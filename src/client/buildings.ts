@@ -8,8 +8,6 @@ import * as THREE from "three";
 import type { HouseConfig } from "./biomes.ts";
 import { state } from "./scene.ts";
 
-const GRID = 2; // Kenney kit grid unit size
-
 // ── Materials (cached per tint) ─────────────────────────────────────────
 
 interface MatSet {
@@ -75,57 +73,6 @@ function getMats(config: HouseConfig): MatSet {
 function createRoofGeo(width: number, depth: number, height: number): THREE.BufferGeometry {
 	const hw = width / 2;
 	const hd = depth / 2;
-	const vertices = new Float32Array([
-		// Left slope
-		-hw,
-		0,
-		-hd,
-		hw,
-		0,
-		-hd,
-		0,
-		height,
-		-hd,
-		-hw,
-		0,
-		hd,
-		hw,
-		0,
-		hd,
-		0,
-		height,
-		hd,
-		// Front gable
-		-hw,
-		0,
-		-hd,
-		0,
-		height,
-		-hd,
-		-hw,
-		0,
-		hd,
-		// Back gable
-		hw,
-		0,
-		-hd,
-		hw,
-		0,
-		hd,
-		0,
-		height,
-		-hd,
-	]);
-	const indices = [
-		// Left slope
-		0, 1, 2, 3, 4, 5,
-		// Right slope (use same tri order, back faces for the other side)
-		1, 0, 6, 6, 3, 1, 7, 4, 5, 5, 8, 7,
-		// Front gable
-		0, 2, 9, 9, 2, 3,
-		// Back gable
-		1, 10, 4, 10, 1, 2,
-	];
 	// Simpler approach: just 2 quads for slopes + 2 triangles for gables
 	const verts = new Float32Array([
 		// 4 base corners + peak front + peak back

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Physics Debug</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px; }
+    h1 { font-size: 1.4rem; margin-bottom: 12px; color: #00d4ff; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .panel { background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 12px; }
+    .panel h2 { font-size: 0.85rem; color: #888; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+    .full-width { grid-column: 1 / -1; }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    button { background: #0f3460; color: #e0e0e0; border: 1px solid #1a5276; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 0.85rem; }
+    button:hover { background: #1a5276; }
+    button.active { background: #e94560; border-color: #e94560; }
+    label { font-size: 0.8rem; color: #aaa; }
+    input[type=range] { width: 100px; }
+    select { background: #0f3460; color: #e0e0e0; border: 1px solid #1a5276; border-radius: 4px; padding: 4px 8px; font-size: 0.85rem; }
+    .gauge { display: flex; align-items: baseline; gap: 8px; margin: 4px 0; }
+    .gauge-value { font-family: 'Courier New', monospace; font-size: 1.8rem; font-weight: bold; color: #00d4ff; }
+    .gauge-unit { font-size: 0.75rem; color: #666; }
+    .gauge-bar { flex: 1; height: 8px; background: #0a0a1a; border-radius: 4px; overflow: hidden; }
+    .gauge-fill { height: 100%; background: #00d4ff; border-radius: 4px; transition: width 0.05s; }
+    .gauge-fill.redline { background: #e94560; }
+    .stat-row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 0.85rem; }
+    .stat-label { color: #888; }
+    .stat-value { font-family: 'Courier New', monospace; color: #e0e0e0; }
+    .indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #333; margin-right: 6px; vertical-align: middle; }
+    .indicator.on { background: #00ff88; }
+    canvas { width: 100%; border-radius: 4px; background: #0a0a1a; }
+    .car-select { display: flex; gap: 8px; }
+    .car-select label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+    .car-select input { accent-color: #00d4ff; }
+  </style>
+</head>
+<body>
+  <h1>🏎️ Physics Debug</h1>
+
+  <div class="grid">
+    <!-- Controls -->
+    <div class="panel full-width">
+      <h2>Controls</h2>
+      <div class="controls">
+        <button id="btn-start">▶ Start</button>
+        <button id="btn-reset">↺ Reset</button>
+        <button id="btn-throttle">Throttle</button>
+        <button id="btn-brake">Brake</button>
+        <button id="btn-handbrake">Handbrake</button>
+        <button id="btn-left">← Left</button>
+        <button id="btn-right">Right →</button>
+        <span style="margin-left:12px">
+          <label>Throttle: <input type="range" id="slider-throttle" min="0" max="1" step="0.05" value="1"><span id="val-throttle">1.0</span></label>
+        </span>
+        <span>
+          <label>Brake: <input type="range" id="slider-brake" min="0" max="1" step="0.05" value="1"><span id="val-brake">1.0</span></label>
+        </span>
+        <span style="margin-left:12px" class="car-select">
+          <label><input type="radio" name="car" value="race" checked> Race Car</label>
+          <label><input type="radio" name="car" value="sedan"> Sedan</label>
+        </span>
+      </div>
+    </div>
+
+    <!-- Speed Gauge -->
+    <div class="panel">
+      <h2>Speed</h2>
+      <div class="gauge">
+        <span class="gauge-value" id="speed-val">0</span>
+        <span class="gauge-unit">km/h</span>
+      </div>
+      <div class="gauge-bar"><div class="gauge-fill" id="speed-bar" style="width:0%"></div></div>
+    </div>
+
+    <!-- RPM Gauge -->
+    <div class="panel">
+      <h2>RPM</h2>
+      <div class="gauge">
+        <span class="gauge-value" id="rpm-val">0</span>
+        <span class="gauge-unit">rpm</span>
+      </div>
+      <div class="gauge-bar"><div class="gauge-fill" id="rpm-bar" style="width:0%"></div></div>
+      <div class="stat-row" style="margin-top:4px">
+        <span class="stat-label">Gear</span>
+        <span class="stat-value" id="gear-val" style="font-size:1.4rem;color:#00d4ff">1</span>
+      </div>
+    </div>
+
+    <!-- Forces -->
+    <div class="panel">
+      <h2>Forces</h2>
+      <div class="stat-row"><span class="stat-label">Engine Torque</span><span class="stat-value" id="torque-val">0 Nm</span></div>
+      <div class="stat-row"><span class="stat-label">Engine Force</span><span class="stat-value" id="engine-force-val">0 N</span></div>
+      <div class="stat-row"><span class="stat-label">Brake Force</span><span class="stat-value" id="brake-force-val">0 N</span></div>
+      <div class="stat-row"><span class="stat-label">Drag Force</span><span class="stat-value" id="drag-force-val">0 N</span></div>
+      <div class="stat-row"><span class="stat-label">Total Long. Force</span><span class="stat-value" id="total-force-val" style="color:#00d4ff">0 N</span></div>
+      <div class="stat-row"><span class="stat-label">Engine Braking</span><span class="stat-value" id="engine-brake-val">0 N</span></div>
+    </div>
+
+    <!-- Status -->
+    <div class="panel">
+      <h2>Status</h2>
+      <div class="stat-row"><span class="stat-label">Throttle</span><span class="stat-value"><span class="indicator" id="ind-throttle"></span><span id="ind-throttle-val">OFF</span></span></div>
+      <div class="stat-row"><span class="stat-label">Brake</span><span class="stat-value"><span class="indicator" id="ind-brake"></span><span id="ind-brake-val">OFF</span></span></div>
+      <div class="stat-row"><span class="stat-label">Handbrake</span><span class="stat-value"><span class="indicator" id="ind-handbrake"></span><span id="ind-handbrake-val">OFF</span></span></div>
+      <div class="stat-row"><span class="stat-label">Steering</span><span class="stat-value" id="steer-val">0.0°</span></div>
+      <div class="stat-row"><span class="stat-label">On Ground</span><span class="stat-value"><span class="indicator on" id="ind-ground"></span><span id="ind-ground-val">YES</span></span></div>
+      <div class="stat-row"><span class="stat-label">Rev Limited</span><span class="stat-value"><span class="indicator" id="ind-revlim"></span><span id="ind-revlim-val">NO</span></span></div>
+      <div class="stat-row"><span class="stat-label">Shifting</span><span class="stat-value"><span class="indicator" id="ind-shift"></span><span id="ind-shift-val">NO</span></span></div>
+    </div>
+
+    <!-- Speed Graph -->
+    <div class="panel">
+      <h2>Speed vs Time</h2>
+      <canvas id="speed-graph" width="500" height="150"></canvas>
+    </div>
+
+    <!-- RPM Graph -->
+    <div class="panel">
+      <h2>RPM vs Time</h2>
+      <canvas id="rpm-graph" width="500" height="150"></canvas>
+    </div>
+
+    <!-- Torque Curve -->
+    <div class="panel full-width">
+      <h2>Torque Curve</h2>
+      <canvas id="torque-curve" width="1000" height="180"></canvas>
+    </div>
+  </div>
+
+  <script type="module" src="/src/client/debug-physics.ts"></script>
+</body>
+</html>

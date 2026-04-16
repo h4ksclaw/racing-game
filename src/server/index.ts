@@ -133,6 +133,9 @@ app.get("/track", (_req, res) => {
 app.get("/practice", (_req, res) => {
 	res.sendFile(path.join(distPath, "practice.html"));
 });
+app.get("/physics-debug", (_req, res) => {
+	res.sendFile(path.join(distPath, "physics-debug.html"));
+});
 app.get("*path", (_req, res) => {
 	res.sendFile(path.join(distPath, "track.html"));
 });

@@ -233,7 +233,6 @@ export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData 
 	const rng = mulberry32(seed);
 	const noise = createNoise(rng);
 
-	const _tightness = opts.tightness ?? 5;
 	const elevationAmp = opts.elevation ?? 80;
 	const downhillBias = (opts.downhillBias ?? 70) / 100;
 	const width = opts.width ?? 12;

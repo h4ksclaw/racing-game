@@ -15,6 +15,7 @@ export default defineConfig({
 			input: {
 				track: resolve(__dirname, "track.html"),
 				practice: resolve(__dirname, "practice.html"),
+				"physics-debug": resolve(__dirname, "pages/physics-debug.html"),
 			},
 		},
 	},

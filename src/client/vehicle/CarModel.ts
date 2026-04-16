@@ -403,7 +403,3 @@ function computeDownshiftThresholds(config: CarConfig): number[] {
 
 	return thresholds;
 }
-
-import { RACE_CAR } from "./types.ts";
-
-export const DEFAULT_CAR_MODEL = buildCarModel(RACE_CAR);
