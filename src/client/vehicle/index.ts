@@ -9,6 +9,7 @@ export {
 	type GearboxSpec,
 	RACE_CAR,
 	SEDAN_CAR,
+	SPORTS_CAR,
 	type TireSpec,
 	type VehicleInput,
 	type VehicleState,

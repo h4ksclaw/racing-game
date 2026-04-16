@@ -43,7 +43,9 @@ export class VehicleController {
 	};
 
 	private car: CarModel;
-	readonly config: CarConfig;
+	config: CarConfig;
+
+	// Runtime chassis overrides from marker auto-derivation
 
 	// World-space state
 	private posX = 0;
@@ -66,10 +68,10 @@ export class VehicleController {
 	private readonly STEER_SPEED = 4.0;
 
 	// CG geometry (derived from config)
-	private readonly cgToFront: number;
-	private readonly cgToRear: number;
-	private readonly cgHeight: number;
-	private readonly yawInertia: number;
+	private cgToFront: number;
+	private cgToRear: number;
+	private cgHeight: number;
+	private yawInertia: number;
 
 	constructor(config: CarConfig = RACE_CAR) {
 		this.config = config;
@@ -87,6 +89,10 @@ export class VehicleController {
 		const gltf = await loader.loadAsync(this.config.modelPath);
 		this.model = gltf.scene;
 
+		// ── Auto-derive chassis from marker objects ─────────────────────
+		this.autoDeriveChassis();
+
+		// ── Find wheel meshes for visual steering/spin ──────────────────
 		this.wheelMeshes = [];
 		for (const name of [
 			"wheel-front-left",
@@ -98,6 +104,126 @@ export class VehicleController {
 			if (obj) this.wheelMeshes.push(obj);
 		}
 		return this.model;
+	}
+
+	/**
+	 * Auto-derive chassis dimensions from WheelRig_* and PhysicsMarker objects
+	 * embedded in the GLB model. Falls back to config values if markers are missing.
+	 *
+	 * Expected marker hierarchy:
+	 *   CarBody (mesh)
+	 *     ├── PhysicsMarker          @ ground contact point
+	 *     ├── WheelRig_FrontLeft    @ front-left wheel center
+	 *     ├── WheelRig_FrontRight   @ front-right wheel center
+	 *     ├── WheelRig_RearLeft     @ rear-left wheel center
+	 *     └── WheelRig_RearRight    @ rear-right wheel center
+	 *
+	 * Derived values:
+	 *   wheelRadius   = |WheelRig.y - PhysicsMarker.y|
+	 *   wheelBase     = |Front.z - Rear.z|
+	 *   wheelPositions = marker translations
+	 *   halfExtents   = body mesh bounding box
+	 *   cgHeight      = halfExtents.y * 1.1 (or PhysicsMarker-based estimate)
+	 */
+	private autoDeriveChassis(): void {
+		if (!this.model) return;
+
+		// Find marker objects
+		const physicsMarker = this.findMarkerRecursive(this.model, "PhysicsMarker");
+		const wheelRigs: THREE.Object3D[] = [];
+		for (const name of [
+			"WheelRig_FrontLeft",
+			"WheelRig_FrontRight",
+			"WheelRig_RearLeft",
+			"WheelRig_RearRight",
+		]) {
+			const obj = this.findMarkerRecursive(this.model, name);
+			if (obj) wheelRigs.push(obj);
+		}
+
+		if (wheelRigs.length < 4 || !physicsMarker) return; // markers not found, use config
+
+		// Get world-space positions
+		const markerPos = new THREE.Vector3();
+		physicsMarker.getWorldPosition(markerPos);
+		const pmY = markerPos.y;
+
+		const wheelWorldPositions: THREE.Vector3[] = [];
+		for (const rig of wheelRigs) {
+			const wp = new THREE.Vector3();
+			rig.getWorldPosition(wp);
+			wheelWorldPositions.push(wp);
+		}
+
+		// Derive wheel radius (average distance from wheel center to ground)
+		const radii = wheelWorldPositions.map((wp) => Math.abs(wp.y - pmY));
+		const avgRadius = radii.reduce((a, b) => a + b, 0) / radii.length;
+
+		// Derive wheelbase from front-to-rear Z distance
+		const frontZ = (wheelWorldPositions[0].z + wheelWorldPositions[1].z) / 2;
+		const rearZ = (wheelWorldPositions[2].z + wheelWorldPositions[3].z) / 2;
+		const wheelBase = Math.abs(frontZ - rearZ);
+
+		// Compute body mesh bounding box
+		const bodyBox = new THREE.Box3();
+		this.model.traverse((child) => {
+			if (child instanceof THREE.Mesh && child.name !== "textured_mesh_BACKUP") {
+				child.geometry.computeBoundingBox();
+				if (child.geometry.boundingBox) {
+					const box = child.geometry.boundingBox.clone();
+					box.applyMatrix4(child.matrixWorld);
+					bodyBox.union(box);
+				}
+			}
+		});
+
+		const bodySize = new THREE.Vector3();
+		bodyBox.getSize(bodySize);
+		const bodyCenter = new THREE.Vector3();
+		bodyBox.getCenter(bodyCenter);
+
+		// CG height: estimate from body geometry (center of mass ~40% up from bottom)
+		const bodyBottom = bodyBox.min.y;
+		const bodyTop = bodyBox.max.y;
+		const cgHeight = Math.max(pmY - bodyBottom, (bodyTop - bodyBottom) * 0.4);
+
+		// Apply derived values (convert to local coords relative to model root)
+		const rootPos = new THREE.Vector3();
+		this.model.getWorldPosition(rootPos);
+
+		this.config = {
+			...this.config,
+			chassis: {
+				...this.config.chassis,
+				wheelRadius: avgRadius,
+				wheelBase,
+				wheelPositions: wheelWorldPositions.map((wp) => ({
+					x: wp.x - rootPos.x,
+					y: wp.y - rootPos.y,
+					z: wp.z - rootPos.z,
+				})),
+				halfExtents: [bodySize.x / 2, bodySize.y / 2, bodySize.z / 2],
+				cgHeight,
+			},
+		};
+
+		// Recompute derived values with new chassis
+
+		// Recompute derived CG values
+		this.cgToFront = wheelBase * 0.55;
+		this.cgToRear = wheelBase * 0.45;
+		this.cgHeight = cgHeight;
+		this.yawInertia = this.config.chassis.mass * this.cgToFront * this.cgToRear;
+	}
+
+	/** Recursively search for a named object in the scene graph. */
+	private findMarkerRecursive(parent: THREE.Object3D, name: string): THREE.Object3D | null {
+		for (const child of parent.children) {
+			if (child.name === name) return child;
+			const found = this.findMarkerRecursive(child, name);
+			if (found) return found;
+		}
+		return null;
 	}
 
 	setTerrain(terrain: TerrainProvider): void {

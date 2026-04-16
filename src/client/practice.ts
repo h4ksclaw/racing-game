@@ -9,6 +9,7 @@ import * as THREE from "three";
 import { state } from "./scene.ts";
 import type { WeatherType } from "./utils.ts";
 import { DEFAULT_INPUT, VehicleController, type VehicleInput } from "./vehicle/index.ts";
+import { SPORTS_CAR } from "./vehicle/types.ts";
 import { updateWeather } from "./weather.ts";
 import { buildWorld, type WorldResult } from "./world.ts";
 
@@ -241,7 +242,7 @@ async function buildPractice(): Promise<void> {
 	});
 
 	// Vehicle (page-specific)
-	vehicle = new VehicleController();
+	vehicle = new VehicleController(SPORTS_CAR);
 	const carModel = await vehicle.loadModel();
 	carModel.castShadow = true;
 	carModel.traverse((child) => {

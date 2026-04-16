@@ -290,3 +290,69 @@ export const SEDAN_CAR: CarConfig = {
 		cgHeight: 0.5,
 	},
 };
+
+/**
+ * Custom sports car with marker-based chassis auto-derivation.
+ * WheelRig_* and PhysicsMarker objects in the GLB define wheel positions,
+ * radius, wheelbase, and ride height. Chassis values here are fallbacks
+ * used only if markers are missing from the model.
+ */
+export const SPORTS_CAR: CarConfig = {
+	name: "Sports Car",
+	modelPath: "/assets/custom-cars/sports-car.glb",
+	engine: {
+		torqueNm: 25,
+		idleRPM: 900,
+		maxRPM: 8000,
+		redlinePct: 0.85,
+		finalDrive: 3.73,
+		torqueCurve: [
+			[900, 0.35],
+			[2000, 0.85],
+			[4000, 1.0],
+			[6000, 0.95],
+			[8000, 0.7],
+		],
+		engineBraking: 0.25,
+	},
+	gearbox: {
+		gearRatios: [3.8, 2.4, 1.65, 1.23, 0.94, 0.76],
+		shiftTime: 0.1,
+	},
+	brakes: {
+		maxBrakeG: 1.2,
+		handbrakeG: 1.5,
+		brakeBias: 0.58,
+	},
+	tires: {
+		corneringStiffnessFront: 520,
+		corneringStiffnessRear: 480,
+		peakFriction: 1.3,
+		tractionPct: 0.5,
+	},
+	drag: {
+		rollingResistance: 0.15,
+		aeroDrag: 0.015,
+	},
+	// These chassis values are FALLBACKS — markers override them at load time
+	chassis: {
+		mass: 80,
+		halfExtents: [0.44, 0.29, 1.0],
+		wheelRadius: 0.127,
+		wheelPositions: [
+			{ x: -0.35, y: -0.148, z: 0.579 },
+			{ x: 0.35, y: -0.148, z: 0.579 },
+			{ x: -0.35, y: -0.148, z: -0.6 },
+			{ x: 0.35, y: -0.148, z: -0.6 },
+		],
+		wheelBase: 1.179,
+		maxSteerAngle: 0.45,
+		suspensionStiffness: 35,
+		suspensionRestLength: 0.15,
+		dampingRelaxation: 2.5,
+		dampingCompression: 4.5,
+		rollInfluence: 0.03,
+		maxSuspensionTravel: 0.2,
+		cgHeight: 0.18,
+	},
+};

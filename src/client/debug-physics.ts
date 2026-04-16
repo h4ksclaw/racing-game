@@ -4,7 +4,7 @@
  */
 
 import type { CarConfig, VehicleInput } from "./vehicle/types.ts";
-import { DEFAULT_INPUT, RACE_CAR, SEDAN_CAR } from "./vehicle/types.ts";
+import { DEFAULT_INPUT, RACE_CAR, SEDAN_CAR, SPORTS_CAR } from "./vehicle/types.ts";
 import { VehicleController } from "./vehicle/VehicleController.ts";
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -156,7 +156,12 @@ sliderBrake.addEventListener("input", () => {
 
 for (const el of document.querySelectorAll('input[name="car"]')) {
 	el.addEventListener("change", () => {
-		currentConfig = (el as HTMLInputElement).value === "sedan" ? SEDAN_CAR : RACE_CAR;
+		currentConfig =
+			(el as HTMLInputElement).value === "sedan"
+				? SEDAN_CAR
+				: (el as HTMLInputElement).value === "sports"
+					? SPORTS_CAR
+					: RACE_CAR;
 		running = false;
 		btnStart.textContent = "▶ Start";
 		btnStart.classList.remove("active");
