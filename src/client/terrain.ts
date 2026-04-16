@@ -672,8 +672,9 @@ void main() {
 export function updateTerrainShadows(): void {
 	const { sun, terrainMaterial } = state;
 	if (!sun?.shadow?.map || !terrainMaterial?.uniforms) return;
-	terrainMaterial.uniforms.tShadowMap.value = sun.shadow.map;
-	terrainMaterial.uniforms.uShadowMatrix.value.copy(sun.shadow.matrix);
+	const u = terrainMaterial.uniforms;
+	if (u.tShadowMap) u.tShadowMap.value = sun.shadow.map;
+	if (u.uShadowMatrix) u.uShadowMatrix.value.copy(sun.shadow.matrix);
 }
 
 /** Build terrain mesh with custom GLSL shader (7-layer blend based on height/slope/road distance). */
@@ -778,6 +779,9 @@ export async function buildTerrain(
 				value: Array.from({ length: 4 }, () => new THREE.Vector3(1, 0.95, 0.8)),
 			},
 			uStreetLightIntensity: { value: 0.0 },
+			tShadowMap: { value: new THREE.Texture() },
+			uShadowMatrix: { value: new THREE.Matrix4() },
+			uShadowBias: { value: 0.005 },
 			uMossRange: { value: biome.mossRange ?? 25.0 },
 			uDirtNearDist: { value: biome.dirtNearDist ?? 0.0 },
 			uDirtFarDist: { value: biome.dirtFarDist ?? -10.0 },
