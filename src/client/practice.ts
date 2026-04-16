@@ -19,6 +19,12 @@ const seed = Number(urlParams.get("seed")) || 42;
 const hour = Number(urlParams.get("hour")) || 14;
 const weather = (urlParams.get("weather") as WeatherType) || "clear";
 
+// Wire world link to preserve URL params
+const worldLink = document.getElementById("worldLink") as HTMLAnchorElement | null;
+if (worldLink) {
+	worldLink.href = `/world?${urlParams.toString()}`;
+}
+
 // ── HUD elements ────────────────────────────────────────────────────────
 const speedEl = document.getElementById("speedometer");
 const gearEl = document.getElementById("gear-display");

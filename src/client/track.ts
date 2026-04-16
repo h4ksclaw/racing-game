@@ -109,6 +109,11 @@ document.getElementById("flyoverBtn")?.addEventListener("click", () => {
 	}
 });
 
+document.getElementById("practiceBtn")?.addEventListener("click", () => {
+	const params = new URLSearchParams(window.location.search);
+	window.location.href = `/practice?${params.toString()}`;
+});
+
 const flyoverSpeed = document.getElementById("flyoverSpeed") as HTMLInputElement | null;
 if (flyoverSpeed) {
 	flyoverSpeed.addEventListener("input", () => {
