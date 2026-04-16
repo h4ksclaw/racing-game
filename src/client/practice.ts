@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { state } from "./scene.ts";
 import { applyTimeOfDay } from "./sky.ts";
+import { updateTerrainShadows } from "./terrain.ts";
 import type { WeatherType } from "./utils.ts";
 import { DEFAULT_INPUT, VehicleController, type VehicleInput } from "./vehicle/index.ts";
 import { SPORTS_CAR } from "./vehicle/types.ts";
@@ -306,6 +307,7 @@ function animate(): void {
 	}
 
 	updateWeather(delta);
+	updateTerrainShadows();
 
 	if (state.composer) {
 		state.composer.render();

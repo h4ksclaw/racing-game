@@ -324,20 +324,23 @@ const terrainVertexShader = /* glsl */ `
 attribute vec3 aBlend0;
 attribute vec3 aBlend1;
 uniform float uTexRepeat;
+uniform mat4 uShadowMatrix;
 
 varying vec2 vUv;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
 varying vec3 vBlend0;
 varying vec3 vBlend1;
+varying vec4 vShadowCoord;
 
 void main() {
-	vUv = uv; // raw UVs — stochasticUV handles tiling internally
+	vUv = uv;
 	vBlend0 = aBlend0;
 	vBlend1 = aBlend1;
 	vNormal = normalize(normalMatrix * normal);
 	vec4 worldPos = modelMatrix * vec4(position, 1.0);
 	vWorldPos = worldPos.xyz;
+	vShadowCoord = uShadowMatrix * worldPos;
 	gl_Position = projectionMatrix * viewMatrix * worldPos;
 }
 `;
@@ -360,6 +363,7 @@ uniform sampler2D tSnowRA;
 uniform sampler2D tMossC;
 uniform sampler2D tMossN;
 uniform sampler2D tMossRA;
+uniform sampler2D tShadowMap;
 uniform vec3 uSunDir;
 uniform float uSunIntensity;
 uniform vec3 uSunColor;
@@ -386,12 +390,14 @@ uniform int uStreetLightCount;
 uniform vec3 uStreetLightPos[4];
 uniform vec3 uStreetLightColor[4];
 uniform float uStreetLightIntensity;
+uniform float uShadowBias;
 
 varying vec2 vUv;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
 varying vec3 vBlend0;
 varying vec3 vBlend1;
+varying vec4 vShadowCoord;
 
 // Hash function for procedural noise
 float hash2(vec2 p) {
@@ -630,6 +636,15 @@ void main() {
 	diffuse += vec3(snowSpec * 0.6 + snowFresnel); // snow sparkle
 	diffuse += vec3(rockSpec * 0.3); // subtle rock sheen
 
+	// Shadow mapping
+	vec3 shadowCoord = vShadowCoord.xyz / vShadowCoord.w;
+	float shadow = 1.0;
+	if (shadowCoord.x >= 0.0 && shadowCoord.x <= 1.0 && shadowCoord.y >= 0.0 && shadowCoord.y <= 1.0 && shadowCoord.z >= 0.0 && shadowCoord.z <= 1.0) {
+		float closestDepth = texture2D(tShadowMap, shadowCoord.xy).r;
+		shadow = smoothstep(uShadowBias, uShadowBias + 0.005, shadowCoord.z - closestDepth);
+	}
+	diffuse *= mix(1.0, shadow, uSunIntensity);
+
 	float fogDist = length(vWorldPos - cameraPosition);
 	float fogFactor = smoothstep(uFogNear, uFogFar, fogDist);
 	vec3 color = mix(diffuse, uFogColor, fogFactor);
@@ -652,6 +667,14 @@ void main() {
 `;
 
 // ── Build terrain ───────────────────────────────────────────────────────
+
+/** Update terrain shadow map from the sun light (call each frame). */
+export function updateTerrainShadows(): void {
+	const { sun, terrainMaterial } = state;
+	if (!sun?.shadow?.map || !terrainMaterial?.uniforms) return;
+	terrainMaterial.uniforms.tShadowMap.value = sun.shadow.map;
+	terrainMaterial.uniforms.uShadowMatrix.value.copy(sun.shadow.matrix);
+}
 
 /** Build terrain mesh with custom GLSL shader (7-layer blend based on height/slope/road distance). */
 export async function buildTerrain(

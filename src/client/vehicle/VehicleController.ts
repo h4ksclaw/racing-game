@@ -356,7 +356,7 @@ export class VehicleController {
 		const y = ch.halfExtents[1] * 0.6; // slightly above center height
 
 		for (const side of [-1, 1] as const) {
-			const light = new THREE.SpotLight(0xfff5e6, 0, 80, Math.PI / 5, 0.4, 1.5);
+			const light = new THREE.SpotLight(0xfff5e6, 0, 150, Math.PI / 5, 0.4, 1.5);
 			light.position.set(side * halfW * 0.65, y, frontZ);
 			// Aim forward and slightly down
 			const target = new THREE.Object3D();
