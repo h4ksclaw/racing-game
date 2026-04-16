@@ -22,7 +22,7 @@ export { Engine } from "./engine/Engine.ts";
 export { EngineUnit } from "./engine/EngineUnit.ts";
 export { Gearbox } from "./engine/Gearbox.ts";
 export { Brakes } from "./suspension/Brakes.ts";
-export { TireModel } from "./suspension/TireModel.ts";
+export { frictionCircleClamp, pacejka, TireModel } from "./suspension/TireModel.ts";
 export {
 	DEFAULT_INPUT,
 	type EngineTelemetry,

@@ -242,7 +242,7 @@ export class VehiclePhysics {
 		this.localVelX = brakes.applyResult(this.localVelX);
 		this.localVelY += (tireForces.lateral / mass) * dt;
 
-		const yawDampCoeff = 1.5 + (speedKmh / 200) * 2.0;
+		const yawDampCoeff = 1.0 + (speedKmh / 200) * 1.5;
 		this.yawRate += (tireForces.yawTorque / chassis.yawInertia) * dt;
 		this.yawRate *= 1 - yawDampCoeff * dt;
 
@@ -295,7 +295,7 @@ export class VehiclePhysics {
 				this.localVelX += -g * Math.sin(this.pitch) * dt;
 			}
 
-			// ── Road boundary collisions ──
+			// ── Road boundary collisions (with angular impulse) ──
 			if (ts.roadBoundary) {
 				const rb = ts.roadBoundary;
 				const carHalfW = chassis.spec.halfExtents[0];
@@ -304,17 +304,66 @@ export class VehiclePhysics {
 					const wn = rb.wallNormal;
 					const worldVx = this.localVelX * sh + this.localVelY * ch;
 					const worldVz = this.localVelX * ch - this.localVelY * sh;
-					const velAlongNormal = worldVx * wn.x + worldVz * wn.z;
+
+					// Contact point: edge of car in the wall normal direction
+					// r = vector from CG to contact point (world space)
+					const contactX = this.posX + wn.x * carHalfW;
+					const contactZ = this.posZ + wn.z * carHalfW;
+					const rx = contactX - this.posX;
+					const rz = contactZ - this.posZ;
+
+					// Velocity at contact point (includes rotation contribution)
+					const vContactX = worldVx - this.yawRate * rz;
+					const vContactZ = worldVz + this.yawRate * rx;
+
+					const velAlongNormal = vContactX * wn.x + vContactZ * wn.z;
 
 					if (velAlongNormal < 0) {
-						const restitution = 0.15;
+						const restitution = 0.2;
 						const impactSpeed = Math.abs(velAlongNormal);
-						const reflectedVx = worldVx - (1 + restitution) * velAlongNormal * wn.x;
-						const reflectedVz = worldVz - (1 + restitution) * velAlongNormal * wn.z;
-						this.localVelX = reflectedVx * sh + reflectedVz * ch;
-						this.localVelY = reflectedVx * ch - reflectedVz * sh;
-						const speedLoss = Math.min(0.15, impactSpeed * 0.01);
+
+						// Effective mass at contact (accounts for rotational inertia)
+						const rCrossN = rx * wn.z - rz * wn.x;
+						const effMassInv = 1 / mass + (rCrossN * rCrossN) / chassis.yawInertia;
+
+						// Impulse magnitude
+						const j = (-(1 + restitution) * velAlongNormal) / effMassInv;
+
+						// Apply linear impulse
+						const impX = j * wn.x;
+						const impZ = j * wn.z;
+						const newWorldVx = worldVx + impX / mass;
+						const newWorldVz = worldVz + impZ / mass;
+
+						// Apply angular impulse (torque from off-center impact)
+						this.yawRate += (rx * impZ - rz * impX) / chassis.yawInertia;
+
+						// Friction impulse at contact (tangential)
+						const tangentX = -wn.z;
+						const tangentZ = wn.x;
+						const relVelTangent = vContactX * tangentX + vContactZ * tangentZ;
+						const frictionCoeff = 0.3;
+						const maxFriction = frictionCoeff * Math.abs(j);
+						const rCrossT = rx * tangentZ - rz * tangentX;
+						const effMassInvT = 1 / mass + (rCrossT * rCrossT) / chassis.yawInertia;
+						let jt = -relVelTangent / effMassInvT;
+						if (Math.abs(jt) > maxFriction) {
+							jt = maxFriction * Math.sign(jt);
+						}
+						const fricImpX = jt * tangentX;
+						const fricImpZ = jt * tangentZ;
+						this.yawRate += (rx * fricImpZ - rz * fricImpX) / chassis.yawInertia;
+
+						// Convert back to local frame
+						const finalWorldVx = newWorldVx + fricImpX / mass;
+						const finalWorldVz = newWorldVz + fricImpZ / mass;
+						this.localVelX = finalWorldVx * sh + finalWorldVz * ch;
+						this.localVelY = finalWorldVx * ch - finalWorldVz * sh;
+
+						// Energy loss on impact
+						const speedLoss = Math.min(0.2, impactSpeed * 0.015);
 						this.localVelX *= 1 - speedLoss;
+						this.localVelY *= 1 - speedLoss;
 					}
 
 					const pushDir = rb.lateralDist >= 0 ? -1 : 1;
