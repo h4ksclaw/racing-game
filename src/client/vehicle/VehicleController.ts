@@ -53,6 +53,9 @@ export class VehicleController {
 	private posZ = 0;
 	private heading = 0;
 
+	// Model offset: Y offset from model origin to PhysicsMarker (ground contact)
+	private modelGroundOffset = 0;
+
 	// Velocities
 	private localVelX = 0;
 	private localVelY = 0;
@@ -88,6 +91,12 @@ export class VehicleController {
 		const loader = new GLTFLoader();
 		const gltf = await loader.loadAsync(this.config.modelPath);
 		this.model = gltf.scene;
+
+		// ── Apply model scale if specified ─────────────────────────────
+		if (this.config.modelScale && this.config.modelScale !== 1) {
+			this.model.scale.setScalar(this.config.modelScale);
+			this.model.updateMatrixWorld(true);
+		}
 
 		// ── Auto-derive chassis from marker objects ─────────────────────
 		this.autoDeriveChassis();
@@ -186,6 +195,12 @@ export class VehicleController {
 		const bodyBottom = bodyBox.min.y;
 		const bodyTop = bodyBox.max.y;
 		const cgHeight = Math.max(pmY - bodyBottom, (bodyTop - bodyBottom) * 0.4);
+
+		// Model offset: PhysicsMarker defines where ground is relative to model origin.
+		// The physics system positions the car at posY = groundY + wheelRadius + restLength.
+		// We need the model positioned so its PhysicsMarker Y sits at that ground contact point.
+		// offset = how far above the model origin the PhysicsMarker is (positive = marker is above origin)
+		this.modelGroundOffset = pmY;
 
 		// Apply derived values (convert to local coords relative to model root)
 		const rootPos = new THREE.Vector3();
@@ -414,7 +429,7 @@ export class VehicleController {
 	syncVisuals(): void {
 		if (!this.model) return;
 
-		this.model.position.set(this.posX, this.posY, this.posZ);
+		this.model.position.set(this.posX, this.posY + this.modelGroundOffset, this.posZ);
 		this.model.rotation.set(this.pitch, this.heading, this.roll);
 
 		for (let i = 0; i < 4; i++) {

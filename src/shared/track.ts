@@ -235,7 +235,7 @@ export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData 
 
 	const elevationAmp = opts.elevation ?? 80;
 	const downhillBias = (opts.downhillBias ?? 70) / 100;
-	const width = opts.width ?? 12;
+	const width = opts.width ?? 8;
 	const shoulderWidth = opts.shoulderWidth ?? 2;
 	const kerbWidth = opts.kerbWidth ?? 0.8;
 	const minSamples = opts.minSamples ?? 500;

@@ -126,6 +126,8 @@ export interface ChassisSpec {
 export interface CarConfig {
 	readonly name: string;
 	readonly modelPath: string;
+	/** Scale factor applied to the GLB model before marker auto-derivation. Default 1. */
+	readonly modelScale: number;
 	readonly engine: EngineSpec;
 	readonly gearbox: GearboxSpec;
 	readonly brakes: BrakeSpec;
@@ -178,6 +180,7 @@ export interface WheelVisual {
 
 export const RACE_CAR: CarConfig = {
 	name: "Race Car",
+	modelScale: 1,
 	modelPath: "/assets/kenney-car-kit/Models/GLB format/race.glb",
 	engine: {
 		torqueNm: 50,
@@ -236,6 +239,7 @@ export const RACE_CAR: CarConfig = {
 
 export const SEDAN_CAR: CarConfig = {
 	name: "Sedan",
+	modelScale: 1,
 	modelPath: "/assets/kenney-car-kit/Models/GLB format/sedan.glb",
 	engine: {
 		torqueNm: 35,
@@ -298,61 +302,65 @@ export const SEDAN_CAR: CarConfig = {
  * used only if markers are missing from the model.
  */
 export const SPORTS_CAR: CarConfig = {
-	name: "Sports Car",
+	name: "AE86 Trueno",
 	modelPath: "/assets/custom-cars/sports-car.glb",
+	modelScale: 2.1,
 	engine: {
-		torqueNm: 25,
-		idleRPM: 900,
-		maxRPM: 8000,
+		// 4A-GEU 1.6L NA, ~145Nm peak torque
+		torqueNm: 145,
+		idleRPM: 850,
+		maxRPM: 7600,
 		redlinePct: 0.85,
-		finalDrive: 3.73,
+		finalDrive: 4.3,
 		torqueCurve: [
-			[900, 0.35],
-			[2000, 0.85],
-			[4000, 1.0],
-			[6000, 0.95],
-			[8000, 0.7],
+			[850, 0.3],
+			[1500, 0.55],
+			[3000, 0.85],
+			[4800, 1.0],
+			[6200, 0.98],
+			[7600, 0.85],
 		],
-		engineBraking: 0.25,
+		engineBraking: 0.15,
 	},
 	gearbox: {
-		gearRatios: [3.8, 2.4, 1.65, 1.23, 0.94, 0.76],
-		shiftTime: 0.1,
+		// T50 5-speed
+		gearRatios: [3.59, 2.06, 1.38, 1.0, 0.85],
+		shiftTime: 0.15,
 	},
 	brakes: {
-		maxBrakeG: 1.2,
-		handbrakeG: 1.5,
-		brakeBias: 0.58,
+		maxBrakeG: 0.85,
+		handbrakeG: 1.2,
+		brakeBias: 0.55,
 	},
 	tires: {
-		corneringStiffnessFront: 520,
-		corneringStiffnessRear: 480,
-		peakFriction: 1.3,
-		tractionPct: 0.5,
+		corneringStiffnessFront: 800,
+		corneringStiffnessRear: 720,
+		peakFriction: 1.0,
+		tractionPct: 0.45,
 	},
 	drag: {
-		rollingResistance: 0.15,
-		aeroDrag: 0.015,
+		rollingResistance: 8.0,
+		aeroDrag: 0.35,
 	},
-	// These chassis values are FALLBACKS — markers override them at load time
+	// These chassis values are FALLBACKS — markers + modelScale override them at load time
 	chassis: {
-		mass: 80,
-		halfExtents: [0.44, 0.29, 1.0],
-		wheelRadius: 0.127,
+		mass: 1000,
+		halfExtents: [0.82, 0.67, 2.11],
+		wheelRadius: 0.31,
 		wheelPositions: [
-			{ x: -0.35, y: -0.148, z: 0.579 },
-			{ x: 0.35, y: -0.148, z: 0.579 },
-			{ x: -0.35, y: -0.148, z: -0.6 },
-			{ x: 0.35, y: -0.148, z: -0.6 },
+			{ x: -0.73, y: -0.31, z: 1.22 },
+			{ x: 0.73, y: -0.31, z: 1.22 },
+			{ x: -0.73, y: -0.31, z: -1.26 },
+			{ x: 0.73, y: -0.31, z: -1.26 },
 		],
-		wheelBase: 1.179,
-		maxSteerAngle: 0.45,
-		suspensionStiffness: 35,
-		suspensionRestLength: 0.15,
-		dampingRelaxation: 2.5,
+		wheelBase: 2.48,
+		maxSteerAngle: 0.55,
+		suspensionStiffness: 40,
+		suspensionRestLength: 0.2,
+		dampingRelaxation: 2.8,
 		dampingCompression: 4.5,
-		rollInfluence: 0.03,
-		maxSuspensionTravel: 0.2,
-		cgHeight: 0.18,
+		rollInfluence: 0.06,
+		maxSuspensionTravel: 0.25,
+		cgHeight: 0.35,
 	},
 };
