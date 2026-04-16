@@ -187,6 +187,7 @@ export class TerrainSampler {
 		onRoad: boolean;
 		onKerb: boolean;
 		onShoulder: boolean;
+		wallNormal?: { x: number; z: number };
 	} {
 		const { sample } = this.nearestRoad(x, z);
 
@@ -211,6 +212,11 @@ export class TerrainSampler {
 		const kerbEdge = roadHalfWidth + kerbWidth;
 		const guardrailDist = kerbEdge + shoulderWidth;
 
+		// Wall normal: perpendicular to road tangent, pointing inward
+		const beyondWall = distFromCenter >= guardrailDist;
+		const sign = lateralDist >= 0 ? 1 : -1;
+		const wallNormal = beyondWall ? { x: -sign * tangentZ, z: sign * tangentX } : undefined;
+
 		return {
 			lateralDist,
 			distFromCenter,
@@ -220,6 +226,7 @@ export class TerrainSampler {
 			onRoad: distFromCenter < roadHalfWidth,
 			onKerb: distFromCenter >= roadHalfWidth && distFromCenter < kerbEdge,
 			onShoulder: distFromCenter >= kerbEdge && distFromCenter < guardrailDist,
+			wallNormal,
 		};
 	}
 }

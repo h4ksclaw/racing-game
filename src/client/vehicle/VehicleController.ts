@@ -39,6 +39,8 @@ export interface RoadBoundaryInfo {
 	onKerb: boolean;
 	/** Whether car is on the shoulder/grass */
 	onShoulder: boolean;
+	/** Inward-pointing wall normal (world space, only set when beyond guardrail) */
+	wallNormal?: { x: number; z: number };
 }
 
 export interface TerrainProvider {
@@ -525,18 +527,38 @@ export class VehicleController {
 			if (this.terrain.getRoadBoundary) {
 				const rb = this.terrain.getRoadBoundary(this.posX, this.posZ);
 
-				// Guardrail: hard wall with small bounce
-				if (rb.distFromCenter >= rb.guardrailDist) {
-					const pushDir = rb.lateralDist >= 0 ? -1 : 1;
-					// Kill lateral velocity and add small bounce
-					if (
-						(this.localVelY > 0 && rb.lateralDist > 0) ||
-						(this.localVelY < 0 && rb.lateralDist < 0)
-					) {
-						this.localVelY = -this.localVelY * 0.1; // small bounce
+				// Guardrail: proper wall collision with momentum reflection
+				if (rb.distFromCenter >= rb.guardrailDist && rb.wallNormal) {
+					const wn = rb.wallNormal;
+
+					// Convert velocity to world space
+					const worldVx = this.localVelX * sh + this.localVelY * ch;
+					const worldVz = this.localVelX * ch - this.localVelY * sh;
+
+					// Velocity component along wall normal
+					const velAlongNormal = worldVx * wn.x + worldVz * wn.z;
+
+					// Only collide if moving into the wall
+					if (velAlongNormal < 0) {
+						const restitution = 0.15;
+						const impactSpeed = Math.abs(velAlongNormal);
+
+						// Reflect: remove normal component, add bounce
+						const reflectedVx = worldVx - (1 + restitution) * velAlongNormal * wn.x;
+						const reflectedVz = worldVz - (1 + restitution) * velAlongNormal * wn.z;
+
+						// Convert back to local frame
+						this.localVelX = reflectedVx * sh + reflectedVz * ch;
+						this.localVelY = reflectedVx * ch - reflectedVz * sh;
+
+						// Speed loss from impact (more at higher speeds)
+						const speedLoss = Math.min(0.15, impactSpeed * 0.01);
+						this.localVelX *= 1 - speedLoss;
 					}
-					// Hard push back inside the boundary
-					this.localVelY += pushDir * 80 * dt;
+
+					// Hard push back inside
+					const pushDir = rb.lateralDist >= 0 ? -1 : 1;
+					this.localVelY += pushDir * 60 * dt;
 				}
 				// Off-road (shoulder/grass): slow down
 				else if (rb.onShoulder) {
