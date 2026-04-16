@@ -4,52 +4,101 @@
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	<title>World Viewer</title>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 	<style>
 		* { margin: 0; padding: 0; box-sizing: border-box; }
-		html, body { width: 100%; height: 100%; overflow: hidden; background: #111; }
+		html, body { width: 100%; height: 100%; overflow: hidden; background: #06040a; }
 		canvas { display: block; width: 100%; height: 100%; }
+
+		/* Sidebar panel - Night Signal theme */
 		#controls {
-			position: absolute; top: 10px; left: 10px; z-index: 10;
-			background: rgba(0,0,0,0.75); color: #eee; padding: 14px 18px;
-			border-radius: 8px; font: 13px/1.6 system-ui, sans-serif;
+			position: absolute; top: 36px; left: 12px; z-index: 10;
+			background: rgba(10, 8, 18, 0.88); backdrop-filter: blur(12px);
+			border: 1px solid rgba(139, 92, 246, 0.12); border-radius: 6px;
+			padding: 14px 16px; width: 220px;
+			font-family: 'Inter', sans-serif; color: rgba(255, 255, 255, 0.6);
 		}
-		#controls h2 { font-size: 15px; margin-bottom: 8px; color: #8f8; }
-		#controls label { display: block; margin-top: 6px; }
-		#controls input[type=number] { width: 70px; padding: 2px 4px; background: #222; color: #eee; border: 1px solid #555; border-radius: 3px; }
-		#controls button {
-			margin-top: 10px; padding: 6px 16px; cursor: pointer;
-			background: #3a3; color: #fff; border: none; border-radius: 4px;
-			font: 13px system-ui;
+		#controls .title {
+			font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 12px;
+			letter-spacing: 0.5px;
 		}
-		#controls button:hover { background: #4b4; }
-		#controls button.secondary { background: #555; }
-		#controls button.secondary:hover { background: #666; }
+		#controls .label {
+			display: block; font-family: 'JetBrains Mono', monospace;
+			font-size: 9px; color: rgba(139, 92, 246, 0.35);
+			text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px;
+		}
+		#controls .seed-val {
+			font-family: 'JetBrains Mono', monospace; font-size: 12px;
+			color: rgba(139, 92, 246, 0.7); margin-bottom: 12px;
+		}
+		#controls .btn {
+			display: block; width: 100%; padding: 8px 14px; border: none; border-radius: 4px;
+			font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
+			cursor: pointer; transition: all 0.15s; text-align: center;
+			margin-bottom: 6px; text-decoration: none;
+		}
+		#controls .btn-primary {
+			background: rgba(139, 92, 246, 0.15); border: 1px solid rgba(139, 92, 246, 0.2);
+			color: rgba(139, 92, 246, 0.8);
+		}
+		#controls .btn-primary:hover { background: rgba(139, 92, 246, 0.25); color: #fff; }
+		#controls .btn-secondary {
+			background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(139, 92, 246, 0.1);
+			color: rgba(255, 255, 255, 0.4);
+		}
+		#controls .btn-secondary:hover { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.7); }
+		#controls .btn-accent {
+			background: rgba(255, 107, 43, 0.12); border: 1px solid rgba(255, 107, 43, 0.2);
+			color: rgba(255, 107, 43, 0.8);
+		}
+		#controls .btn-accent:hover { background: rgba(255, 107, 43, 0.22); color: #fff; }
+		#controls .field { margin-bottom: 10px; }
+		#controls input[type="range"] {
+			-webkit-appearance: none; appearance: none; width: 100%; height: 4px;
+			background: rgba(139, 92, 246, 0.08); border-radius: 2px; outline: none; margin-top: 4px;
+		}
+		#controls input[type="range"]::-webkit-slider-thumb {
+			-webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+			background: rgba(139, 92, 246, 0.6); cursor: pointer;
+		}
+		#controls select {
+			width: 100%; padding: 5px 8px; background: rgba(10, 8, 18, 0.9);
+			border: 1px solid rgba(139, 92, 246, 0.15); border-radius: 3px;
+			color: rgba(255, 255, 255, 0.6); font-size: 12px; outline: none; margin-top: 4px; cursor: pointer;
+		}
+		#controls select option { background: #0a0812; }
+		.range-row { display: flex; justify-content: space-between; align-items: center; }
+		.range-val { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(255,255,255,0.3); }
+
+		/* Info bar */
 		#info {
-			position: absolute; bottom: 10px; left: 10px; z-index: 10;
-			background: rgba(0,0,0,0.75); color: #aaa; padding: 8px 12px;
-			border-radius: 6px; font: 12px/1.5 monospace;
+			position: absolute; bottom: 12px; left: 12px; z-index: 10;
+			font-family: 'JetBrains Mono', monospace; font-size: 9px;
+			color: rgba(139, 92, 246, 0.2); letter-spacing: 1px;
 		}
 	</style>
 </head>
 <body>
 	<div id="controls">
-		<h2>World Generator</h2>
-		<label style="opacity:0.6;font-size:11px">Seed: <span id="seedDisplay">42</span></label>
-		<br />
-		<button id="generateBtn">New World</button>
-		<button id="flyoverBtn" class="secondary" style="margin-top:6px">▶ Preview World</button>
-		<button id="practiceBtn" class="secondary" style="margin-top:6px">Drive This World</button>
-		<button id="garageBtn" class="secondary" style="margin-top:6px">Garage</button>
-		<label style="margin-top:8px">Flyover Speed:
-			<input type="range" id="flyoverSpeed" min="80" max="500" step="10" value="120" style="width:100%;margin-top:4px" />
-			<span id="flyoverSpeedLabel" style="float:right">120 km/h</span>
-		</label>
-		<label style="margin-top:12px">Time of Day:
-			<input type="range" id="timeSlider" min="0" max="24" step="0.1" value="12" style="width:100%;margin-top:4px" />
-			<span id="timeLabel" style="float:right">12:00</span>
-		</label>
-		<label style="margin-top:8px">Weather:
-			<select id="weatherSelect" style="width:100%;margin-top:4px;padding:3px 6px;background:#222;color:#eee;border:1px solid #555;border-radius:3px">
+		<div class="title">World Generator</div>
+		<span class="label">Seed</span>
+		<div class="seed-val" id="seedDisplay">42</div>
+		<button class="btn btn-primary" id="generateBtn">New World</button>
+		<button class="btn btn-secondary" id="flyoverBtn">Preview World</button>
+		<button class="btn btn-accent" id="practiceBtn">Drive This World</button>
+		<button class="btn btn-secondary" id="garageBtn">Garage</button>
+		<div class="field">
+			<div class="range-row"><span class="label">Flyover Speed</span><span class="range-val" id="flyoverSpeedLabel">120 km/h</span></div>
+			<input type="range" id="flyoverSpeed" min="80" max="500" step="10" value="120" />
+		</div>
+		<div class="field">
+			<span class="label">Time of Day</span>
+			<div class="range-row"><span class="range-val" id="timeLabel">12:00</span></div>
+			<input type="range" id="timeSlider" min="0" max="24" step="0.1" value="12" />
+		</div>
+		<div class="field">
+			<span class="label">Weather</span>
+			<select id="weatherSelect">
 				<option value="clear">Clear</option>
 				<option value="cloudy">Cloudy</option>
 				<option value="rain">Rain</option>
@@ -57,9 +106,9 @@
 				<option value="fog">Fog</option>
 				<option value="snow">Snow</option>
 			</select>
-		</label>
+		</div>
 	</div>
-	<div id="info">Loading…</div>
+	<div id="info">Loading...</div>
 	<script type="module" src="/src/client/track.ts"></script>
 </body>
 </html>

@@ -24,12 +24,17 @@ export class ControlsHelp extends LitElement {
 				font-family: var(--ui-mono);
 				color: var(--ui-text-bright);
 			}
-			.back-link {
-				display: inline-block;
+			.link-row {
 				margin-top: 10px;
+				display: flex;
+				flex-direction: column;
+				gap: 4px;
+			}
+			.back-link {
+				display: block;
 				padding: 6px 14px;
-				background: rgba(255,255,255,0.05);
-				border: 1px solid rgba(139,92,246,0.15);
+				background: rgba(255, 255, 255, 0.05);
+				border: 1px solid rgba(139, 92, 246, 0.15);
 				border-radius: 4px;
 				color: var(--ui-text-bright);
 				text-decoration: none;
@@ -39,7 +44,7 @@ export class ControlsHelp extends LitElement {
 				transition: background 0.15s;
 			}
 			.back-link:hover {
-				background: rgba(139,92,246,0.1);
+				background: rgba(139, 92, 246, 0.1);
 			}
 		`,
 	];
@@ -58,15 +63,30 @@ export class ControlsHelp extends LitElement {
 		garageUrl: { type: String },
 	};
 
+	private _navUrl(base: string): string {
+		const params = new URLSearchParams(window.location.search);
+		const keep = ["seed", "hour", "weather"];
+		const filtered = new URLSearchParams();
+		for (const key of keep) {
+			const val = params.get(key);
+			if (val !== null) filtered.set(key, val);
+		}
+		const qs = filtered.toString();
+		return qs ? `${base}?${qs}` : base;
+	}
+
 	override render() {
 		return html`
-			<span class="key">W/S</span> or Up/Down -- Throttle/Brake<br>
-			<span class="key">A/D</span> or Left/Right -- Steer<br>
-			<span class="key">Space</span> -- Handbrake<br>
-			<span class="key">R</span> -- Reset position<br>
-			<a class="back-link" href=${this.garageUrl}>Garage</a>
-			<a class="back-link" href=${this.worldUrl}>Back to World</a>
+			<span class="key">W/S</span> Up/Down - Throttle/Brake<br>
+			<span class="key">A/D</span> Left/Right - Steer<br>
+			<span class="key">Space</span> - Handbrake<br>
+			<span class="key">R</span> - Reset position
+			<div class="link-row">
+				<a class="back-link" href=${this._navUrl(this.garageUrl)}>Garage</a>
+				<a class="back-link" href=${this._navUrl(this.worldUrl)}>Back to World</a>
+			</div>
 		`;
 	}
 }
+
 customElements.define("controls-help", ControlsHelp);

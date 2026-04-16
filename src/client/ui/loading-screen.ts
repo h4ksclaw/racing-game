@@ -8,20 +8,18 @@ export class LoadingScreen extends LitElement {
 			:host {
 				position: fixed;
 				inset: 0;
-				display: flex;
+				display: none;
 				align-items: center;
 				justify-content: center;
-				background: rgba(10,8,18,1);
+				background: rgba(10, 8, 18, 1);
 				z-index: 1000;
 				pointer-events: none;
 				font-family: var(--ui-sans);
 				font-size: 18px;
-				color: rgba(255,255,255,0.5);
-				transition: opacity 0.3s;
+				color: rgba(255, 255, 255, 0.5);
 			}
-			:host([hidden]) {
-				opacity: 0;
-				display: none;
+			:host([visible]) {
+				display: flex;
 			}
 		`,
 	];
@@ -37,12 +35,12 @@ export class LoadingScreen extends LitElement {
 
 	static override properties = {
 		message: { type: String },
-		visible: { type: Boolean },
+		visible: { type: Boolean, reflect: true },
 	};
 
 	override render() {
-		if (!this.visible) return html``;
 		return html`<span>${this.message}</span>`;
 	}
 }
+
 customElements.define("loading-screen", LoadingScreen);
