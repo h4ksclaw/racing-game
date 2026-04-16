@@ -126,9 +126,9 @@ export class TerrainSampler {
 	}
 
 	getHeight(x: number, z: number): number {
-		// Quantize to 1m grid for caching
-		const qx = Math.round(x);
-		const qz = Math.round(z);
+		// Quantize to 0.25m grid for caching (smooth enough for driving)
+		const qx = Math.round(x * 4) / 4;
+		const qz = Math.round(z * 4) / 4;
 		const cacheKey = `${qx},${qz}`;
 		const cached = this.heightCache.get(cacheKey);
 		if (cached !== undefined) return cached;
@@ -163,7 +163,7 @@ export class TerrainSampler {
 	}
 
 	getNormal(x: number, z: number): { x: number; y: number; z: number } {
-		const eps = 0.5;
+		const eps = 0.25;
 		const hL = this.getHeight(x - eps, z);
 		const hR = this.getHeight(x + eps, z);
 		const hD = this.getHeight(x, z - eps);

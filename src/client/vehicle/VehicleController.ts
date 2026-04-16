@@ -448,7 +448,7 @@ export class VehicleController {
 		this.posZ += (this.localVelX * ch - this.localVelY * sh) * dt;
 
 		// ═══════════════════════════════════════════════════════════
-		// 11. GRAVITY + TERRAIN
+		// 11. GRAVITY + TERRAIN (spring-damper suspension)
 		// ═══════════════════════════════════════════════════════════
 		this.verticalVel -= g * dt;
 		this.posY += this.verticalVel * dt;
@@ -456,21 +456,37 @@ export class VehicleController {
 		if (this.terrain) {
 			const groundY = this.terrain.getHeight(this.posX, this.posZ);
 			const restH = wheelRadius + chassis.suspensionRestLength;
+			const targetY = groundY + restH;
+			const penetration = targetY - this.posY;
 
-			if (this.posY <= groundY + restH) {
-				this.posY = groundY + restH;
-				this.verticalVel = this.verticalVel < -1.0 ? this.verticalVel * -0.2 : 0;
+			if (penetration > 0) {
+				// Spring-damper: smooth ground following instead of hard snap
+				const springK = chassis.suspensionStiffness * 0.5;
+				const dampK = chassis.dampingCompression + chassis.dampingRelaxation;
+				const springForce = springK * penetration - dampK * this.verticalVel;
+
+				this.verticalVel += (springForce / mass) * dt;
+
+				// Hard floor: don't let car sink through ground
+				if (this.posY < groundY + wheelRadius * 0.5) {
+					this.posY = groundY + wheelRadius * 0.5;
+					this.verticalVel = this.verticalVel < -1.0 ? this.verticalVel * -0.15 : 0;
+				}
+
 				this.state.onGround = true;
 			} else {
+				// In air: only light damping to prevent oscillation on launch
 				this.state.onGround = false;
 			}
 
+			// Terrain slope → body tilt (with speed-dependent smoothing)
 			if (this.terrain.getNormal) {
 				const normal = this.terrain.getNormal(this.posX, this.posZ);
 				if (normal) {
 					const fwdSlope = -(normal.x * sh + normal.z * ch);
 					const rightSlope = -(normal.x * ch - normal.z * sh);
-					const tiltSpeed = 5.0;
+					// Slower tilt at high speed for stability
+					const tiltSpeed = 3.0 / (1 + speedKmh / 80);
 					this.pitch += (Math.atan2(fwdSlope, normal.y) - this.pitch) * Math.min(1, tiltSpeed * dt);
 					this.roll += (Math.atan2(rightSlope, normal.y) - this.roll) * Math.min(1, tiltSpeed * dt);
 					this.localVelX += -g * Math.sin(this.pitch) * dt;
