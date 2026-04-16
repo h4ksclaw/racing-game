@@ -7,6 +7,7 @@
 
 import * as THREE from "three";
 import { state } from "./scene.ts";
+import { applyTimeOfDay } from "./sky.ts";
 import type { WeatherType } from "./utils.ts";
 import { DEFAULT_INPUT, VehicleController, type VehicleInput } from "./vehicle/index.ts";
 import { SPORTS_CAR } from "./vehicle/types.ts";
@@ -261,6 +262,8 @@ async function buildPractice(): Promise<void> {
 
 	vehicle.setTerrain(world.terrain);
 	state.headlights = vehicle.headlights;
+	// Re-apply time of day now that headlights are registered
+	applyTimeOfDay(hour);
 	setupCameraInput(world.renderer);
 	resetCar();
 
@@ -292,6 +295,14 @@ function animate(): void {
 		vehicle.syncVisuals();
 		updateCamera();
 		updateHUD();
+
+		// Move shadow camera to follow car
+		if (state.sun && vehicle.model) {
+			const cp = vehicle.model.position;
+			state.sun.position.set(cp.x + 100, cp.y + 150, cp.z + 50);
+			state.sun.target.position.set(cp.x, cp.y, cp.z);
+			state.sun.target.updateMatrixWorld();
+		}
 	}
 
 	updateWeather(delta);
