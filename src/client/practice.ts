@@ -6,6 +6,7 @@
  */
 
 import * as THREE from "three";
+import { AudioBus } from "./audio/AudioBus.ts";
 import { deriveSoundConfig } from "./audio/audio-profiles.ts";
 import { state } from "./scene.ts";
 import { applyTimeOfDay } from "./sky.ts";
@@ -315,6 +316,10 @@ async function buildPractice(): Promise<void> {
 				maxRPM: carConfig.engine.maxRPM,
 				turbo: carConfig.engine.turbo,
 			});
+		console.log(
+			"[audio] config:",
+			JSON.stringify({ volume: soundConfig.volume, cylinders: soundConfig.cylinders }),
+		);
 		vehicle.initAudio(soundConfig);
 		window.removeEventListener("keydown", startAudio);
 		window.removeEventListener("click", startAudio);
@@ -361,6 +366,30 @@ function animate(): void {
 		vehicle.update(input, delta);
 		vehicle.syncVisuals();
 		updateCamera();
+
+		// Update audio listener to match camera position
+		if (vehicle.audio && world) {
+			const cam = world.camera;
+			const fwd = new THREE.Vector3();
+			cam.getWorldDirection(fwd);
+			AudioBus.getInstance().updateListener(
+				{ x: cam.position.x, y: cam.position.y, z: cam.position.z },
+				{ x: fwd.x, y: fwd.y, z: fwd.z },
+			);
+		}
+
+		// Update terrain shader with car headlight data
+		const headlightData = vehicle.renderer.getHeadlightData(vehicle.getForward());
+		if (headlightData && state.terrainMaterial) {
+			const u = state.terrainMaterial.uniforms;
+			const posArr = u.uCarLightPos.value as THREE.Vector3[];
+			const dirArr = u.uCarLightDir.value as THREE.Vector3[];
+			for (let i = 0; i < 2; i++) {
+				if (headlightData.positions[i]) posArr[i].copy(headlightData.positions[i]);
+				if (headlightData.directions[i]) dirArr[i].copy(headlightData.directions[i]);
+			}
+			u.uCarLightIntensity.value = headlightData.intensity;
+		}
 
 		const speed = Math.abs(vehicle.state.speed * 3.6);
 		const gear = vehicle.state.gear;

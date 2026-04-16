@@ -10,6 +10,7 @@
  * Public API is identical to the previous monolithic VehicleController.
  */
 
+import { AudioBus } from "../audio/AudioBus.ts";
 import type { EngineSoundConfig } from "../audio/audio-types.ts";
 import type { EngineAudio } from "../audio/EngineAudio.ts";
 import type { CarConfig } from "./configs.ts";
@@ -55,10 +56,17 @@ export class VehicleController {
 
 	initAudio(profile: EngineSoundConfig): void {
 		if (this._audio) return;
-		import("../audio/EngineAudio.ts").then(({ EngineAudio: EA }) => {
-			this._audio = new EA(profile);
-			this._audio.start();
-		});
+		// Acquire AudioContext synchronously during user gesture
+		// (dynamic import is async and loses gesture context)
+		AudioBus.getInstance().acquire();
+		import("../audio/EngineAudio.ts")
+			.then(({ EngineAudio: EA }) => {
+				this._audio = new EA(profile);
+				this._audio.start();
+			})
+			.catch((e) => {
+				console.error("[audio] Failed to load EngineAudio:", e);
+			});
 	}
 
 	async loadModel(): Promise<import("three").Group> {

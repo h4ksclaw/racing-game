@@ -49,7 +49,7 @@ export class VehicleRenderer {
 					child.position.multiplyScalar(scale);
 				}
 			});
-			this.model.updateMatrixWorld(true);
+			if (this.model) this.model.updateMatrixWorld(true);
 		}
 
 		// ── Enable shadows ──
@@ -228,6 +228,40 @@ export class VehicleRenderer {
 			this.model.add(light);
 			this.headlights.push(light);
 		}
+	}
+
+	/** Get headlight world-space positions and directions for terrain shader. */
+	getHeadlightData(physicsForward?: { x: number; y: number; z: number }): {
+		positions: THREE.Vector3[];
+		directions: THREE.Vector3[];
+		intensity: number;
+	} | null {
+		if (this.headlights.length === 0) return null;
+		this.model?.updateMatrixWorld(true);
+
+		const positions: THREE.Vector3[] = [];
+		const directions: THREE.Vector3[] = [];
+
+		// Use physics forward if available, otherwise derive from model
+		let fwd: THREE.Vector3;
+		if (physicsForward) {
+			fwd = new THREE.Vector3(physicsForward.x, physicsForward.y, physicsForward.z);
+		} else {
+			fwd = new THREE.Vector3(0, 0, 1);
+			fwd.applyQuaternion(this.model?.quaternion ?? new THREE.Quaternion());
+		}
+
+		for (const light of this.headlights) {
+			const pos = new THREE.Vector3();
+			light.getWorldPosition(pos);
+			positions.push(pos);
+			const dir = fwd.clone();
+			dir.y = -0.1;
+			dir.normalize();
+			directions.push(dir);
+		}
+
+		return { positions, directions, intensity: this.headlights[0].intensity };
 	}
 
 	/** Sync visual position, rotation, and wheel animation from physics state. */

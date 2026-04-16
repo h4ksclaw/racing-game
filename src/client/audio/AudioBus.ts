@@ -28,7 +28,11 @@ export class AudioBus {
 
 	acquire(): AudioContext {
 		this.refCount++;
-		return this.getContext();
+		const ctx = this.getContext();
+		if (ctx.state === "suspended") {
+			ctx.resume();
+		}
+		return ctx;
 	}
 
 	release(): void {

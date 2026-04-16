@@ -123,7 +123,7 @@ export class EngineAudio {
 		this.panner = ctx.createPanner();
 		this.panner.panningModel = "HRTF";
 		this.panner.distanceModel = "inverse";
-		this.panner.refDistance = 5;
+		this.panner.refDistance = 10;
 		this.panner.maxDistance = 500;
 		this.panner.rolloffFactor = 1;
 		this.panner.coneInnerAngle = 360;
@@ -314,7 +314,7 @@ export class EngineAudio {
 		}
 
 		// ── Master volume ──
-		let vol = this.config.volume * exVol * lerp(0.4, 1, rn) * lerp(0.5, 1, thr);
+		let vol = this.config.volume * exVol * lerp(0.7, 1, rn) * lerp(0.6, 1, thr);
 
 		if (telemetry.revLimited && rpm >= this.config.revLimiterRPM) {
 			vol *= 0.3;

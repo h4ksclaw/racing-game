@@ -85,7 +85,7 @@ export const EXHAUST_SYSTEMS: Record<ExhaustType, ExhaustSystemConfig> = {
 	stock: {
 		flowRestriction: 0.3,
 		resonance: 0.6,
-		volumeMultiplier: 0.7,
+		volumeMultiplier: 0.85,
 		highFreqDamp: 0.5,
 	},
 	sport: {

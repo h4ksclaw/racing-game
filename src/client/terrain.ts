@@ -392,6 +392,12 @@ uniform vec3 uStreetLightColor[4];
 uniform float uStreetLightIntensity;
 uniform float uShadowBias;
 
+// Car headlights (up to 2 spotlights)
+uniform vec3 uCarLightPos[2];
+uniform vec3 uCarLightDir[2];
+uniform float uCarLightIntensity;
+uniform float uCarLightCutoff;
+
 varying vec2 vUv;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
@@ -632,7 +638,27 @@ void main() {
 	}
 	pointLighting *= uStreetLightIntensity;
 
-	vec3 diffuse = baseColor * (uAmbientColor * uAmbientIntensity * blendedAO + uSunColor * NdotL * uSunIntensity + pointLighting);
+	// Car headlight spotlight contribution
+	vec3 carLighting = vec3(0.0);
+	if (uCarLightIntensity > 0.01) {
+		for (int i = 0; i < 2; i++) {
+			vec3 toFrag = vWorldPos - uCarLightPos[i];
+			float d = length(toFrag);
+			vec3 L = normalize(-toFrag);
+			vec3 spotDir = normalize(uCarLightDir[i]);
+			// Spot cone: smooth falloff
+			float cosAngle = dot(L, spotDir);
+			float spotEffect = smoothstep(uCarLightCutoff, uCarLightCutoff + 0.3, cosAngle);
+			// Distance attenuation
+			float atten = 1.0 / (1.0 + d * 0.05 + d * d * 0.008);
+			float NdL3 = max(dot(N, L), 0.0);
+			// Warm white headlight color
+			carLighting += vec3(1.0, 0.95, 0.85) * NdL3 * atten * spotEffect;
+		}
+		carLighting *= uCarLightIntensity;
+	}
+
+	vec3 diffuse = baseColor * (uAmbientColor * uAmbientIntensity * blendedAO + uSunColor * NdotL * uSunIntensity + pointLighting + carLighting);
 	diffuse += vec3(snowSpec * 0.6 + snowFresnel); // snow sparkle
 	diffuse += vec3(rockSpec * 0.3); // subtle rock sheen
 
@@ -779,6 +805,10 @@ export async function buildTerrain(
 				value: Array.from({ length: 4 }, () => new THREE.Vector3(1, 0.95, 0.8)),
 			},
 			uStreetLightIntensity: { value: 0.0 },
+			uCarLightPos: { value: [new THREE.Vector3(), new THREE.Vector3()] },
+			uCarLightDir: { value: [new THREE.Vector3(), new THREE.Vector3()] },
+			uCarLightIntensity: { value: 0.0 },
+			uCarLightCutoff: { value: Math.cos(Math.PI / 6) },
 			tShadowMap: { value: new THREE.Texture() },
 			uShadowMatrix: { value: new THREE.Matrix4() },
 			uShadowBias: { value: 0.005 },

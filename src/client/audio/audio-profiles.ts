@@ -32,7 +32,7 @@ function makeSound(
 			valvetrain: { freq: 4000, q: 1.2, level: 0.02 },
 		},
 		distortion: 30,
-		volume: 0.35,
+		volume: 0.5,
 		...opts,
 	};
 }
@@ -60,7 +60,7 @@ export const AE86_SOUND_PROFILE: EngineSoundConfig = makeSound({
 		valvetrain: { freq: 4500, q: 1.0, level: 0.015 },
 	},
 	distortion: 25,
-	volume: 0.32,
+	volume: 0.55,
 });
 
 /** Generic race car sound profile */
@@ -82,7 +82,7 @@ export const RACE_CAR_SOUND_PROFILE: EngineSoundConfig = makeSound({
 		valvetrain: { freq: 5000, q: 0.8, level: 0.025 },
 	},
 	distortion: 35,
-	volume: 0.38,
+	volume: 0.6,
 });
 
 /** Derive a basic sound config from engine specs. */
@@ -127,5 +127,5 @@ export const SEDAN_CAR_SOUND_PROFILE: EngineSoundConfig = makeSound({
 		valvetrain: { freq: 3500, q: 1.5, level: 0.01 },
 	},
 	distortion: 15,
-	volume: 0.25,
+	volume: 0.45,
 });
