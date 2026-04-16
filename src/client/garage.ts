@@ -346,6 +346,64 @@ function setNestedValue(obj: Record<string, unknown>, path: string, value: numbe
 	current[parts[parts.length - 1]] = value;
 }
 
+function updateSliderFill(slider: HTMLInputElement): void {
+	const min = Number(slider.min) || 0;
+	const max = Number(slider.max) || 100;
+	const val = Number(slider.value);
+	const pct = ((val - min) / (max - min)) * 100;
+	slider.style.background = `linear-gradient(to right, rgba(139,92,246,0.4) 0%, rgba(139,92,246,0.4) ${pct}%, rgba(139,92,246,0.08) ${pct}%, rgba(139,92,246,0.08) 100%)`;
+}
+
+function makeValueEditable(
+	span: HTMLSpanElement,
+	slider: HTMLInputElement,
+	path: string,
+	step: number,
+	min: number,
+	max: number,
+): void {
+	span.addEventListener("click", () => {
+		const input = document.createElement("input");
+		input.type = "number";
+		input.className = "field-value-input";
+		input.value = span.textContent || "0";
+		input.step = String(step);
+		input.min = String(min);
+		input.max = String(max);
+		span.replaceWith(input);
+		input.focus();
+		input.select();
+
+		function commit(): void {
+			const val = Number.parseFloat(input.value);
+			if (!Number.isNaN(val)) {
+				const clamped = Math.min(max, Math.max(min, val));
+				slider.value = String(clamped);
+				updateSliderFill(slider);
+				setNestedValue(currentTunable as unknown as Record<string, unknown>, path, clamped);
+				saveCustomConfig(currentTunable);
+			}
+			const newSpan = document.createElement("span");
+			newSpan.className = "field-value";
+			newSpan.textContent = slider.value;
+			input.replaceWith(newSpan);
+			makeValueEditable(newSpan, slider, path, step, min, max);
+		}
+
+		input.addEventListener("blur", commit);
+		input.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") commit();
+			if (e.key === "Escape") {
+				const newSpan = document.createElement("span");
+				newSpan.className = "field-value";
+				newSpan.textContent = span.textContent;
+				input.replaceWith(newSpan);
+				makeValueEditable(newSpan, slider, path, step, min, max);
+			}
+		});
+	});
+}
+
 function drawTorqueCurve(): void {
 	const curveCanvas = document.getElementById("torque-curve-canvas") as HTMLCanvasElement | null;
 	if (!curveCanvas) return;
@@ -374,8 +432,11 @@ function drawTorqueCurve(): void {
 	const minRPM = curve[0][0];
 	const maxRPM = curve[curve.length - 1][0];
 	const maxMult = Math.max(...curve.map((c) => c[1]));
+	const idleRPM = activeConfig.engine.idleRPM;
+	const redlineRPM = activeConfig.engine.maxRPM * activeConfig.engine.redlinePct;
 
-	ctx.strokeStyle = "rgba(139,92,246,0.1)";
+	// Grid lines
+	ctx.strokeStyle = "rgba(139,92,246,0.08)";
 	ctx.lineWidth = 0.5;
 	for (let i = 0; i <= 4; i++) {
 		const y = pad.top + (plotH * i) / 4;
@@ -385,7 +446,54 @@ function drawTorqueCurve(): void {
 		ctx.stroke();
 	}
 
-	ctx.strokeStyle = "rgba(139,92,246,0.8)";
+	// Idle RPM line
+	if (idleRPM > minRPM && idleRPM < maxRPM) {
+		const ix = pad.left + ((idleRPM - minRPM) / (maxRPM - minRPM)) * plotW;
+		ctx.strokeStyle = "rgba(255,255,255,0.15)";
+		ctx.lineWidth = 0.5;
+		ctx.setLineDash([3, 3]);
+		ctx.beginPath();
+		ctx.moveTo(ix, pad.top);
+		ctx.lineTo(ix, pad.top + plotH);
+		ctx.stroke();
+		ctx.setLineDash([]);
+	}
+
+	// Redline zone
+	if (redlineRPM > minRPM && redlineRPM < maxRPM) {
+		const rx = pad.left + ((redlineRPM - minRPM) / (maxRPM - minRPM)) * plotW;
+		ctx.fillStyle = "rgba(239,68,68,0.08)";
+		ctx.fillRect(rx, pad.top, w - pad.right - rx, plotH);
+		ctx.strokeStyle = "rgba(239,68,68,0.5)";
+		ctx.lineWidth = 1;
+		ctx.beginPath();
+		ctx.moveTo(rx, pad.top);
+		ctx.lineTo(rx, pad.top + plotH);
+		ctx.stroke();
+	}
+
+	// Gradient fill under curve
+	ctx.beginPath();
+	for (let i = 0; i < curve.length; i++) {
+		const x = pad.left + ((curve[i][0] - minRPM) / (maxRPM - minRPM)) * plotW;
+		const y = pad.top + plotH - (curve[i][1] / maxMult) * plotH;
+		if (i === 0) ctx.moveTo(x, y);
+		else ctx.lineTo(x, y);
+	}
+	ctx.lineTo(pad.left + plotW, pad.top + plotH);
+	ctx.lineTo(pad.left, pad.top + plotH);
+	ctx.closePath();
+	const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
+	grad.addColorStop(0, "rgba(139,92,246,0.2)");
+	grad.addColorStop(1, "rgba(139,92,246,0.02)");
+	ctx.fillStyle = grad;
+	ctx.fill();
+
+	// Curve line with glow
+	ctx.save();
+	ctx.shadowColor = "rgba(139,92,246,0.6)";
+	ctx.shadowBlur = 6;
+	ctx.strokeStyle = "rgba(139,92,246,0.9)";
 	ctx.lineWidth = 1.5;
 	ctx.beginPath();
 	for (let i = 0; i < curve.length; i++) {
@@ -395,13 +503,9 @@ function drawTorqueCurve(): void {
 		else ctx.lineTo(x, y);
 	}
 	ctx.stroke();
+	ctx.restore();
 
-	ctx.lineTo(pad.left + plotW, pad.top + plotH);
-	ctx.lineTo(pad.left, pad.top + plotH);
-	ctx.closePath();
-	ctx.fillStyle = "rgba(139,92,246,0.08)";
-	ctx.fill();
-
+	// RPM labels
 	ctx.fillStyle = "rgba(139,92,246,0.5)";
 	ctx.font = "8px JetBrains Mono, monospace";
 	ctx.textAlign = "center";
@@ -410,6 +514,186 @@ function drawTorqueCurve(): void {
 		const x = pad.left + ((rpm - minRPM) / (maxRPM - minRPM)) * plotW;
 		ctx.fillText(String(rpm), x, h - 2);
 	}
+}
+
+function buildSliderField(field: FieldDef): HTMLDivElement {
+	const row = document.createElement("div");
+	row.className = "field-row";
+
+	const currentVal = getNestedValue(currentTunable, field.path);
+	const defaultVal = currentVal || 1;
+	const min = field.min ?? Math.round(defaultVal * 0.3 * 1000) / 1000;
+	const max = field.max ?? Math.round(defaultVal * 2.0 * 1000) / 1000;
+	const step = field.step ?? 0.01;
+
+	// Header: label + value
+	const header = document.createElement("div");
+	header.className = "field-header";
+
+	const label = document.createElement("span");
+	label.className = "field-label";
+	label.textContent = field.label;
+
+	const valueSpan = document.createElement("span");
+	valueSpan.className = "field-value";
+	valueSpan.textContent = formatVal(currentVal, step);
+
+	header.appendChild(label);
+	header.appendChild(valueSpan);
+
+	// Slider
+	const slider = document.createElement("input");
+	slider.type = "range";
+	slider.id = `field-${field.key}`;
+	slider.className = "tune-slider";
+	slider.min = String(min);
+	slider.max = String(max);
+	slider.step = String(step);
+	slider.value = String(currentVal);
+	updateSliderFill(slider);
+
+	slider.addEventListener("input", () => {
+		const val = Number(slider.value);
+		valueSpan.textContent = formatVal(val, step);
+		updateSliderFill(slider);
+		setNestedValue(currentTunable as unknown as Record<string, unknown>, field.path, val);
+		saveCustomConfig(currentTunable);
+	});
+
+	// Min/max labels
+	const rangeLabels = document.createElement("div");
+	rangeLabels.className = "field-range-labels";
+	const minLabel = document.createElement("span");
+	minLabel.textContent = formatVal(min, step);
+	const maxLabel = document.createElement("span");
+	maxLabel.textContent = formatVal(max, step);
+	rangeLabels.appendChild(minLabel);
+	rangeLabels.appendChild(maxLabel);
+
+	const rangeRow = document.createElement("div");
+	rangeRow.className = "field-range-row";
+	rangeRow.appendChild(slider);
+	rangeRow.appendChild(rangeLabels);
+
+	row.appendChild(header);
+	row.appendChild(rangeRow);
+
+	makeValueEditable(valueSpan, slider, field.path, step, min, max);
+
+	return row;
+}
+
+function formatVal(val: number, step: number): string {
+	const decimals = step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3;
+	return val.toFixed(decimals);
+}
+
+function buildGearChart(sectionFields: FieldDef[]): HTMLDivElement {
+	const gearFields = sectionFields.filter((f) => f.key.startsWith("gear"));
+	if (gearFields.length === 0) {
+		const div = document.createElement("div");
+		return div;
+	}
+
+	const container = document.createElement("div");
+	const chart = document.createElement("div");
+	chart.className = "gear-chart";
+
+	const maxRatio = Math.max(...gearFields.map((f) => getNestedValue(currentTunable, f.path)), 0.1);
+	const bars: { bar: HTMLDivElement; field: FieldDef }[] = [];
+
+	for (const field of gearFields) {
+		const col = document.createElement("div");
+		col.className = "gear-bar-col";
+
+		const bar = document.createElement("div");
+		bar.className = "gear-bar";
+		const val = getNestedValue(currentTunable, field.path);
+		bar.style.height = `${(val / maxRatio) * 100}%`;
+
+		const label = document.createElement("div");
+		label.className = "gear-bar-label";
+		label.textContent = val.toFixed(2);
+
+		col.appendChild(bar);
+		col.appendChild(label);
+		chart.appendChild(col);
+		bars.push({ bar, field });
+	}
+
+	container.appendChild(chart);
+
+	// Edit slider (shown when a bar is clicked)
+	const editArea = document.createElement("div");
+	editArea.className = "gear-edit-slider";
+	editArea.style.display = "none";
+
+	const editLabel = document.createElement("div");
+	editLabel.className = "gear-edit-label";
+
+	const editSlider = document.createElement("input");
+	editSlider.type = "range";
+	editSlider.className = "tune-slider";
+	editSlider.min = "0.5";
+	editSlider.max = String(Math.round(maxRatio * 1.5 * 100) / 100);
+	editSlider.step = "0.01";
+
+	const editLabels = document.createElement("div");
+	editLabels.className = "field-range-labels";
+	const editMin = document.createElement("span");
+	editMin.textContent = "0.50";
+	const editMax = document.createElement("span");
+	editMax.textContent = editSlider.max;
+	editLabels.appendChild(editMin);
+	editLabels.appendChild(editMax);
+
+	editArea.appendChild(editLabel);
+	editArea.appendChild(editSlider);
+	editArea.appendChild(editLabels);
+	container.appendChild(editArea);
+
+	let activeField: FieldDef | null = null;
+
+	for (const { bar, field } of bars) {
+		bar.addEventListener("click", () => {
+			for (const b of bars) b.bar.classList.remove("selected");
+			bar.classList.add("selected");
+			activeField = field;
+			const val = getNestedValue(currentTunable, field.path);
+			editSlider.value = String(val);
+			updateSliderFill(editSlider);
+			editLabel.textContent = field.label;
+			editArea.style.display = "block";
+		});
+	}
+
+	editSlider.addEventListener("input", () => {
+		if (!activeField) return;
+		const val = Number(editSlider.value);
+		setNestedValue(currentTunable as unknown as Record<string, unknown>, activeField.path, val);
+		saveCustomConfig(currentTunable);
+		updateSliderFill(editSlider);
+
+		// Update the bar
+		const entry = bars.find((b) => b.field.key === activeField!.key);
+		if (entry) {
+			const newMax = Math.max(
+				...bars.map((b) =>
+					b.field.key === activeField!.key ? val : getNestedValue(currentTunable, b.field.path),
+				),
+				0.1,
+			);
+			entry.bar.style.height = `${(val / newMax) * 100}%`;
+			entry.bar.nextElementSibling!.textContent = val.toFixed(2);
+			// Resize all bars relative to new max
+			for (const b of bars) {
+				const bv = getNestedValue(currentTunable, b.field.path);
+				b.bar.style.height = `${(bv / newMax) * 100}%`;
+			}
+		}
+	});
+
+	return container;
 }
 
 function buildSidebar(): void {
@@ -431,34 +715,18 @@ function buildSidebar(): void {
 			header.querySelector(".section-chevron")?.classList.toggle("collapsed");
 		});
 
-		for (const field of section.fields) {
-			const row = document.createElement("div");
-			row.className = "field-row";
+		// Gearbox: use bar chart for gear ratios, slider for shift time
+		if (section.id === "gearbox") {
+			const gearChart = buildGearChart(section.fields);
+			body.appendChild(gearChart);
 
-			const label = document.createElement("label");
-			label.className = "field-label";
-			label.textContent = field.label;
-			label.setAttribute("for", `field-${field.key}`);
-
-			const input = document.createElement("input");
-			input.type = "number";
-			input.id = `field-${field.key}`;
-			input.className = "field-input";
-			if (field.min !== undefined) input.min = String(field.min);
-			if (field.max !== undefined) input.max = String(field.max);
-			if (field.step !== undefined) input.step = String(field.step);
-			input.value = String(getNestedValue(currentTunable, field.path));
-
-			input.addEventListener("change", () => {
-				const val = Number.parseFloat(input.value);
-				if (Number.isNaN(val)) return;
-				setNestedValue(currentTunable as unknown as Record<string, unknown>, field.path, val);
-				saveCustomConfig(currentTunable);
-			});
-
-			row.appendChild(label);
-			row.appendChild(input);
-			body.appendChild(row);
+			// Shift time as regular slider
+			const shiftField = section.fields.find((f) => f.key === "shiftTime");
+			if (shiftField) body.appendChild(buildSliderField(shiftField));
+		} else {
+			for (const field of section.fields) {
+				body.appendChild(buildSliderField(field));
+			}
 		}
 
 		if (section.id === "engine") {
@@ -479,11 +747,28 @@ function buildSidebar(): void {
 					field.path,
 					defaultVal,
 				);
-				const inputEl = document.getElementById(`field-${field.key}`) as HTMLInputElement | null;
-				if (inputEl) inputEl.value = String(defaultVal);
+				const sliderEl = document.getElementById(`field-${field.key}`) as HTMLInputElement | null;
+				if (sliderEl) {
+					sliderEl.value = String(defaultVal);
+					updateSliderFill(sliderEl);
+					// Update value span
+					const row = sliderEl.closest(".field-row");
+					if (row) {
+						const valSpan = row.querySelector(".field-value") as HTMLSpanElement | null;
+						if (valSpan) valSpan.textContent = formatVal(defaultVal, field.step ?? 0.01);
+					}
+				}
 			}
 			saveCustomConfig(currentTunable);
 			if (section.id === "engine") drawTorqueCurve();
+			// Rebuild gear chart if gearbox
+			if (section.id === "gearbox") {
+				const oldChart = body.querySelector(".gear-chart")?.parentElement;
+				if (oldChart) {
+					const newChart = buildGearChart(section.fields);
+					oldChart.replaceWith(newChart);
+				}
+			}
 		});
 		body.appendChild(resetBtn);
 
