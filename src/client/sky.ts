@@ -325,7 +325,7 @@ export function applyTimeOfDay(hour: number): void {
 	}
 
 	// Car headlights — wider cycle than street lights (on earlier, off later)
-	const headlightFactor = Math.max(0, Math.min(1, (0.6 - st.sunIntensity) / 0.3));
+	const headlightFactor = Math.max(0, Math.min(1, (1.0 - st.sunIntensity) / 0.4));
 	const weatherHlMult =
 		state.currentWeather === "fog" || state.currentWeather === "heavy_rain" ? 1.3 : 1;
 	for (const hl of headlights) {
