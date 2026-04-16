@@ -198,9 +198,9 @@ export class VehicleController {
 
 		// Model offset: PhysicsMarker defines where ground is relative to model origin.
 		// The physics system positions the car at posY = groundY + wheelRadius + restLength.
-		// We need the model positioned so its PhysicsMarker Y sits at that ground contact point.
-		// offset = how far above the model origin the PhysicsMarker is (positive = marker is above origin)
-		this.modelGroundOffset = pmY;
+		// We need the model positioned so wheel bottoms align with physics wheel bottoms.
+		// model.position.y = posY - pmY, so modelGroundOffset = -pmY
+		this.modelGroundOffset = -pmY;
 
 		// Apply derived values (convert to local coords relative to model root)
 		const rootPos = new THREE.Vector3();
