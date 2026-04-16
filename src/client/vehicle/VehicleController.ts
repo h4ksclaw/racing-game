@@ -411,7 +411,8 @@ export class VehicleController {
 		// ═══════════════════════════════════════════════════════════
 		// 5. ENGINE + GEARBOX + DRIVETRAIN
 		// ═══════════════════════════════════════════════════════════
-		engine.throttle = input.forward ? 1 : input.backward && this.localVelX <= -0.5 ? 0.4 : 0;
+		const isReversing = !!input.backward && !input.forward && this.localVelX < 0.5;
+		engine.throttle = input.forward ? 1 : isReversing ? 0.5 : 0;
 
 		// Gearbox first (determines gear ratio for this frame)
 		gearbox.update(dt, engine, this.localVelX, brakes.isBraking);
@@ -429,9 +430,9 @@ export class VehicleController {
 		// Reduce during shift (clutch disengaged)
 		if (gearbox.isShifting) engineForce *= 0.3;
 
-		// Reverse: only when nearly stopped and no forward input
-		if (input.backward && this.localVelX <= 0.1 && this.localVelX > -0.5 && !input.forward) {
-			engineForce = -engSpec.torqueNm * 0.3;
+		// Reverse: apply reverse force when holding back, not moving forward fast
+		if (isReversing) {
+			engineForce = -engSpec.torqueNm * 0.4;
 		}
 
 		// ═══════════════════════════════════════════════════════════
@@ -588,7 +589,7 @@ export class VehicleController {
 		// ═══════════════════════════════════════════════════════════
 		this.state.speed = this.localVelX;
 		this.state.rpm = engine.rpm;
-		this.state.gear = gearbox.currentGear + 1;
+		this.state.gear = isReversing && this.localVelX < -0.1 ? -1 : gearbox.currentGear + 1;
 		this.state.throttle = engine.throttle;
 		this.state.brake = brakes.brakePressure;
 	}

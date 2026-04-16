@@ -191,24 +191,43 @@ export class TerrainSampler {
 		distToWall: number;
 	} {
 		const { sample } = this.nearestRoad(x, z);
-		const d = (p: { x: number; z: number }) => Math.sqrt((x - p.x) ** 2 + (z - p.z) ** 2);
 
-		const distToCenter = d(sample.point);
-		const distToLeft = d(sample.grassLeft);
-		const distToRight = d(sample.grassRight);
-		const distToKerbL = d(sample.kerbLeft);
-		const distToKerbR = d(sample.kerbRight);
+		// Cross-product lateral distance (tangent is normalized, so this is exact)
+		const toX = x - sample.point.x;
+		const toZ = z - sample.point.z;
+		const tx = sample.tangent?.x ?? 0;
+		const tz = sample.tangent?.z ?? 1;
+		const lateralDist = tz * toX - tx * toZ;
+		const distFromCenter = Math.abs(lateralDist);
 
+		// Road cross-section widths from sample geometry
 		const halfW = Math.sqrt(
 			(sample.kerbLeft.x - sample.point.x) ** 2 + (sample.kerbLeft.z - sample.point.z) ** 2,
 		);
-		const kerbEdgeDist = Math.sqrt(
-			(sample.grassLeft.x - sample.point.x) ** 2 + (sample.grassLeft.z - sample.point.z) ** 2,
+		const kerbW = Math.sqrt(
+			(sample.grassLeft.x - sample.kerbLeft.x) ** 2 + (sample.grassLeft.z - sample.kerbLeft.z) ** 2,
 		);
+		const shoulderW =
+			Math.sqrt(
+				(sample.grassLeft.x - sample.point.x) ** 2 + (sample.grassLeft.z - sample.point.z) ** 2,
+			) -
+			halfW -
+			kerbW;
 
+		const kerbEdge = halfW + kerbW;
+		const guardrailDist = halfW + kerbW + shoulderW;
+
+		// Zone detection
+		const onRoad = distFromCenter < halfW;
+		const onKerb = distFromCenter >= halfW && distFromCenter < kerbEdge;
+		const onShoulder = distFromCenter >= kerbEdge && distFromCenter < guardrailDist;
+
+		// Wall collision: direct distance to nearest guardrail mesh position
+		const dToWall = (p: { x: number; z: number }) => Math.sqrt((x - p.x) ** 2 + (z - p.z) ** 2);
+		const distToLeft = dToWall(sample.grassLeft);
+		const distToRight = dToWall(sample.grassRight);
 		const isLeft = distToLeft < distToRight;
 		const distToWall = isLeft ? distToLeft : distToRight;
-		const distToNearKerb = isLeft ? distToKerbL : distToKerbR;
 
 		// Wall normal: from nearest guardrail toward car
 		const wall = isLeft ? sample.grassLeft : sample.grassRight;
@@ -218,14 +237,14 @@ export class TerrainSampler {
 		const wallNormal = wnLen > 0.001 ? { x: wnx / wnLen, z: wnz / wnLen } : undefined;
 
 		return {
-			lateralDist: isLeft ? -1 : 1,
-			distFromCenter: distToCenter,
+			lateralDist,
+			distFromCenter,
 			roadHalfWidth: halfW,
-			kerbEdge: kerbEdgeDist,
-			guardrailDist: kerbEdgeDist,
-			onRoad: distToKerbL > halfW && distToKerbR > halfW,
-			onKerb: distToNearKerb <= kerbEdgeDist && distToWall > 0.5,
-			onShoulder: distToWall <= 2.5,
+			kerbEdge,
+			guardrailDist,
+			onRoad,
+			onKerb,
+			onShoulder,
 			wallNormal,
 			distToWall,
 		};

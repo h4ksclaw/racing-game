@@ -216,7 +216,7 @@ function updateHUD(): void {
 	speedEl.innerHTML = `${kmh} <span class="unit">km/h</span>`;
 
 	const gear =
-		vehicle.state.speed < -0.5 ? "R" : vehicle.state.speed < 0.5 ? "N" : String(vehicle.state.gear);
+		vehicle.state.gear === -1 ? "R" : vehicle.state.speed < 0.5 ? "N" : String(vehicle.state.gear);
 	if (gearEl) gearEl.textContent = gear;
 
 	const rpmPct =
