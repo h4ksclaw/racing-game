@@ -81,8 +81,9 @@ export class VehicleController {
 		this.car = buildCarModel(config);
 
 		const wb = config.chassis.wheelBase;
-		this.cgToFront = wb * 0.55;
-		this.cgToRear = wb * 0.45;
+		const wf = config.chassis.weightFront ?? 0.55;
+		this.cgToFront = wb * wf;
+		this.cgToRear = wb * (1 - wf);
 		this.cgHeight = config.chassis.cgHeight;
 		this.yawInertia = config.chassis.mass * this.cgToFront * this.cgToRear;
 	}
@@ -112,6 +113,12 @@ export class VehicleController {
 			const obj = this.model.getObjectByName(name);
 			if (obj) this.wheelMeshes.push(obj);
 		}
+
+		// ── Generate wheel meshes from WheelRig markers if none found ────
+		if (this.wheelMeshes.length === 0) {
+			this.generateWheelsFromMarkers();
+		}
+
 		return this.model;
 	}
 
@@ -225,8 +232,9 @@ export class VehicleController {
 		// Recompute derived values with new chassis
 
 		// Recompute derived CG values
-		this.cgToFront = wheelBase * 0.55;
-		this.cgToRear = wheelBase * 0.45;
+		const wf = this.config.chassis.weightFront ?? 0.55;
+		this.cgToFront = wheelBase * wf;
+		this.cgToRear = wheelBase * (1 - wf);
 		this.cgHeight = cgHeight;
 		this.yawInertia = this.config.chassis.mass * this.cgToFront * this.cgToRear;
 	}
@@ -239,6 +247,56 @@ export class VehicleController {
 			if (found) return found;
 		}
 		return null;
+	}
+
+	/**
+	 * Generate simple tire+rim wheel meshes at WheelRig marker positions.
+	 * Used when the GLB has markers but no named wheel meshes.
+	 */
+	private generateWheelsFromMarkers(): void {
+		if (!this.model) return;
+
+		const wheelNames = [
+			"WheelRig_FrontLeft",
+			"WheelRig_FrontRight",
+			"WheelRig_RearLeft",
+			"WheelRig_RearRight",
+		];
+
+		const radius = this.config.chassis.wheelRadius;
+		const width = radius * 0.8; // tire width ~80% of radius
+
+		for (const name of wheelNames) {
+			const marker = this.findMarkerRecursive(this.model, name);
+			if (!marker) continue;
+
+			// Tire (black cylinder)
+			const tireGeom = new THREE.CylinderGeometry(radius, radius, width, 16);
+			tireGeom.rotateZ(Math.PI / 2); // align with X axis (car forward)
+			const tireMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
+			const tireMesh = new THREE.Mesh(tireGeom, tireMat);
+
+			// Rim (silver cylinder, slightly smaller)
+			const rimGeom = new THREE.CylinderGeometry(radius * 0.7, radius * 0.7, width * 0.85, 8);
+			rimGeom.rotateZ(Math.PI / 2);
+			const rimMat = new THREE.MeshStandardMaterial({
+				color: 0x888888,
+				metalness: 0.8,
+				roughness: 0.3,
+			});
+			const rimMesh = new THREE.Mesh(rimGeom, rimMat);
+			tireMesh.add(rimMesh);
+
+			// Position at marker's world position (model-local)
+			const worldPos = new THREE.Vector3();
+			marker.getWorldPosition(worldPos);
+			const rootPos = new THREE.Vector3();
+			this.model.getWorldPosition(rootPos);
+			tireMesh.position.set(worldPos.x - rootPos.x, worldPos.y - rootPos.y, worldPos.z - rootPos.z);
+
+			this.model.add(tireMesh);
+			this.wheelMeshes.push(tireMesh);
+		}
 	}
 
 	setTerrain(terrain: TerrainProvider): void {
@@ -363,9 +421,10 @@ export class VehicleController {
 		// Lateral (from tire model)
 		this.localVelY += (tireForces.lateral / mass) * dt;
 
-		// Yaw
+		// Yaw (speed-dependent damping — more stable at high speed)
+		const yawDampCoeff = 1.5 + (speedKmh / 200) * 2.0;
 		this.yawRate += (tireForces.yawTorque / this.yawInertia) * dt;
-		this.yawRate *= 1 - 5.0 * dt;
+		this.yawRate *= 1 - yawDampCoeff * dt;
 
 		// Kill tiny values
 		if (Math.abs(this.localVelX) < 0.01 && !input.forward && !input.backward) this.localVelX = 0;

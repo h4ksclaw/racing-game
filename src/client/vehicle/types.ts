@@ -114,6 +114,8 @@ export interface ChassisSpec {
 	readonly maxSuspensionTravel: number;
 	/** Center of gravity height in meters (affects weight transfer) */
 	readonly cgHeight: number;
+	/** Front weight distribution fraction (0-1). Default 0.55. */
+	readonly weightFront?: number;
 }
 
 // ─── Car Config (composition root) ────────────────────────────────────
@@ -333,8 +335,10 @@ export const SPORTS_CAR: CarConfig = {
 		brakeBias: 0.55,
 	},
 	tires: {
-		corneringStiffnessFront: 800,
-		corneringStiffnessRear: 720,
+		// Cornering stiffness in N/rad (per axle, 2 tires)
+		// AE86 on 195/60R15: ~80000 front, ~75000 rear
+		corneringStiffnessFront: 80000,
+		corneringStiffnessRear: 75000,
 		peakFriction: 1.0,
 		tractionPct: 0.45,
 	},
@@ -362,5 +366,6 @@ export const SPORTS_CAR: CarConfig = {
 		rollInfluence: 0.06,
 		maxSuspensionTravel: 0.25,
 		cgHeight: 0.35,
+		weightFront: 0.53,
 	},
 };
