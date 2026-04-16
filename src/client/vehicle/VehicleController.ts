@@ -527,8 +527,12 @@ export class VehicleController {
 			if (this.terrain.getRoadBoundary) {
 				const rb = this.terrain.getRoadBoundary(this.posX, this.posZ);
 
+				// Account for car body width — wall distance from car center
+				const carHalfW = chassis.halfExtents[0];
+				const effectiveGuardrail = rb.guardrailDist - carHalfW;
+
 				// Guardrail: proper wall collision with momentum reflection
-				if (rb.distFromCenter >= rb.guardrailDist && rb.wallNormal) {
+				if (rb.distFromCenter >= effectiveGuardrail && rb.wallNormal) {
 					const wn = rb.wallNormal;
 
 					// Convert velocity to world space
