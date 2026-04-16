@@ -16,7 +16,7 @@ export default defineConfig({
 				world: resolve(__dirname, "world.html"),
 				practice: resolve(__dirname, "practice.html"),
 				garage: resolve(__dirname, "garage.html"),
-			"physics-debug": resolve(__dirname, "pages/physics-debug.html"),
+				"physics-debug": resolve(__dirname, "physics-debug.html"),
 			},
 		},
 	},
@@ -24,7 +24,14 @@ export default defineConfig({
 		port: 3000,
 		allowedHosts: true,
 		watch: {
-			ignored: ["_archive/**", "**/node_modules/**", "**/.venv/**", "**/__pycache__/**"],
+			ignored: [
+				"**/node_modules/**",
+				"**/.venv/**",
+				"**/__pycache__/**",
+				"**/_archive/**",
+				"**/CloudBot/**",
+				"**/.git/**",
+			],
 		},
 		proxy: {
 			"/api": {
