@@ -3,10 +3,25 @@
  * Runs VehicleController headlessly, displays gauges and graphs.
  */
 
-import type { buildCarModel } from "./vehicle/CarModel.ts";
 import type { CarConfig, VehicleInput } from "./vehicle/types.ts";
 import { DEFAULT_INPUT, RACE_CAR, SEDAN_CAR } from "./vehicle/types.ts";
 import { VehicleController } from "./vehicle/VehicleController.ts";
+
+// ── Helpers ────────────────────────────────────────────────────────────
+
+/** Get a DOM element or throw a clear error if missing. */
+function $(id: string): HTMLElement {
+	const el = document.getElementById(id);
+	if (!el) throw new Error(`[physics-debug] Missing element: #${id}`);
+	return el;
+}
+
+/** Get canvas 2D context or throw. */
+function getCtx(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+	const ctx = canvas.getContext("2d");
+	if (!ctx) throw new Error("[physics-debug] Cannot get 2d context");
+	return ctx;
+}
 
 // ── State ──────────────────────────────────────────────────────────────
 
@@ -29,8 +44,6 @@ let simTime = 0;
 
 // ── DOM refs ───────────────────────────────────────────────────────────
 
-const $ = (id: string) => document.getElementById(id)!;
-
 const btnStart = $("btn-start") as HTMLButtonElement;
 const btnReset = $("btn-reset") as HTMLButtonElement;
 const btnThrottle = $("btn-throttle") as HTMLButtonElement;
@@ -41,25 +54,25 @@ const btnRight = $("btn-right") as HTMLButtonElement;
 const sliderThrottle = $("slider-throttle") as HTMLInputElement;
 const sliderBrake = $("slider-brake") as HTMLInputElement;
 
-const speedVal = $("speed-val")!;
-const speedBar = $("speed-bar")!;
-const rpmVal = $("rpm-val")!;
-const rpmBar = $("rpm-bar")!;
-const gearVal = $("gear-val")!;
-const torqueVal = $("torque-val")!;
-const engineForceVal = $("engine-force-val")!;
-const brakeForceVal = $("brake-force-val")!;
-const dragForceVal = $("drag-force-val")!;
-const totalForceVal = $("total-force-val")!;
-const engineBrakeVal = $("engine-brake-val")!;
-const steerVal = $("steer-val")!;
+const speedVal = $("speed-val");
+const speedBar = $("speed-bar");
+const rpmVal = $("rpm-val");
+const rpmBar = $("rpm-bar");
+const gearVal = $("gear-val");
+const torqueVal = $("torque-val");
+const engineForceVal = $("engine-force-val");
+const brakeForceVal = $("brake-force-val");
+const dragForceVal = $("drag-force-val");
+const totalForceVal = $("total-force-val");
+const engineBrakeVal = $("engine-brake-val");
+const steerVal = $("steer-val");
 
-const indThrottle = $("ind-throttle")!;
-const indBrake = $("ind-brake")!;
-const indHandbrake = $("ind-handbrake")!;
-const indGround = $("ind-ground")!;
-const indRevlim = $("ind-revlim")!;
-const indShift = $("ind-shift")!;
+const indThrottle = $("ind-throttle");
+const indBrake = $("ind-brake");
+const indHandbrake = $("ind-handbrake");
+const indGround = $("ind-ground");
+const indRevlim = $("ind-revlim");
+const indShift = $("ind-shift");
 
 const speedCanvas = $("speed-graph") as HTMLCanvasElement;
 const rpmCanvas = $("rpm-graph") as HTMLCanvasElement;
@@ -132,14 +145,16 @@ toggleButton(btnHandbrake, "handbrake");
 toggleButton(btnLeft, "left");
 toggleButton(btnRight, "right");
 
+const valThrottle = $("val-throttle");
+const valBrake = $("val-brake");
 sliderThrottle.addEventListener("input", () => {
-	$("val-throttle")!.textContent = parseFloat(sliderThrottle.value).toFixed(1);
+	valThrottle.textContent = parseFloat(sliderThrottle.value).toFixed(1);
 });
 sliderBrake.addEventListener("input", () => {
-	$("val-brake")!.textContent = parseFloat(sliderBrake.value).toFixed(1);
+	valBrake.textContent = parseFloat(sliderBrake.value).toFixed(1);
 });
 
-document.querySelectorAll('input[name="car"]').forEach((el) => {
+for (const el of document.querySelectorAll('input[name="car"]')) {
 	el.addEventListener("change", () => {
 		currentConfig = (el as HTMLInputElement).value === "sedan" ? SEDAN_CAR : RACE_CAR;
 		running = false;
@@ -149,7 +164,7 @@ document.querySelectorAll('input[name="car"]').forEach((el) => {
 		updateDisplays();
 		drawTorqueCurve();
 	});
-});
+}
 
 // Keyboard
 const keyState = new Set<string>();
@@ -206,9 +221,32 @@ function loop(now: number) {
 
 // ── Display Updates ────────────────────────────────────────────────────
 
+// VehicleController.car is private but we need it for debug readout.
+// Using a type-safe accessor pattern instead of `as any`.
+interface CarModelReadonly {
+	engine: {
+		getTorqueMultiplier: () => number;
+		getWheelForce: (ratio: number, radius: number, limit: number) => number;
+		getEngineBraking: (speed: number, mass: number) => number;
+		revLimited: boolean;
+	};
+	gearbox: {
+		effectiveRatio: number;
+		isShifting: boolean;
+	};
+	tires: { config: { maxTraction: number } };
+	brakes: { getForce: (mass: number) => number };
+	drag: { getForce: (speed: number) => number };
+}
+
+function getCarModel(vc: VehicleController): CarModelReadonly {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	return (vc as unknown as Record<string, unknown>).car as CarModelReadonly;
+}
+
 function updateDisplays() {
 	const state = controller.state;
-	const car = (controller as any).car as ReturnType<typeof buildCarModel>;
+	const car = getCarModel(controller);
 	const config = controller.config;
 	const speedKmh = Math.abs(state.speed) * 3.6;
 
@@ -272,7 +310,7 @@ function drawTimeGraph(
 	maxVal: number,
 	unit: string,
 ) {
-	const ctx = canvas.getContext("2d")!;
+	const ctx = getCtx(canvas);
 	const dpr = window.devicePixelRatio || 1;
 	if (canvas.width !== canvas.clientWidth * dpr) {
 		canvas.width = canvas.clientWidth * dpr;
@@ -315,7 +353,7 @@ function drawTimeGraph(
 }
 
 function drawTorqueCurve() {
-	const ctx = torqueCanvas.getContext("2d")!;
+	const ctx = getCtx(torqueCanvas);
 	const dpr = window.devicePixelRatio || 1;
 	torqueCanvas.width = torqueCanvas.clientWidth * dpr;
 	torqueCanvas.height = torqueCanvas.clientHeight * dpr;

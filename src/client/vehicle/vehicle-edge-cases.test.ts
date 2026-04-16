@@ -57,8 +57,9 @@ vi.mock("three", () => ({
 
 vi.mock("three/addons/loaders/GLTFLoader.js", () => ({
 	GLTFLoader: class {
-		loadAsync() {
-			return { scene: new (vi.importActual("three") as any).Group() };
+		async loadAsync() {
+			const THREE = await vi.importActual<typeof import("three")>("three");
+			return { scene: new THREE.Group() };
 		}
 	},
 }));

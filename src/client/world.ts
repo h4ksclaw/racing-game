@@ -232,7 +232,7 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 				? houseItems.map((h) => ({
 						x: h.position.x,
 						z: h.position.z,
-						radius: biome.houses!.flattenRadius + 2,
+						radius: (biome.houses?.flattenRadius ?? 10) + 2,
 					}))
 				: undefined,
 	});

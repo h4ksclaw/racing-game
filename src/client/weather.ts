@@ -9,7 +9,8 @@ function makeRainTexture(): THREE.Texture {
 	const canvas = document.createElement("canvas");
 	canvas.width = size;
 	canvas.height = size;
-	const ctx = canvas.getContext("2d")!;
+	const ctx = canvas.getContext("2d");
+	if (!ctx) return new THREE.Texture();
 	const grad = ctx.createLinearGradient(size / 2, 2, size / 2, size - 2);
 	grad.addColorStop(0, "rgba(170,200,255,0)");
 	grad.addColorStop(0.3, "rgba(170,200,255,0.6)");
@@ -32,7 +33,8 @@ function makeSnowTexture(): THREE.Texture {
 	const canvas = document.createElement("canvas");
 	canvas.width = size;
 	canvas.height = size;
-	const ctx = canvas.getContext("2d")!;
+	const ctx = canvas.getContext("2d");
+	if (!ctx) return new THREE.Texture();
 	const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
 	grad.addColorStop(0, "rgba(255,255,255,1)");
 	grad.addColorStop(0.3, "rgba(255,255,255,0.8)");

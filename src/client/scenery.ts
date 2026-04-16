@@ -424,7 +424,8 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 			// Try GLB model first, fall back to procedural
 			let lightUsed = false;
 			if (currentLightModel && lightModelCache.has(currentLightModel)) {
-				const model = lightModelCache.get(currentLightModel)!.clone();
+				const model = lightModelCache.get(currentLightModel)?.clone();
+				if (!model) break;
 
 				// Scale from base
 				model.scale.setScalar(LIGHT_MODEL_SCALE);
@@ -434,8 +435,8 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 				// Replace unlit materials with proper PBR MeshStandardMaterial.
 				// Material names: Pilar (pole), top (housing), pylon (arm), light_direction (helper cone).
 				let lightWorldY = 0;
-				let spotOrigin: THREE.Vector3 | null = null;
-				let spotDirection: THREE.Vector3 | null = null;
+				let spotOrigin: THREE.Vector3 | undefined;
+				let spotDirection: THREE.Vector3 | undefined;
 				model.traverse((child) => {
 					if (!(child instanceof THREE.Mesh)) return;
 					child.castShadow = true;
@@ -530,14 +531,13 @@ function createSceneryObject(item: SceneryItem, terrain: TerrainSampler): THREE.
 				// Place light at the fixture height
 				let light: THREE.Light;
 				const lightY = lightWorldY * LIGHT_MODEL_SCALE;
-				if (isAutumnWoods && spotDirection) {
+				if (isAutumnWoods && spotDirection && spotOrigin) {
 					// SpotLight aimed straight down from cone tip
 					const spot = new THREE.SpotLight(0xffeeaa, 0, 80, Math.PI / 2, 0.7, 1.5);
 					// Place spotlight at cone center (arm tip), aim straight down
 					const s = LIGHT_MODEL_SCALE;
-					spot.position.set(spotOrigin!.x * s, spotOrigin!.y * s, spotOrigin!.z * s);
-					// Aim at ground directly below the cone tip
-					spot.target.position.set(spotOrigin!.x * s, 0, spotOrigin!.z * s);
+					spot.position.set(spotOrigin.x * s, spotOrigin.y * s, spotOrigin.z * s);
+					spot.target.position.set(spotOrigin.x * s, 0, spotOrigin.z * s);
 					group.add(spot);
 					group.add(spot.target);
 					light = spot;

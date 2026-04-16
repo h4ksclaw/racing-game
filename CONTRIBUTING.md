@@ -53,6 +53,7 @@ All enforced by Biome (zero config needed):
 - **100 char** line width
 - **No unused variables** (TypeScript strict)
 - **No explicit `any`** (warned)
+- **No `!` non-null assertions** (warned — use optional chaining or guard instead)
 - **No forEach** (warned — use for-of instead)
 
 ## Project Structure
