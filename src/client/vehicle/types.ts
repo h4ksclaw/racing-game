@@ -93,6 +93,15 @@ export interface TerrainProvider {
 	getRoadBoundary?(x: number, z: number): RoadBoundaryInfo;
 }
 
+// ─── Angular Velocity ────────────────────────────────────────────────────
+
+/** 3D angular velocity (rad/s). Pure math, no Three.js dependency. */
+export interface AngularVelocity3D {
+	pitch: number; // rotation around local X (nose up/down)
+	yaw: number; // rotation around local Y (heading)
+	roll: number; // rotation around local Z (body lean)
+}
+
 // ─── Wheel Visual (for Three.js mesh binding) ──────────────────────────
 
 export interface WheelVisual {

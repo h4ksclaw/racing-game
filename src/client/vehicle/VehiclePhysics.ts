@@ -55,6 +55,10 @@ export class VehiclePhysics {
 	private verticalVel: number;
 	private yawRate: number;
 
+	// 3D angular velocity (rad/s) — pitch, yaw, roll
+	private pitchRate: number;
+	private rollRate: number;
+
 	// Body orientation (terrain tilt)
 	pitch: number;
 	roll: number;
@@ -99,6 +103,8 @@ export class VehiclePhysics {
 		this.localVelY = 0;
 		this.verticalVel = 0;
 		this.yawRate = 0;
+		this.pitchRate = 0;
+		this.rollRate = 0;
 		this.pitch = 0;
 		this.roll = 0;
 		this.steerAngle = 0;
@@ -390,6 +396,25 @@ export class VehiclePhysics {
 		}
 
 		// ═══════════════════════════════════════════════════════════
+		// 11b. HULL COLLISION — angular response for hard impacts
+		// ═══════════════════════════════════════════════════════════
+		// Position correction is handled by the spring-damper in step 11.
+		// This only adds pitch/roll angular velocity from off-center ground hits.
+		if (this.verticalVel < -3.0) {
+			const impactForce = Math.abs(this.verticalVel) * this.config.chassis.mass;
+			const cgOffset = this.chassis.cgToFront - this.chassis.cgToRear;
+			const pitchImpulse = impactForce * cgOffset * 1e-4 * dt;
+			this.pitchRate += pitchImpulse;
+		}
+
+		// Damp and integrate collision-induced angular velocity
+		const angDamp = 1 - 3.0 * dt;
+		this.pitchRate *= Math.max(0, angDamp);
+		this.rollRate *= Math.max(0, angDamp);
+		this.pitch += this.pitchRate * dt;
+		this.roll += this.rollRate * dt;
+
+		// ═══════════════════════════════════════════════════════════
 		// 12. HEADING
 		// ═══════════════════════════════════════════════════════════
 		this.heading += this.yawRate * dt;
@@ -464,6 +489,8 @@ export class VehiclePhysics {
 		this.localVelY = 0;
 		this.verticalVel = 0;
 		this.yawRate = 0;
+		this.pitchRate = 0;
+		this.rollRate = 0;
 		this.steerAngle = 0;
 		this.pitch = 0;
 		this.roll = 0;
