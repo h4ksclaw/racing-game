@@ -19,7 +19,6 @@
 
 import { DragModel } from "./aero/DragModel.ts";
 import { Chassis } from "./chassis/Chassis.ts";
-import { checkPair, createBody, resolveCollision } from "./collision/index.ts";
 import type { CarConfig } from "./configs.ts";
 import { EngineUnit } from "./engine/EngineUnit.ts";
 import { Brakes } from "./suspension/Brakes.ts";
@@ -56,12 +55,9 @@ export class VehiclePhysics {
 	private verticalVel: number;
 	private yawRate: number;
 
-	// 3D angular velocity (rad/s) — pitch, yaw, roll
+	// Collision-induced angular velocity (rad/s)
 	private pitchRate: number;
 	private rollRate: number;
-
-	// Hull collision body (reusable for wall collision checks)
-	private hullBody: ReturnType<typeof createBody>;
 
 	// Body orientation (terrain tilt)
 	pitch: number;
@@ -113,13 +109,6 @@ export class VehiclePhysics {
 		this.roll = 0;
 		this.steerAngle = 0;
 		this.terrainHandler = new TerrainHandler();
-
-		// Pre-build hull collision body (reused for wall checks)
-		this.hullBody = createBody({
-			mass: config.chassis.mass,
-			halfExtents: config.chassis.halfExtents,
-			pos: { x: 0, y: 0, z: 0 },
-		});
 	}
 
 	setTerrain(terrain: TerrainProvider): void {
@@ -134,13 +123,6 @@ export class VehiclePhysics {
 			maxTraction: this.config.chassis.mass * this.config.tires.tractionPct * 9.82,
 		};
 		this.tires = new TireModel(tireConfig);
-
-		// Rebuild hull body with new dimensions
-		this.hullBody = createBody({
-			mass: this.config.chassis.mass,
-			halfExtents: this.config.chassis.halfExtents,
-			pos: { x: this.posX, y: this.posY, z: this.posZ },
-		});
 	}
 
 	update(input: VehicleInput, delta: number): void {
@@ -306,20 +288,14 @@ export class VehiclePhysics {
 			}
 
 			if (ts.normal) {
-				// Tilt alignment — slower when collision tilt is active
-				// so wall hits create visible body rotation before recovering
-				const hasCollisionTilt = Math.abs(this.pitchRate) > 0.01 || Math.abs(this.rollRate) > 0.01;
-				const tiltSpeed = hasCollisionTilt ? 1.5 : 5.0 + speedKmh * 0.02;
+				// Faster tilt alignment so car follows slopes better
+				const tiltSpeed = 5.0 + speedKmh * 0.02;
 				this.pitch += (ts.pitch - this.pitch) * Math.min(1, tiltSpeed * dt);
 				this.roll += (ts.roll - this.roll) * Math.min(1, tiltSpeed * dt);
 				this.localVelX += -g * Math.sin(this.pitch) * dt;
 			}
 
-			// ── Road boundary collisions (hull-based impulse) ──
-			// TODO: Replace roadBoundary trigger with full hull-vs-static-body
-			// checkPair() once wall geometry is available as convex hulls.
-			// The hull system gives proper 3D angular response (pitch/roll/yaw)
-			// instead of the old yaw-only impulse calculation.
+			// ── Road boundary collisions (with angular impulse) ──
 			if (ts.roadBoundary) {
 				const rb = ts.roadBoundary;
 				const carHalfW = chassis.spec.halfExtents[0];
@@ -329,48 +305,72 @@ export class VehiclePhysics {
 					const worldVx = this.localVelX * sh + this.localVelY * ch;
 					const worldVz = this.localVelX * ch - this.localVelY * sh;
 
-					// Build a thin immovable wall body at the collision point.
-					// TODO: Cache wall bodies per-frame instead of allocating per hit.
-					const wallDist = carHalfW + rb.distToWall;
-					// Guardrail-sized wall section (realistic proportions)
-					// Short on Y (0.5m rail height) and Z (2m section length)
-					// so hits create pitch/roll from off-center contact points
-					const wallBody = createBody({
-						mass: 1e10,
-						halfExtents: [0.05, 0.25, 1.0],
-						pos: {
-							x: this.posX + wn.x * wallDist,
-							y: this.posY + chassis.spec.halfExtents[1] * 0.5,
-							z: this.posZ + wn.z * wallDist,
-						},
-						restitution: 0.3,
-						friction: 0.5,
-					});
+					// Contact point: edge of car in the wall normal direction
+					// r = vector from CG to contact point (world space)
+					const contactX = this.posX + wn.x * carHalfW;
+					const contactZ = this.posZ + wn.z * carHalfW;
+					const rx = contactX - this.posX;
+					const rz = contactZ - this.posZ;
 
-					// Update car hull for collision check
-					this.hullBody.pos = { x: this.posX, y: this.posY, z: this.posZ };
-					this.hullBody.vel = { x: worldVx, y: this.verticalVel, z: worldVz };
+					// Velocity at contact point (includes rotation contribution)
+					const vContactX = worldVx - this.yawRate * rz;
+					const vContactZ = worldVz + this.yawRate * rx;
 
-					const result = checkPair(this.hullBody, wallBody);
-					if (result) {
-						resolveCollision(result, this.hullBody, wallBody);
+					const velAlongNormal = vContactX * wn.x + vContactZ * wn.z;
 
-						// Convert resolved velocity back to local frame
-						const resolvedVx = this.hullBody.vel.x;
-						const resolvedVz = this.hullBody.vel.z;
-						this.localVelX = resolvedVx * sh + resolvedVz * ch;
-						this.localVelY = resolvedVx * ch - resolvedVz * sh;
-						this.verticalVel = this.hullBody.vel.y;
+					if (velAlongNormal < 0) {
+						const restitution = 0.2;
+						const impactSpeed = Math.abs(velAlongNormal);
 
-						// Yaw from hull angular response
-						this.yawRate += this.hullBody.angVel.y;
+						// Effective mass at contact (accounts for rotational inertia)
+						const rCrossN = rx * wn.z - rz * wn.x;
+						const effMassInv = 1 / mass + (rCrossN * rCrossN) / chassis.yawInertia;
 
-						// Pitch/roll from off-center wall hits
-						this.pitchRate += this.hullBody.angVel.x;
-						this.rollRate += this.hullBody.angVel.z;
+						// Impulse magnitude
+						const j = (-(1 + restitution) * velAlongNormal) / effMassInv;
+
+						// Apply linear impulse
+						const impX = j * wn.x;
+						const impZ = j * wn.z;
+						const newWorldVx = worldVx + impX / mass;
+						const newWorldVz = worldVz + impZ / mass;
+
+						// Apply angular impulse (torque from off-center impact)
+						this.yawRate += (rx * impZ - rz * impX) / chassis.yawInertia;
+
+						// Friction impulse at contact (tangential)
+						const tangentX = -wn.z;
+						const tangentZ = wn.x;
+						const relVelTangent = vContactX * tangentX + vContactZ * tangentZ;
+						const frictionCoeff = 0.3;
+						const maxFriction = frictionCoeff * Math.abs(j);
+						const rCrossT = rx * tangentZ - rz * tangentX;
+						const effMassInvT = 1 / mass + (rCrossT * rCrossT) / chassis.yawInertia;
+						let jt = -relVelTangent / effMassInvT;
+						if (Math.abs(jt) > maxFriction) {
+							jt = maxFriction * Math.sign(jt);
+						}
+						const fricImpX = jt * tangentX;
+						const fricImpZ = jt * tangentZ;
+						this.yawRate += (rx * fricImpZ - rz * fricImpX) / chassis.yawInertia;
+
+						// Convert back to local frame
+						const finalWorldVx = newWorldVx + fricImpX / mass;
+						const finalWorldVz = newWorldVz + fricImpZ / mass;
+						this.localVelX = finalWorldVx * sh + finalWorldVz * ch;
+						this.localVelY = finalWorldVx * ch - finalWorldVz * sh;
+
+						// Energy loss on impact
+						const speedLoss = Math.min(0.2, impactSpeed * 0.015);
+						this.localVelX *= 1 - speedLoss;
+						this.localVelY *= 1 - speedLoss;
+
+						// Body tilt from wall impact (visual only)
+						if (impactSpeed > 2.0) {
+							this.rollRate += impactSpeed * 0.02 * Math.sign(wn.x);
+						}
 					}
 
-					// Game-feel: lateral push prevents clipping through walls
 					const pushDir = rb.lateralDist >= 0 ? -1 : 1;
 					this.localVelY += pushDir * 80 * dt;
 
@@ -386,23 +386,19 @@ export class VehiclePhysics {
 		}
 
 		// ═══════════════════════════════════════════════════════════
-		// 11b. HULL COLLISION — angular response for hard impacts
+		// 11b. COLLISION-INDUCED TILT
 		// ═══════════════════════════════════════════════════════════
-		// Position correction is handled by the spring-damper in step 11.
-		// This only adds pitch/roll angular velocity from off-center ground hits.
+		// Hard landing pitch
 		if (this.verticalVel < -3.0) {
 			const impactForce = Math.abs(this.verticalVel) * this.config.chassis.mass;
 			const cgOffset = this.chassis.cgToFront - this.chassis.cgToRear;
-			const pitchImpulse = impactForce * cgOffset * 1e-4 * dt;
-			this.pitchRate += pitchImpulse;
+			this.pitchRate += impactForce * cgOffset * 1e-4 * dt;
 		}
 
-		// Damp collision-induced angular velocity
+		// Damp and integrate angular rates
 		const angDamp = 1 - 2.0 * dt;
 		this.pitchRate *= Math.max(0, angDamp);
 		this.rollRate *= Math.max(0, angDamp);
-
-		// Apply collision tilt directly (runs after terrain tilt in step 11)
 		this.pitch += this.pitchRate * dt;
 		this.roll += this.rollRate * dt;
 
@@ -420,8 +416,6 @@ export class VehiclePhysics {
 		this.state.throttle = engine.throttle;
 		this.state.brake = brakes.brakePressure;
 
-		// Add collision-induced tilt for renderer (on top of terrain tilt)
-		// This is NOT saved back to this.pitch/roll so terrain won't fight it
 		// Update telemetry for audio/UI
 		this.telemetry = {
 			rpm: engine.rpm,

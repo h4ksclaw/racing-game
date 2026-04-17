@@ -8,5 +8,5 @@
 		"src/client/garage.ts"
 	],
 	"project": ["src/**/*.ts"],
-	"ignore": ["src/client/audio/index.ts", "src/client/vehicle/world/index.ts"]
+	"ignore": ["src/client/audio/index.ts", "src/client/vehicle/world/index.ts", "src/client/vehicle/collision/index.ts"]
 }
