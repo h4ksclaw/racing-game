@@ -51,15 +51,7 @@ describe("generateTrack", () => {
 	it("each sample has required vector fields", () => {
 		const track = generateTrack(42);
 		for (const s of track.samples) {
-			for (const field of [
-				"point",
-				"left",
-				"right",
-				"kerbLeft",
-				"kerbRight",
-				"tangent",
-				"binormal",
-			] as const) {
+			for (const field of ["point", "left", "right", "kerbLeft", "kerbRight", "tangent", "binormal"] as const) {
 				expect(typeof s[field].x).toBe("number");
 				expect(typeof s[field].y).toBe("number");
 				expect(typeof s[field].z).toBe("number");

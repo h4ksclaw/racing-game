@@ -38,8 +38,7 @@ export class VehicleRenderer {
 		this.model = gltf.scene;
 
 		// ── Apply model scale if specified ──
-		const scale =
-			this.config.modelScale && this.config.modelScale !== 1 ? this.config.modelScale : 1;
+		const scale = this.config.modelScale && this.config.modelScale !== 1 ? this.config.modelScale : 1;
 		if (scale !== 1) {
 			this.model.traverse((child) => {
 				if (child instanceof THREE.Mesh) {
@@ -69,12 +68,7 @@ export class VehicleRenderer {
 
 		// ── Find wheel meshes ──
 		this.wheelMeshes = [];
-		for (const name of [
-			"wheel-front-left",
-			"wheel-front-right",
-			"wheel-back-left",
-			"wheel-back-right",
-		]) {
+		for (const name of ["wheel-front-left", "wheel-front-right", "wheel-back-left", "wheel-back-right"]) {
 			const obj = this.model.getObjectByName(name);
 			if (obj) this.wheelMeshes.push(obj);
 		}
@@ -92,12 +86,7 @@ export class VehicleRenderer {
 
 		const physicsMarker = this.findMarkerRecursive(this.model, "PhysicsMarker");
 		const wheelRigs: THREE.Object3D[] = [];
-		for (const name of [
-			"WheelRig_FrontLeft",
-			"WheelRig_FrontRight",
-			"WheelRig_RearLeft",
-			"WheelRig_RearRight",
-		]) {
+		for (const name of ["WheelRig_FrontLeft", "WheelRig_FrontRight", "WheelRig_RearLeft", "WheelRig_RearRight"]) {
 			const obj = this.findMarkerRecursive(this.model, name);
 			if (obj) wheelRigs.push(obj);
 		}
@@ -174,12 +163,7 @@ export class VehicleRenderer {
 	private generateWheelsFromMarkers(): void {
 		if (!this.model) return;
 
-		const wheelNames = [
-			"WheelRig_FrontLeft",
-			"WheelRig_FrontRight",
-			"WheelRig_RearLeft",
-			"WheelRig_RearRight",
-		];
+		const wheelNames = ["WheelRig_FrontLeft", "WheelRig_FrontRight", "WheelRig_RearLeft", "WheelRig_RearRight"];
 
 		const radius = this.config.chassis.wheelRadius;
 		const width = radius * 0.8;

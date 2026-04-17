@@ -424,9 +424,7 @@ describe("VehicleController — arcade physics", () => {
 
 // ─── Module-Level Tests ────────────────────────────────────────────────
 
-const { buildCarModel, Engine, Gearbox, Brakes, TireModel, DragModel } = await import(
-	"./CarModel.ts"
-);
+const { buildCarModel, Engine, Gearbox, Brakes, TireModel, DragModel } = await import("./CarModel.ts");
 
 describe("Engine module", () => {
 	it("computes torque multiplier from curve", () => {

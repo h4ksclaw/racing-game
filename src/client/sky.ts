@@ -154,11 +154,7 @@ function lerp(a: number, b: number, t: number): number {
 	return a + (b - a) * t;
 }
 
-function lerpColor(
-	a: [number, number, number],
-	b: [number, number, number],
-	t: number,
-): [number, number, number] {
+function lerpColor(a: [number, number, number], b: [number, number, number], t: number): [number, number, number] {
 	return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 }
 
@@ -313,8 +309,7 @@ export function applyTimeOfDay(hour: number): void {
 	}
 
 	if (stars) {
-		(stars.material as THREE.PointsMaterial).opacity =
-			st.starsOpacity * STAR_MULT[state.currentWeather];
+		(stars.material as THREE.PointsMaterial).opacity = st.starsOpacity * STAR_MULT[state.currentWeather];
 	}
 
 	const nightFactor = Math.max(0, 1 - st.sunIntensity / 0.3);
@@ -326,8 +321,7 @@ export function applyTimeOfDay(hour: number): void {
 
 	// Car headlights — wider cycle than street lights (on earlier, off later)
 	const headlightFactor = Math.max(0, Math.min(1, (1.0 - st.sunIntensity) / 0.4));
-	const weatherHlMult =
-		state.currentWeather === "fog" || state.currentWeather === "heavy_rain" ? 1.3 : 1;
+	const weatherHlMult = state.currentWeather === "fog" || state.currentWeather === "heavy_rain" ? 1.3 : 1;
 	for (const hl of headlights) {
 		hl.intensity = headlightFactor * 120 * weatherHlMult;
 	}
@@ -386,8 +380,7 @@ export function applyTimeOfDay(hour: number): void {
 		if (roadMaterial) {
 			// Base roughness: 0.7 (night) to 1.0 (day); rain makes it shinier
 			const wetReduction = state.roadWetness * 0.4;
-			roadMaterial.roughness =
-				state.roadRoughnessBase * (0.7 + st.sunIntensity * 0.3) * (1 - wetReduction);
+			roadMaterial.roughness = state.roadRoughnessBase * (0.7 + st.sunIntensity * 0.3) * (1 - wetReduction);
 			roadMaterial.metalness = 0.02 + state.roadWetness * 0.15;
 		}
 	}

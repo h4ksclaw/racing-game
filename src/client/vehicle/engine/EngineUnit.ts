@@ -14,11 +14,7 @@ import type { EngineTelemetry } from "../types.ts";
 import { Engine } from "./Engine.ts";
 import { Gearbox, type GearboxConfig } from "./Gearbox.ts";
 
-function computeDownshiftThresholds(
-	engine: EngineSpec,
-	gearbox: GearboxSpec,
-	wheelRadius: number,
-): number[] {
+function computeDownshiftThresholds(engine: EngineSpec, gearbox: GearboxSpec, wheelRadius: number): number[] {
 	const { gearRatios } = gearbox;
 	const { finalDrive, maxRPM, redlinePct } = engine;
 	const redlineRPM = maxRPM * redlinePct;

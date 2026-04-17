@@ -291,9 +291,7 @@ async function buildPractice(): Promise<void> {
 	const carParam = urlParams.get("car");
 	const customCfg = loadCustomConfig();
 	const carConfig =
-		customCfg && (carParam === "custom" || !carParam)
-			? applyOverrides(SPORTS_CAR, customCfg)
-			: SPORTS_CAR;
+		customCfg && (carParam === "custom" || !carParam) ? applyOverrides(SPORTS_CAR, customCfg) : SPORTS_CAR;
 	vehicle = new VehicleController(carConfig);
 	const carModel = await vehicle.loadModel();
 	carModel.castShadow = true;
@@ -316,10 +314,7 @@ async function buildPractice(): Promise<void> {
 				maxRPM: carConfig.engine.maxRPM,
 				turbo: carConfig.engine.turbo,
 			});
-		console.log(
-			"[audio] config:",
-			JSON.stringify({ volume: soundConfig.volume, cylinders: soundConfig.cylinders }),
-		);
+		console.log("[audio] config:", JSON.stringify({ volume: soundConfig.volume, cylinders: soundConfig.cylinders }));
 		vehicle.initAudio(soundConfig);
 		window.removeEventListener("keydown", startAudio);
 		window.removeEventListener("click", startAudio);

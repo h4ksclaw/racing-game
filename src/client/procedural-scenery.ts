@@ -121,10 +121,7 @@ export function getPalette(biomeName: string): BiomeColors {
 
 const matCache = new Map<string, THREE.MeshLambertMaterial>();
 
-function mat(
-	color: number,
-	opts?: Partial<THREE.MeshLambertMaterialParameters>,
-): THREE.MeshLambertMaterial {
+function mat(color: number, opts?: Partial<THREE.MeshLambertMaterialParameters>): THREE.MeshLambertMaterial {
 	const key = `${color}-${JSON.stringify(opts ?? {})}`;
 	let m = matCache.get(key);
 	if (!m) {

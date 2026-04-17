@@ -247,9 +247,7 @@ export async function loadDecorations(): Promise<void> {
 
 					loaded++;
 					if (loaded === pending) {
-						console.log(
-							`Nature Kit: loaded ${loaded} models, ${decorationCache.size} cache entries`,
-						);
+						console.log(`Nature Kit: loaded ${loaded} models, ${decorationCache.size} cache entries`);
 						resolve();
 					}
 				},
@@ -318,10 +316,7 @@ function loadKenneyFallback(loader: GLTFLoader): Promise<void> {
 }
 
 /** Place instanced trees, rocks, grass, and light posts along track edges. */
-export function buildInstancedScenery(
-	scenery: SceneryItem[],
-	terrain: TerrainSampler,
-): THREE.Group {
+export function buildInstancedScenery(scenery: SceneryItem[], terrain: TerrainSampler): THREE.Group {
 	const group = new THREE.Group();
 	const dummy = new THREE.Object3D();
 
@@ -347,8 +342,7 @@ export function buildInstancedScenery(
 
 		const cached = decorationCache.get(type);
 		if (cached) {
-			const meshEntries: { geo: THREE.BufferGeometry; mat: THREE.Material | THREE.Material[] }[] =
-				[];
+			const meshEntries: { geo: THREE.BufferGeometry; mat: THREE.Material | THREE.Material[] }[] = [];
 			cached.traverse((child) => {
 				if (child instanceof THREE.Mesh) {
 					meshEntries.push({ geo: child.geometry, mat: child.material });

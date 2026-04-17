@@ -135,16 +135,13 @@ export class TerrainSampler {
 
 		const { dist, sample } = this.nearestRoad(x, z);
 		const centerDist = Math.sqrt(x * x + z * z);
-		const mountainFactor =
-			1 + smoothstep(this.worldRadius * 0.75, this.worldRadius, centerDist) * this.mountainAmp;
-		const noiseH =
-			this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp * mountainFactor;
+		const mountainFactor = 1 + smoothstep(this.worldRadius * 0.75, this.worldRadius, centerDist) * this.mountainAmp;
+		const noiseH = this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp * mountainFactor;
 		const blend = smoothstep(this.blendStart, this.roadInfluence, dist);
 		const blendedY = sample.point.y * (1 - blend) + (this.avgRoadY + noiseH) * blend;
 		// Clamp height difference to prevent cliffs: max 0.4m rise per 1m from road
 		const maxSlope = dist * 0.4;
-		const result =
-			Math.max(sample.point.y - maxSlope, Math.min(sample.point.y + maxSlope, blendedY)) - 0.3;
+		const result = Math.max(sample.point.y - maxSlope, Math.min(sample.point.y + maxSlope, blendedY)) - 0.3;
 
 		// Apply flatten zones
 		let finalY = result;
@@ -201,16 +198,12 @@ export class TerrainSampler {
 		const distFromCenter = Math.abs(lateralDist);
 
 		// Road cross-section widths from sample geometry
-		const halfW = Math.sqrt(
-			(sample.kerbLeft.x - sample.point.x) ** 2 + (sample.kerbLeft.z - sample.point.z) ** 2,
-		);
+		const halfW = Math.sqrt((sample.kerbLeft.x - sample.point.x) ** 2 + (sample.kerbLeft.z - sample.point.z) ** 2);
 		const kerbW = Math.sqrt(
 			(sample.grassLeft.x - sample.kerbLeft.x) ** 2 + (sample.grassLeft.z - sample.kerbLeft.z) ** 2,
 		);
 		const shoulderW =
-			Math.sqrt(
-				(sample.grassLeft.x - sample.point.x) ** 2 + (sample.grassLeft.z - sample.point.z) ** 2,
-			) -
+			Math.sqrt((sample.grassLeft.x - sample.point.x) ** 2 + (sample.grassLeft.z - sample.point.z) ** 2) -
 			halfW -
 			kerbW;
 

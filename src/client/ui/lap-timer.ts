@@ -68,11 +68,7 @@ export class LapTimer extends LitElement {
 
 	override render() {
 		const deltaNum = Number.parseFloat(this.delta);
-		const deltaClass = this.delta
-			? deltaNum < 0
-				? "t-val delta-neg"
-				: "t-val delta-pos"
-			: "t-val";
+		const deltaClass = this.delta ? (deltaNum < 0 ? "t-val delta-neg" : "t-val delta-pos") : "t-val";
 		const deltaText = this.delta ? `${deltaNum < 0 ? "" : "+"}${this.delta}` : "";
 		return html`
 			<span class="t-lbl">LAP</span>

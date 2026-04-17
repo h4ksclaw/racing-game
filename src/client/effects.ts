@@ -8,11 +8,7 @@ import { state } from "./scene.ts";
 let composer: EffectComposer | null = null;
 let bloomPass: UnrealBloomPass | null = null;
 
-export function initBloom(
-	renderer: THREE.WebGLRenderer,
-	scene: THREE.Scene,
-	camera: THREE.PerspectiveCamera,
-): void {
+export function initBloom(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera): void {
 	composer = new EffectComposer(renderer);
 	composer.addPass(new RenderPass(scene, camera));
 

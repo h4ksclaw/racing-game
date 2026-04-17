@@ -33,10 +33,7 @@ export class Gearbox {
 	}
 
 	get currentRatio(): number {
-		return (
-			this.config.gearRatios[this.currentGear] ??
-			this.config.gearRatios[this.config.gearRatios.length - 1]
-		);
+		return this.config.gearRatios[this.currentGear] ?? this.config.gearRatios[this.config.gearRatios.length - 1];
 	}
 
 	update(dt: number, engine: Engine, wheelSpeed: number, isBraking: boolean): void {

@@ -5,13 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-	checkGround,
-	checkPair,
-	createBody,
-	resolveCollision,
-	resolveGround,
-} from "./CollisionSystem.ts";
+import { checkGround, checkPair, createBody, resolveCollision, resolveGround } from "./CollisionSystem.ts";
 import { boxHull, transformHull } from "./ConvexHull.ts";
 import { epa } from "./EPA.ts";
 import { gjk } from "./GJK.ts";

@@ -70,11 +70,7 @@ export function pacejka(slip: number, Fz: number, coeffs: PacejkaCoeffs): number
  *
  * If sqrt(Fx² + Fy²) > maxForce, scale both down proportionally.
  */
-export function frictionCircleClamp(
-	Fx: number,
-	Fy: number,
-	maxForce: number,
-): { Fx: number; Fy: number } {
+export function frictionCircleClamp(Fx: number, Fy: number, maxForce: number): { Fx: number; Fy: number } {
 	const total = Math.sqrt(Fx * Fx + Fy * Fy);
 	if (total > maxForce && total > 0) {
 		const scale = maxForce / total;
@@ -100,8 +96,7 @@ export class TireModel {
 		const B = DEFAULT_PACEJKA.lateral.B;
 		const C = DEFAULT_PACEJKA.lateral.C;
 		const FzRef = config.maxTraction / 2;
-		const DfromStiffness =
-			FzRef > 0 ? config.corneringStiffnessFront / (B * C * FzRef) : config.peakFriction;
+		const DfromStiffness = FzRef > 0 ? config.corneringStiffnessFront / (B * C * FzRef) : config.peakFriction;
 
 		// Cap D at peakFriction to prevent unrealistic grip levels.
 		const D = Math.min(DfromStiffness, config.peakFriction);

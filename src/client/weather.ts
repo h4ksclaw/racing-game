@@ -86,9 +86,7 @@ export function buildCloudLayer(): THREE.Group {
 		for (let b = 0; b < blobCount; b++) {
 			const isFlat = Math.random() < 0.4;
 			const w = baseSize * (0.5 + Math.random() * 1.0);
-			const h = isFlat
-				? baseSize * (0.15 + Math.random() * 0.2)
-				: baseSize * (0.4 + Math.random() * 0.6);
+			const h = isFlat ? baseSize * (0.15 + Math.random() * 0.2) : baseSize * (0.4 + Math.random() * 0.6);
 			const d = baseSize * (0.4 + Math.random() * 0.8);
 			const geo = new THREE.SphereGeometry(1, 16, 12);
 			geo.scale(w, h, d);
@@ -219,10 +217,8 @@ export function updateWeather(delta: number): void {
 		const time = performance.now() * 0.001;
 		for (let i = 0; i < pos.count; i++) {
 			pos.array[i * 3 + 1] -= (0.3 + snowDrifts[i * 2 + 1] * 0.2) * delta * 60;
-			pos.array[i * 3] +=
-				Math.sin(time * snowDrifts[i * 2 + 1] + snowDrifts[i * 2]) * 0.3 * delta * 60;
-			pos.array[i * 3 + 2] +=
-				Math.cos(time * snowDrifts[i * 2 + 1] * 0.7 + snowDrifts[i * 2]) * 0.2 * delta * 60;
+			pos.array[i * 3] += Math.sin(time * snowDrifts[i * 2 + 1] + snowDrifts[i * 2]) * 0.3 * delta * 60;
+			pos.array[i * 3 + 2] += Math.cos(time * snowDrifts[i * 2 + 1] * 0.7 + snowDrifts[i * 2]) * 0.2 * delta * 60;
 			if (pos.array[i * 3 + 1] < camY - 20) {
 				pos.array[i * 3] = camX + (Math.random() - 0.5) * 300;
 				pos.array[i * 3 + 1] = camY + 30 + Math.random() * 70;
@@ -289,8 +285,7 @@ function applyCloudWeather(weather: WeatherType, cloudLayer: THREE.Group): void 
 
 		for (const child of cloud.children) {
 			if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshBasicMaterial) {
-				child.material.opacity =
-					cs.opacity * (cloud.userData.baseOpacity ?? 0.6) * Math.max(nightDim, 0.15);
+				child.material.opacity = cs.opacity * (cloud.userData.baseOpacity ?? 0.6) * Math.max(nightDim, 0.15);
 				child.material.color.copy(cloudColor);
 			}
 		}
@@ -299,17 +294,7 @@ function applyCloudWeather(weather: WeatherType, cloudLayer: THREE.Group): void 
 
 /** Switch to a new weather type. Toggles rain/snow visibility, adjusts fog, wetness, lighting, and terrain tint. */
 export function applyWeather(weather: WeatherType): void {
-	const {
-		rainSystem,
-		snowSystem,
-		currentTime,
-		sun,
-		ambient,
-		skyUniforms,
-		scene: sc,
-		cloudLayer,
-		skyMesh,
-	} = state;
+	const { rainSystem, snowSystem, currentTime, sun, ambient, skyUniforms, scene: sc, cloudLayer, skyMesh } = state;
 	if (!rainSystem || !snowSystem) return;
 	state.currentWeather = weather;
 
@@ -323,13 +308,8 @@ export function applyWeather(weather: WeatherType): void {
 
 	// Night dimming for particles
 	const nightDim = currentTime > 20 || currentTime < 5 ? 0.3 : currentTime > 18 ? 0.6 : 1.0;
-	(rainSystem.material as THREE.PointsMaterial).color.setRGB(
-		0.67 * nightDim,
-		0.8 * nightDim,
-		1.0 * nightDim,
-	);
-	(rainSystem.material as THREE.PointsMaterial).opacity =
-		(weather === "heavy_rain" ? 0.8 : 0.5) * nightDim;
+	(rainSystem.material as THREE.PointsMaterial).color.setRGB(0.67 * nightDim, 0.8 * nightDim, 1.0 * nightDim);
+	(rainSystem.material as THREE.PointsMaterial).opacity = (weather === "heavy_rain" ? 0.8 : 0.5) * nightDim;
 	(snowSystem.material as THREE.PointsMaterial).color.setRGB(
 		0.7 + 0.3 * nightDim,
 		0.7 + 0.3 * nightDim,
@@ -344,10 +324,7 @@ export function applyWeather(weather: WeatherType): void {
 	const fog = sc.fog as THREE.Fog;
 
 	const WEATHER_FOG: Partial<
-		Record<
-			WeatherType,
-			{ turbidity: number; far: number; near: number; color?: [number, number, number] }
-		>
+		Record<WeatherType, { turbidity: number; far: number; near: number; color?: [number, number, number] }>
 	> = {
 		clear: { turbidity: 0, far: Infinity, near: 0 },
 		cloudy: { turbidity: 10, far: Infinity, near: 0 },
@@ -435,8 +412,7 @@ export function applyWeather(weather: WeatherType): void {
 	state.roadWetness = road.wetness;
 
 	// ── Sky dome visibility ─────────────────────────────────────────────
-	const lowVisibility =
-		weather === "heavy_rain" || weather === "fog" || weather === "rain" || weather === "snow";
+	const lowVisibility = weather === "heavy_rain" || weather === "fog" || weather === "rain" || weather === "snow";
 	if (skyMesh) skyMesh.visible = !lowVisibility;
 	sc.background = lowVisibility ? fog.color.clone() : new THREE.Color(0x87ceeb);
 }

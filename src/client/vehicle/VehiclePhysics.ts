@@ -160,15 +160,11 @@ export class VehiclePhysics {
 		// ═══════════════════════════════════════════════════════════
 		const speedKmh = Math.abs(this.localVelX) * 3.6;
 		const speedReduction = Math.max(0.15, 1 - (speedKmh / 140) ** 1.5);
-		const targetSteer =
-			((input.left ? 1 : 0) - (input.right ? 1 : 0)) * chassis.spec.maxSteerAngle * speedReduction;
+		const targetSteer = ((input.left ? 1 : 0) - (input.right ? 1 : 0)) * chassis.spec.maxSteerAngle * speedReduction;
 
 		const maxDelta = this.STEER_SPEED * dt;
 		const steerDiff = targetSteer - this.steerAngle;
-		this.steerAngle =
-			Math.abs(steerDiff) < maxDelta
-				? targetSteer
-				: this.steerAngle + Math.sign(steerDiff) * maxDelta;
+		this.steerAngle = Math.abs(steerDiff) < maxDelta ? targetSteer : this.steerAngle + Math.sign(steerDiff) * maxDelta;
 		this.state.steeringAngle = this.steerAngle;
 
 		// ═══════════════════════════════════════════════════════════
@@ -182,14 +178,8 @@ export class VehiclePhysics {
 				? -(this.config.brakes.handbrakeG * 2) * g
 				: 0;
 		const weightTransfer = (mass * longAccel * chassis.cgHeight) / wheelBase;
-		const normalFront = Math.max(
-			totalWeight * 0.1,
-			(totalWeight * chassis.cgToRear) / wheelBase - weightTransfer,
-		);
-		const normalRear = Math.max(
-			totalWeight * 0.1,
-			(totalWeight * chassis.cgToFront) / wheelBase + weightTransfer,
-		);
+		const normalFront = Math.max(totalWeight * 0.1, (totalWeight * chassis.cgToRear) / wheelBase - weightTransfer);
+		const normalRear = Math.max(totalWeight * 0.1, (totalWeight * chassis.cgToFront) / wheelBase + weightTransfer);
 
 		// ═══════════════════════════════════════════════════════════
 		// 3. BRAKE INPUT
@@ -224,11 +214,7 @@ export class VehiclePhysics {
 		gearbox.update(dt, engine, this.localVelX, brakes.isBraking);
 		engine.update(this.localVelX, gearbox.effectiveRatio, wheelRadius, dt);
 
-		let engineForce = engine.getWheelForce(
-			gearbox.effectiveRatio,
-			wheelRadius,
-			tires.config.maxTraction,
-		);
+		let engineForce = engine.getWheelForce(gearbox.effectiveRatio, wheelRadius, tires.config.maxTraction);
 
 		if (gearbox.isShifting) engineForce *= 0.3;
 
@@ -238,8 +224,7 @@ export class VehiclePhysics {
 
 		// Compute load for telemetry (engineForce / max possible force)
 		const maxForce =
-			(this.config.engine.torqueNm * gearbox.effectiveRatio * this.config.engine.finalDrive) /
-			wheelRadius;
+			(this.config.engine.torqueNm * gearbox.effectiveRatio * this.config.engine.finalDrive) / wheelRadius;
 		engine.load = maxForce > 0 ? Math.min(1, Math.abs(engineForce) / maxForce) : 0;
 
 		// ═══════════════════════════════════════════════════════════

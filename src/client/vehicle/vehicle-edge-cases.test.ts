@@ -184,8 +184,7 @@ describe("VehicleController — edge cases", () => {
 			const vc = createVC();
 			for (let i = 0; i < 120; i++) vc.update(DEFAULT_INPUT, dt);
 			for (let i = 0; i < 3000; i++) {
-				const input =
-					i % 120 < 60 ? { ...DEFAULT_INPUT, forward: true } : { ...DEFAULT_INPUT, backward: true };
+				const input = i % 120 < 60 ? { ...DEFAULT_INPUT, forward: true } : { ...DEFAULT_INPUT, backward: true };
 				vc.update(input, dt);
 				expect(Number.isFinite(vc.state.speed)).toBe(true);
 				expect(Number.isFinite(vc.state.rpm)).toBe(true);

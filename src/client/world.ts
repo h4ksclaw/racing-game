@@ -16,13 +16,7 @@ import { buildHouses } from "./buildings.ts";
 import { initBloom } from "./effects.ts";
 import { buildGuardrails, buildMeshes } from "./road.ts";
 import { state } from "./scene.ts";
-import {
-	buildInstancedScenery,
-	loadDecorations,
-	loadLightModel,
-	setFallbackBiome,
-	setLightModel,
-} from "./scenery.ts";
+import { buildInstancedScenery, loadDecorations, loadLightModel, setFallbackBiome, setLightModel } from "./scenery.ts";
 import { applyTimeOfDay, buildStars, setupSky } from "./sky.ts";
 import { buildTerrain, TerrainSampler } from "./terrain.ts";
 import type { WorldResponse } from "./utils.ts";
@@ -82,8 +76,7 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 
 	const seed = options.seed ?? (Number(urlParams.get("seed")) || 42);
 	const hour = options.hour ?? (Number(urlParams.get("hour")) || 12);
-	const weather =
-		options.weather ?? (urlParams.get("weather") as WorldOptions["weather"]) ?? "clear";
+	const weather = options.weather ?? (urlParams.get("weather") as WorldOptions["weather"]) ?? "clear";
 	const pixelRatioCap = options.pixelRatioCap ?? 1.5;
 	const shadowRes = options.shadowResolution ?? 1024;
 	const shadowExtent = options.shadowExtent ?? 200;
@@ -128,11 +121,7 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 	// ── Scene ──
 	const scene = new THREE.Scene();
 	scene.background = new THREE.Color(0x87ceeb);
-	scene.fog = new THREE.Fog(
-		new THREE.Color(...biome.fogColor).getHex(),
-		biome.fogNear,
-		biome.fogFar,
-	);
+	scene.fog = new THREE.Fog(new THREE.Color(...biome.fogColor).getHex(), biome.fogNear, biome.fogFar);
 	state.scene = scene;
 
 	// ── Sky ──

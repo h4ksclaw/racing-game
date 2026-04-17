@@ -32,12 +32,7 @@ const EPSILON = 1e-6;
  * SAT-based penetration calculation that's more robust than full EPA.
  * Full EPA can be added later for arbitrary convex hulls.
  */
-export function epa(
-	simplex: SimplexVertex[],
-	hullA: Vec3[],
-	hullB: Vec3[],
-	relativeVel?: Vec3,
-): EPAResult {
+export function epa(simplex: SimplexVertex[], hullA: Vec3[], hullB: Vec3[], relativeVel?: Vec3): EPAResult {
 	// Try SAT-based penetration for box-box (most common case)
 	const satResult = satPenetration(hullA, hullB, relativeVel);
 	if (satResult) return satResult;
@@ -199,8 +194,7 @@ function fallbackEPA(simplex: SimplexVertex[]): EPAResult {
 		}
 	}
 
-	const contactPt =
-		simplex.length > 0 ? v3Scale(v3Add(simplex[0].a, simplex[0].b), 0.5) : { x: 0, y: 0, z: 0 };
+	const contactPt = simplex.length > 0 ? v3Scale(v3Add(simplex[0].a, simplex[0].b), 0.5) : { x: 0, y: 0, z: 0 };
 
 	return {
 		depth: minDist,

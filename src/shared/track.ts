@@ -262,9 +262,7 @@ export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData 
 			const prev = cp2d[(i - 1 + n) % n];
 			const cur = cp2d[i];
 			const next = cp2d[(i + 1) % n];
-			smoothed.push(
-				v3(cur.x * 0.58 + (prev.x + next.x) * 0.21, 0, cur.z * 0.58 + (prev.z + next.z) * 0.21),
-			);
+			smoothed.push(v3(cur.x * 0.58 + (prev.x + next.x) * 0.21, 0, cur.z * 0.58 + (prev.z + next.z) * 0.21));
 		}
 		for (let i = 0; i < n; i++) cp2d[i] = smoothed[i];
 	}
@@ -503,8 +501,7 @@ export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData 
 
 	// ── Track length ──────────────────────────────────────────────────────
 	let length = 0;
-	for (let i = 1; i < splinePoints.length; i++)
-		length += v3Dist(splinePoints[i], splinePoints[i - 1]);
+	for (let i = 1; i < splinePoints.length; i++) length += v3Dist(splinePoints[i], splinePoints[i - 1]);
 
 	return {
 		controlPoints3D: cp3d,
@@ -527,9 +524,7 @@ export function generateTrack(seed: number, opts: TrackOptions = {}): TrackData 
 		numControlPoints: cp3d.length,
 		numSamples: samples.length,
 		elevationRange: { min: minY, max: maxY },
-		maxExtent: Math.max(
-			...samples.map((s) => Math.sqrt(s.point.x * s.point.x + s.point.z * s.point.z)),
-		),
+		maxExtent: Math.max(...samples.map((s) => Math.sqrt(s.point.x * s.point.x + s.point.z * s.point.z))),
 	};
 }
 
@@ -592,13 +587,7 @@ export function generateScenery(
 	];
 	const GRASS_TYPES: SceneryType[] = opts.grassTypes ?? ["grass", "grass_large"];
 	const BUSH_TYPES: SceneryType[] = opts.bushTypes ?? ["bush_common"];
-	const FOREST_DETAIL: SceneryType[] = [
-		"stump_old",
-		"stump_round",
-		"stump_square",
-		"mushroom_red",
-		"log_large",
-	];
+	const FOREST_DETAIL: SceneryType[] = ["stump_old", "stump_round", "stump_square", "mushroom_red", "log_large"];
 
 	let i = Math.floor(rng() * spacing); // random start offset
 	while (i < samples.length) {
@@ -615,9 +604,7 @@ export function generateScenery(
 			grassRight: v3Lerp(samples[j].grassRight, samples[jNext].grassRight, t),
 		};
 		const curvature =
-			j > 0 && j < samples.length - 1
-				? v3Len(v3Add(samples[j].binormal, v3Scale(samples[j + 1].binormal, -1)))
-				: 0;
+			j > 0 && j < samples.length - 1 ? v3Len(v3Add(samples[j].binormal, v3Scale(samples[j + 1].binormal, -1))) : 0;
 
 		const leftCurve = curvature > 0.05;
 		const rightCurve = curvature < -0.05;
@@ -890,10 +877,7 @@ export function generateScenery(
 	// Gates at wide sections (~200m)
 	for (let gi = 0; gi < samples.length; gi += spacing * 10) {
 		const gs = samples[gi];
-		const gc =
-			gi > 0 && gi < samples.length - 1
-				? v3Len(v3Add(gs.binormal, v3Scale(samples[gi + 1].binormal, -1)))
-				: 0;
+		const gc = gi > 0 && gi < samples.length - 1 ? v3Len(v3Add(gs.binormal, v3Scale(samples[gi + 1].binormal, -1))) : 0;
 		if (gc < 0.05) {
 			scenery.push({
 				type: "gate",
@@ -954,11 +938,7 @@ export interface HouseConfig {
  * Generate house placement positions along the track.
  * Similar pattern to generateScenery but much sparser.
  */
-export function generateHouses(
-	seed: number,
-	samples: TrackSample[],
-	config: HouseConfig,
-): HouseItem[] {
+export function generateHouses(seed: number, samples: TrackSample[], config: HouseConfig): HouseItem[] {
 	if (!config.enabled) return [];
 
 	const rng = mulberry32(seed + 77777); // different stream from scenery
@@ -976,15 +956,13 @@ export function generateHouses(
 		const s = samples[i];
 		const side = rng() < 0.5 ? -1 : 1;
 		const edge = side === -1 ? s.grassLeft : s.grassRight;
-		const dist =
-			config.distanceRange[0] + rng() * (config.distanceRange[1] - config.distanceRange[0]);
+		const dist = config.distanceRange[0] + rng() * (config.distanceRange[1] - config.distanceRange[0]);
 		const pos = v3Add(edge, v3Scale(s.binormal, side * dist));
 
 		// Width/depth with some randomization
 		const width = config.minSize[0] + rng() * (config.maxSize[0] - config.minSize[0]);
 		const depth = config.minSize[1] + rng() * (config.maxSize[1] - config.minSize[1]);
-		const wallHeight =
-			config.heightRange[0] + rng() * (config.heightRange[1] - config.heightRange[0]);
+		const wallHeight = config.heightRange[0] + rng() * (config.heightRange[1] - config.heightRange[0]);
 
 		// Rotation: face the road. Tangent angle gives track direction;
 		// rotate 90° so the house front faces the road.
@@ -1009,11 +987,7 @@ export function generateHouses(
 	return filterHousesFromRoad(houses, samples, 10);
 }
 
-function filterHousesFromRoad(
-	houses: HouseItem[],
-	samples: TrackSample[],
-	clearance: number,
-): HouseItem[] {
+function filterHousesFromRoad(houses: HouseItem[], samples: TrackSample[], clearance: number): HouseItem[] {
 	const step = Math.max(1, Math.floor(samples.length / 500));
 	return houses.filter((house) => {
 		for (let si = 0; si < samples.length; si += step) {
@@ -1024,10 +998,7 @@ function filterHousesFromRoad(
 			const lenSq = dx * dx + dz * dz;
 			let t = 0;
 			if (lenSq > 0) {
-				t = Math.max(
-					0,
-					Math.min(1, ((house.position.x - a.x) * dx + (house.position.z - a.z) * dz) / lenSq),
-				);
+				t = Math.max(0, Math.min(1, ((house.position.x - a.x) * dx + (house.position.z - a.z) * dz) / lenSq));
 			}
 			const nearX = a.x + t * dx;
 			const nearZ = a.z + t * dz;
@@ -1043,11 +1014,7 @@ function filterHousesFromRoad(
  * Uses point-to-segment distance for accurate curve handling.
  * The clearance zone extends past the grass edge (where guardrails sit).
  */
-function filterSceneryFromRoad(
-	scenery: SceneryItem[],
-	samples: TrackSample[],
-	clearance: number,
-): SceneryItem[] {
+function filterSceneryFromRoad(scenery: SceneryItem[], samples: TrackSample[], clearance: number): SceneryItem[] {
 	const step = Math.max(1, Math.floor(samples.length / 500)); // check every Nth sample for perf
 	return scenery.filter((item) => {
 		for (let si = 0; si < samples.length; si += step) {
@@ -1059,10 +1026,7 @@ function filterSceneryFromRoad(
 			const lenSq = dx * dx + dz * dz;
 			let t = 0;
 			if (lenSq > 0) {
-				t = Math.max(
-					0,
-					Math.min(1, ((item.position.x - a.x) * dx + (item.position.z - a.z) * dz) / lenSq),
-				);
+				t = Math.max(0, Math.min(1, ((item.position.x - a.x) * dx + (item.position.z - a.z) * dz) / lenSq));
 			}
 			const nearX = a.x + t * dx;
 			const nearZ = a.z + t * dz;

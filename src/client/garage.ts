@@ -683,9 +683,7 @@ function buildGearChart(sectionFields: FieldDef[]): HTMLDivElement {
 		const entry = bars.find((b) => b.field.key === activeField?.key);
 		if (entry) {
 			const newMax = Math.max(
-				...bars.map((b) =>
-					b.field.key === activeField?.key ? val : getNestedValue(currentTunable, b.field.path),
-				),
+				...bars.map((b) => (b.field.key === activeField?.key ? val : getNestedValue(currentTunable, b.field.path))),
 				0.1,
 			);
 			entry.bar.style.height = `${(val / newMax) * 100}%`;
@@ -748,11 +746,7 @@ function buildSidebar(): void {
 			const defaults = extractTunable(baseConfig);
 			for (const field of section.fields) {
 				const defaultVal = getNestedValue(defaults, field.path);
-				setNestedValue(
-					currentTunable as unknown as Record<string, unknown>,
-					field.path,
-					defaultVal,
-				);
+				setNestedValue(currentTunable as unknown as Record<string, unknown>, field.path, defaultVal);
 				const sliderEl = document.getElementById(`field-${field.key}`) as HTMLInputElement | null;
 				if (sliderEl) {
 					sliderEl.value = String(defaultVal);

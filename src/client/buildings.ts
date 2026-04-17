@@ -280,26 +280,8 @@ export function buildHouses(
 		addWindow(mesh, -width / 2 - 0.02, winY, 0, -Math.PI / 2, sideWinW, sideWinH, mats);
 		addWindow(mesh, width / 2 + 0.02, winY, 0, Math.PI / 2, sideWinW, sideWinH, mats);
 		if (depth > 3) {
-			addWindow(
-				mesh,
-				-width / 2 - 0.02,
-				winY,
-				depth * 0.25,
-				-Math.PI / 2,
-				sideWinW,
-				sideWinH,
-				mats,
-			);
-			addWindow(
-				mesh,
-				-width / 2 - 0.02,
-				winY,
-				-depth * 0.25,
-				-Math.PI / 2,
-				sideWinW,
-				sideWinH,
-				mats,
-			);
+			addWindow(mesh, -width / 2 - 0.02, winY, depth * 0.25, -Math.PI / 2, sideWinW, sideWinH, mats);
+			addWindow(mesh, -width / 2 - 0.02, winY, -depth * 0.25, -Math.PI / 2, sideWinW, sideWinH, mats);
 			addWindow(mesh, width / 2 + 0.02, winY, depth * 0.25, Math.PI / 2, sideWinW, sideWinH, mats);
 			addWindow(mesh, width / 2 + 0.02, winY, -depth * 0.25, Math.PI / 2, sideWinW, sideWinH, mats);
 		}
@@ -327,10 +309,7 @@ export function buildHouses(
 			chim.castShadow = true;
 			mesh.add(chim);
 			// Cap
-			const cap = new THREE.Mesh(
-				new THREE.BoxGeometry(chimW + 0.12, 0.12, chimD + 0.12),
-				mats.chimneyCap,
-			);
+			const cap = new THREE.Mesh(new THREE.BoxGeometry(chimW + 0.12, 0.12, chimD + 0.12), mats.chimneyCap);
 			cap.position.set(chimX, wallTop + chimRoofY + chimH + 0.06, chimZ);
 			mesh.add(cap);
 		}

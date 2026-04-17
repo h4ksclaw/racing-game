@@ -281,11 +281,7 @@ export class EngineAudio {
 							now,
 							0.05,
 						);
-						nl.filter.Q.setTargetAtTime(
-							Number(nl.config.q * (1 + ex.resonance * 2) * loadWidthShift) || 1,
-							now,
-							0.05,
-						);
+						nl.filter.Q.setTargetAtTime(Number(nl.config.q * (1 + ex.resonance * 2) * loadWidthShift) || 1, now, 0.05);
 					}
 					break;
 
@@ -293,11 +289,7 @@ export class EngineAudio {
 					level *= lerp(0.2, 0.8, rn) * lerp(0.1, 1, thr);
 					if (this.config.turbo && telemetry.boost > 0) {
 						level *= 1 + telemetry.boost / 5;
-						nl.filter.Q.setTargetAtTime(
-							Number(nl.config.q * (1 + telemetry.boost / 3)) || 1,
-							now,
-							0.05,
-						);
+						nl.filter.Q.setTargetAtTime(Number(nl.config.q * (1 + telemetry.boost / 3)) || 1, now, 0.05);
 					}
 					break;
 

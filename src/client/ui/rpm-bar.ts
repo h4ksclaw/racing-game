@@ -78,9 +78,7 @@ export class RpmBar extends LitElement {
 		for (let i = 0; i < this.segments; i++) {
 			const isRedZone = i >= redStart;
 			const isFilled = i < filledCount;
-			const cls = isFilled
-				? `seg filled${isRedZone ? " red" : ""}`
-				: `seg${isRedZone ? " red-zone" : ""}`;
+			const cls = isFilled ? `seg filled${isRedZone ? " red" : ""}` : `seg${isRedZone ? " red-zone" : ""}`;
 			segs.push(html`<div class=${cls}></div>`);
 		}
 		const rpmVal = Math.round(this.rpm * 8000);

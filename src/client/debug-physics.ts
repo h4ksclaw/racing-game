@@ -261,8 +261,7 @@ function updateDisplays() {
 	speedBar.style.width = `${Math.min(100, (speedKmh / 300) * 100)}%`;
 
 	rpmVal.textContent = state.rpm.toFixed(0);
-	const rpmPct =
-		((state.rpm - config.engine.idleRPM) / (config.engine.maxRPM - config.engine.idleRPM)) * 100;
+	const rpmPct = ((state.rpm - config.engine.idleRPM) / (config.engine.maxRPM - config.engine.idleRPM)) * 100;
 	rpmBar.style.width = `${Math.min(100, Math.max(0, rpmPct))}%`;
 	rpmBar.classList.toggle("redline", rpmPct > config.engine.redlinePct * 100);
 
@@ -280,8 +279,7 @@ function updateDisplays() {
 	const brakeForce = Math.abs(car.brakes.getForce(mass));
 	const dragForce = car.drag.getForce(Math.abs(state.speed));
 	const engineBrakeForce = car.engine.getEngineBraking(state.speed, mass);
-	const totalLong =
-		engineForce - brakeForce - dragForce - (engineBrakeForce > 0 ? engineBrakeForce : 0);
+	const totalLong = engineForce - brakeForce - dragForce - (engineBrakeForce > 0 ? engineBrakeForce : 0);
 
 	torqueVal.textContent = `${torque.toFixed(1)} Nm`;
 	engineForceVal.textContent = `${engineForce.toFixed(0)} N`;
@@ -310,13 +308,7 @@ function drawGraphs() {
 	drawTimeGraph(rpmCanvas, rpmHistory, "#e94560", currentConfig.engine.maxRPM, "rpm");
 }
 
-function drawTimeGraph(
-	canvas: HTMLCanvasElement,
-	data: number[],
-	color: string,
-	maxVal: number,
-	unit: string,
-) {
+function drawTimeGraph(canvas: HTMLCanvasElement, data: number[], color: string, maxVal: number, unit: string) {
 	const ctx = getCtx(canvas);
 	const dpr = window.devicePixelRatio || 1;
 	if (canvas.width !== canvas.clientWidth * dpr) {

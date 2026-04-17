@@ -317,8 +317,7 @@ describe("Pacejka tire behavior in simulation", () => {
 		}
 		const lowSpeedHeading2 = vc.getForward();
 		const lowSpeedTurn = Math.abs(
-			Math.atan2(lowSpeedHeading2.x, lowSpeedHeading2.z) -
-				Math.atan2(lowSpeedHeading1.x, lowSpeedHeading1.z),
+			Math.atan2(lowSpeedHeading2.x, lowSpeedHeading2.z) - Math.atan2(lowSpeedHeading1.x, lowSpeedHeading1.z),
 		);
 
 		// High speed turn
@@ -333,8 +332,7 @@ describe("Pacejka tire behavior in simulation", () => {
 		}
 		const highSpeedHeading2 = vc.getForward();
 		const highSpeedTurn = Math.abs(
-			Math.atan2(highSpeedHeading2.x, highSpeedHeading2.z) -
-				Math.atan2(highSpeedHeading1.x, highSpeedHeading1.z),
+			Math.atan2(highSpeedHeading2.x, highSpeedHeading2.z) - Math.atan2(highSpeedHeading1.x, highSpeedHeading1.z),
 		);
 
 		// At high speed, the same steering input should produce less heading change

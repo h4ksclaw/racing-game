@@ -43,10 +43,7 @@ export class AudioBus {
 		}
 	}
 
-	updateListener(
-		pos: { x: number; y: number; z: number },
-		forward: { x: number; y: number; z: number },
-	): void {
+	updateListener(pos: { x: number; y: number; z: number }, forward: { x: number; y: number; z: number }): void {
 		const ctx = this.ctx;
 		if (!ctx) return;
 

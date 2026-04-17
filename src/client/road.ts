@@ -168,12 +168,7 @@ async function loadRoadTextures() {
 
 // ── Geometry helper ─────────────────────────────────────────────────────
 
-function makeGeo(
-	verts: number[],
-	indices: number[],
-	uvs?: number[],
-	colors?: number[],
-): THREE.BufferGeometry {
+function makeGeo(verts: number[], indices: number[], uvs?: number[], colors?: number[]): THREE.BufferGeometry {
 	const geo = new THREE.BufferGeometry();
 	geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(verts), 3));
 	if (uvs) geo.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(uvs), 2));
@@ -269,14 +264,11 @@ export async function buildMeshes(
 
 		// ── Concrete base slab (narrow strip past grass edges) ──
 		// Multi-frequency noise for organic irregular edges
-		const n1L =
-			Math.sin(i * 0.13 + roadDist * 0.05) * 0.4 + Math.sin(i * 0.37 + roadDist * 0.02) * 0.25;
+		const n1L = Math.sin(i * 0.13 + roadDist * 0.05) * 0.4 + Math.sin(i * 0.37 + roadDist * 0.02) * 0.25;
 		const n2L = Math.sin(i * 0.71 + 1.3) * 0.15 + Math.sin(i * 1.53 + roadDist * 0.08) * 0.1;
 		const n3L = Math.sin(i * 3.17 + 2.7) * 0.06;
 		const deformL = n1L + n2L + n3L;
-		const n1R =
-			Math.sin(i * 0.17 + roadDist * 0.04 + 2.0) * 0.4 +
-			Math.sin(i * 0.29 + roadDist * 0.03 + 0.5) * 0.25;
+		const n1R = Math.sin(i * 0.17 + roadDist * 0.04 + 2.0) * 0.4 + Math.sin(i * 0.29 + roadDist * 0.03 + 0.5) * 0.25;
 		const n2R = Math.sin(i * 0.63 + 3.1) * 0.15 + Math.sin(i * 1.41 + roadDist * 0.07 + 1.2) * 0.1;
 		const n3R = Math.sin(i * 2.93 + 0.8) * 0.06;
 		const deformR = n1R + n2R + n3R;
@@ -291,19 +283,13 @@ export async function buildMeshes(
 		for (let j = 0; j < slabSteps; j++) {
 			const t = j / (slabSteps - 1); // 0..1 across width
 			// Smooth quadratic drop: starts gentle, steepens toward outer
-			const drop =
-				t *
-				t *
-				(slabCfg.dropMax + Math.abs(t < 0.5 ? deformL : deformL + n3L) * slabCfg.dropMax * 0.5);
+			const drop = t * t * (slabCfg.dropMax + Math.abs(t < 0.5 ? deformL : deformL + n3L) * slabCfg.dropMax * 0.5);
 			const lateralNoise = deformL * t * t * 0.6; // more noise further out
 			const lx = s.left.x + s.binormal.x * (-extL * t) + lateralNoise;
 			const lz = s.left.z + s.binormal.z * (-extL * t) + lateralNoise * 0.5;
 			leftPts.push([lx, s.left.y + 0.02 - drop, lz]);
 			// Right side
-			const dropR =
-				t *
-				t *
-				(slabCfg.dropMax + Math.abs(t < 0.5 ? deformR : deformR + n3R) * slabCfg.dropMax * 0.5);
+			const dropR = t * t * (slabCfg.dropMax + Math.abs(t < 0.5 ? deformR : deformR + n3R) * slabCfg.dropMax * 0.5);
 			const lateralNoiseR = deformR * t * t * 0.6;
 			const rx = s.right.x + s.binormal.x * (extR * t) + lateralNoiseR;
 			const rz = s.right.z + s.binormal.z * (extR * t) + lateralNoiseR * 0.5;
@@ -346,14 +332,7 @@ export async function buildMeshes(
 		const slabRb = cb + slabN;
 		const nslabRb = ncb + slabN;
 		for (let j = 0; j < slabN - 1; j++) {
-			concreteIndices.push(
-				slabRb + j,
-				slabRb + j + 1,
-				nslabRb + j,
-				slabRb + j + 1,
-				nslabRb + j + 1,
-				nslabRb + j,
-			);
+			concreteIndices.push(slabRb + j, slabRb + j + 1, nslabRb + j, slabRb + j + 1, nslabRb + j + 1, nslabRb + j);
 		}
 	}
 

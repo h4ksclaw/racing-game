@@ -52,8 +52,7 @@ export class Engine {
 		const targetRPM = wheelRPM * gearRatio * this.config.finalDrive;
 
 		if (Math.abs(wheelSpeed) < 0.5 && this.throttle > 0) {
-			const revRPM =
-				this.config.idleRPM + this.throttle * (this.config.maxRPM - this.config.idleRPM) * 0.6;
+			const revRPM = this.config.idleRPM + this.throttle * (this.config.maxRPM - this.config.idleRPM) * 0.6;
 			this.rpm += (revRPM - this.rpm) * Math.min(1, 10 * dt);
 			this.revLimited = false;
 		} else {

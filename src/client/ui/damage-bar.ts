@@ -58,10 +58,8 @@ export class DamageBar extends LitElement {
 
 	override render() {
 		const pct = Math.round(this.health);
-		const color =
-			pct > 60 ? "rgba(163,230,53,0.5)" : pct > 30 ? "rgba(251,191,36,0.5)" : "rgba(244,63,94,0.5)";
-		const textColor =
-			pct > 60 ? "rgba(163,230,53,0.6)" : pct > 30 ? "rgba(251,191,36,0.7)" : "rgba(244,63,94,0.6)";
+		const color = pct > 60 ? "rgba(163,230,53,0.5)" : pct > 30 ? "rgba(251,191,36,0.5)" : "rgba(244,63,94,0.5)";
+		const textColor = pct > 60 ? "rgba(163,230,53,0.6)" : pct > 30 ? "rgba(251,191,36,0.7)" : "rgba(244,63,94,0.6)";
 		return html`
 			<span class="lbl">DMG</span>
 			<div class="bar-track">

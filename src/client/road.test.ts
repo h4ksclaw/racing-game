@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	DEFAULT_GUARDRAIL_CONFIG,
-	type GuardrailConfig,
-	getAllBiomes,
-	validateGuardrailConfig,
-} from "./biomes.ts";
+import { DEFAULT_GUARDRAIL_CONFIG, type GuardrailConfig, getAllBiomes, validateGuardrailConfig } from "./biomes.ts";
 
 describe("validateGuardrailConfig", () => {
 	it("accepts the default config", () => {

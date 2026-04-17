@@ -88,11 +88,7 @@ export function checkPair(bodyA: RigidBody, bodyB: RigidBody): CollisionResult |
  * Resolve a collision between two bodies using impulse-based response.
  * Modifies bodyA and bodyB in place.
  */
-export function resolveCollision(
-	result: CollisionResult,
-	bodyA: RigidBody,
-	bodyB: RigidBody,
-): void {
+export function resolveCollision(result: CollisionResult, bodyA: RigidBody, bodyB: RigidBody): void {
 	let { normal, depth, contactPoint, relativeVel } = result;
 
 	// Ensure normal points from B to A
@@ -125,13 +121,9 @@ export function resolveCollision(
 	const rBxN = v3Cross(rB, normal);
 
 	const angA =
-		rAxN.x * rAxN.x * bodyA.invInertia.x +
-		rAxN.y * rAxN.y * bodyA.invInertia.y +
-		rAxN.z * rAxN.z * bodyA.invInertia.z;
+		rAxN.x * rAxN.x * bodyA.invInertia.x + rAxN.y * rAxN.y * bodyA.invInertia.y + rAxN.z * rAxN.z * bodyA.invInertia.z;
 	const angB =
-		rBxN.x * rBxN.x * bodyB.invInertia.x +
-		rBxN.y * rBxN.y * bodyB.invInertia.y +
-		rBxN.z * rBxN.z * bodyB.invInertia.z;
+		rBxN.x * rBxN.x * bodyB.invInertia.x + rBxN.y * rBxN.y * bodyB.invInertia.y + rBxN.z * rBxN.z * bodyB.invInertia.z;
 
 	const denominator = totalInvMass + angA + angB;
 	if (denominator < 1e-10) return;
