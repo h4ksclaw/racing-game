@@ -130,18 +130,17 @@ export class TireModel {
 		const alphaFrontDeg = (alphaFront * 180) / Math.PI;
 		const alphaRearDeg = (alphaRear * 180) / Math.PI;
 
-		// Use Pacejka at speed, linear at low speed (avoids noise near zero velocity)
-		const speedBlend = Math.min(1, Math.abs(localVelX) / 3.0);
+		// Blend linear (low speed) and Pacejka (high speed) lateral forces.
+		// Linear stiffness works at all speeds; Pacejka adds realistic peak/dropoff above ~5 m/s.
+		const pacejkaBlend = Math.min(1, Math.max(0, (Math.abs(localVelX) - 3.0) / 5.0));
+		const linearFront = -this.config.corneringStiffnessFront * alphaFront;
+		const linearRear = -this.config.corneringStiffnessRear * alphaRear * rearGripFactor;
+		const pacejkaFront = -pacejka(alphaFrontDeg, normalFront, this.pacejkaLat);
+		const pacejkaRear = -pacejka(alphaRearDeg, normalRear * rearGripFactor, this.pacejkaLat);
 
-		// ── Pacejka Lateral Forces ──
-		let fLatFront =
-			speedBlend > 0
-				? pacejka(alphaFrontDeg, normalFront, this.pacejkaLat)
-				: -this.config.corneringStiffnessFront * alphaFront;
-		let fLatRear =
-			speedBlend > 0
-				? pacejka(alphaRearDeg, normalRear * rearGripFactor, this.pacejkaLat)
-				: -this.config.corneringStiffnessRear * alphaRear * rearGripFactor;
+		// ── Lateral Forces (blended) ──
+		let fLatFront = linearFront * (1 - pacejkaBlend) + pacejkaFront * pacejkaBlend;
+		let fLatRear = linearRear * (1 - pacejkaBlend) + pacejkaRear * pacejkaBlend;
 
 		// ── Friction Circle ──
 		// Ensures combined force doesn't exceed mu * Fz per axle.

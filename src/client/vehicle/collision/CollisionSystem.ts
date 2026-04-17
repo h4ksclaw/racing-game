@@ -53,10 +53,17 @@ const DEFAULT_FRICTION = 0.4;
  * Check collision between two rigid bodies.
  * Returns null if no collision detected.
  */
-export function checkPair(bodyA: RigidBody, bodyB: RigidBody): CollisionResult | null {
-	// Transform hulls to world space (axis-aligned for now)
-	const worldA = transformHull(bodyA.hull, bodyA.pos, 1, 0);
-	const worldB = transformHull(bodyB.hull, bodyB.pos, 1, 0);
+export function checkPair(
+	bodyA: RigidBody,
+	bodyB: RigidBody,
+	cosYA = 1,
+	sinYA = 0,
+	cosYB = 1,
+	sinYB = 0,
+): CollisionResult | null {
+	// Transform hulls to world space with yaw rotation
+	const worldA = transformHull(bodyA.hull, bodyA.pos, cosYA, sinYA);
+	const worldB = transformHull(bodyB.hull, bodyB.pos, cosYB, sinYB);
 
 	const result = gjk(worldA, worldB);
 	if (!result.intersecting) return null;

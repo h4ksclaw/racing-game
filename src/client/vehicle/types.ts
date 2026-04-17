@@ -83,6 +83,17 @@ export interface RoadBoundaryInfo {
 	wallNormal?: { x: number; z: number };
 	/** Direct distance from car to nearest guardrail position */
 	distToWall: number;
+	/** Track tangent at this sample (for rail segment orientation) */
+	tangent?: { x: number; z: number };
+	/** Current sample guardrail positions */
+	grassLeft?: { x: number; y: number; z: number };
+	grassRight?: { x: number; y: number; z: number };
+	/** Previous sample guardrail positions */
+	prevGrassLeft?: { x: number; y: number; z: number };
+	prevGrassRight?: { x: number; y: number; z: number };
+	/** Next sample guardrail positions */
+	nextGrassLeft?: { x: number; y: number; z: number };
+	nextGrassRight?: { x: number; y: number; z: number };
 }
 
 // ─── Terrain ───────────────────────────────────────────────────────────

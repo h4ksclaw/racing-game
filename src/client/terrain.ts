@@ -106,19 +106,20 @@ export class TerrainSampler {
 		return value / maxVal;
 	}
 
-	nearestRoad(x: number, z: number): { dist: number; sample: TrackSample } {
+	nearestRoad(x: number, z: number): { dist: number; sample: TrackSample; sampleIndex: number } {
 		const cx = Math.floor(x / this.cellSize);
 		const cz = Math.floor(z / this.cellSize);
-		let best = { dist: Infinity, sample: this.samples[0] };
+		let best = { dist: Infinity, sample: this.samples[0], sampleIndex: 0 };
 		for (let dx = -2; dx <= 2; dx++) {
 			for (let dz = -2; dz <= 2; dz++) {
 				const arr = this.grid.get(`${cx + dx},${cz + dz}`);
 				if (!arr) continue;
-				for (const s of arr) {
+				for (let si = 0; si < arr.length; si++) {
+					const s = arr[si];
 					const ddx = x - s.point.x;
 					const ddz = z - s.point.z;
 					const d = Math.sqrt(ddx * ddx + ddz * ddz);
-					if (d < best.dist) best = { dist: d, sample: s };
+					if (d < best.dist) best = { dist: d, sample: s, sampleIndex: this.samples.indexOf(s) };
 				}
 			}
 		}
@@ -186,8 +187,19 @@ export class TerrainSampler {
 		onShoulder: boolean;
 		wallNormal?: { x: number; z: number };
 		distToWall: number;
+		/** Track tangent at this sample (for rail segment orientation) */
+		tangent?: { x: number; z: number };
+		/** Current sample guardrail positions */
+		grassLeft?: { x: number; y: number; z: number };
+		grassRight?: { x: number; y: number; z: number };
+		/** Previous sample guardrail positions (for rail segment) */
+		prevGrassLeft?: { x: number; y: number; z: number };
+		prevGrassRight?: { x: number; y: number; z: number };
+		/** Next sample guardrail positions (for rail segment) */
+		nextGrassLeft?: { x: number; y: number; z: number };
+		nextGrassRight?: { x: number; y: number; z: number };
 	} {
-		const { sample } = this.nearestRoad(x, z);
+		const { sample, sampleIndex } = this.nearestRoad(x, z);
 
 		// Cross-product lateral distance (tangent is normalized, so this is exact)
 		const toX = x - sample.point.x;
@@ -229,6 +241,11 @@ export class TerrainSampler {
 		const wnLen = Math.sqrt(wnx * wnx + wnz * wnz);
 		const wallNormal = wnLen > 0.001 ? { x: wnx / wnLen, z: wnz / wnLen } : undefined;
 
+		// Rail segment data for 3D hull collision
+		// Rail segment data for 3D hull collision
+		const prev = sampleIndex > 0 ? this.samples[sampleIndex - 1] : null;
+		const next = sampleIndex < this.samples.length - 1 ? this.samples[sampleIndex + 1] : null;
+
 		return {
 			lateralDist,
 			distFromCenter,
@@ -240,6 +257,13 @@ export class TerrainSampler {
 			onShoulder,
 			wallNormal,
 			distToWall,
+			tangent: sample.tangent ? { x: sample.tangent.x, z: sample.tangent.z } : undefined,
+			grassLeft: sample.grassLeft,
+			grassRight: sample.grassRight,
+			prevGrassLeft: prev?.grassLeft,
+			prevGrassRight: prev?.grassRight,
+			nextGrassLeft: next?.grassLeft,
+			nextGrassRight: next?.grassRight,
 		};
 	}
 }

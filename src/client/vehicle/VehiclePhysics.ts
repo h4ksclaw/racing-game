@@ -19,12 +19,13 @@
 
 import { DragModel } from "./aero/DragModel.ts";
 import { Chassis } from "./chassis/Chassis.ts";
+import { boxHull, checkPair, type RigidBody, resolveCollision, v3Dot } from "./collision/index.ts";
 import type { CarConfig } from "./configs.ts";
 import { EngineUnit } from "./engine/EngineUnit.ts";
 import { Brakes } from "./suspension/Brakes.ts";
 import type { TireConfig } from "./suspension/TireModel.ts";
 import { TireModel } from "./suspension/TireModel.ts";
-import type { EngineTelemetry, TerrainProvider, VehicleInput, VehicleState } from "./types.ts";
+import type { EngineTelemetry, RoadBoundaryInfo, TerrainProvider, VehicleInput, VehicleState } from "./types.ts";
 import { TerrainHandler } from "./world/TerrainHandler.ts";
 
 export class VehiclePhysics {
@@ -54,10 +55,6 @@ export class VehiclePhysics {
 	localVelY: number;
 	private verticalVel: number;
 	private yawRate: number;
-
-	// Collision-induced angular velocity (rad/s)
-	private pitchRate: number;
-	private rollRate: number;
 
 	// Body orientation (terrain tilt)
 	pitch: number;
@@ -103,8 +100,6 @@ export class VehiclePhysics {
 		this.localVelY = 0;
 		this.verticalVel = 0;
 		this.yawRate = 0;
-		this.pitchRate = 0;
-		this.rollRate = 0;
 		this.pitch = 0;
 		this.roll = 0;
 		this.steerAngle = 0;
@@ -263,33 +258,24 @@ export class VehiclePhysics {
 			const penetration = targetY - this.posY;
 
 			if (penetration > 0) {
-				const springK = chassis.spec.suspensionStiffness;
+				const springK = chassis.spec.suspensionStiffness * 0.5;
 				const dampK = chassis.spec.dampingCompression + chassis.spec.dampingRelaxation;
 				const springForce = springK * penetration - dampK * this.verticalVel;
 
 				this.verticalVel += (springForce / mass) * dt;
 
-				// Hard floor prevents falling through terrain
-				if (this.posY < groundY + wheelRadius * 0.8) {
-					this.posY = groundY + wheelRadius * 0.8;
-					this.verticalVel = this.verticalVel < -2.0 ? this.verticalVel * -0.1 : 0;
+				if (this.posY < groundY + wheelRadius * 0.5) {
+					this.posY = groundY + wheelRadius * 0.5;
+					this.verticalVel = this.verticalVel < -1.0 ? this.verticalVel * -0.15 : 0;
 				}
 
 				this.state.onGround = true;
 			} else {
-				// Airborne — but still check if we've gone below terrain
-				if (this.posY < groundY + wheelRadius) {
-					this.posY = groundY + wheelRadius;
-					this.verticalVel = Math.max(0, this.verticalVel);
-					this.state.onGround = true;
-				} else {
-					this.state.onGround = false;
-				}
+				this.state.onGround = false;
 			}
 
 			if (ts.normal) {
-				// Faster tilt alignment so car follows slopes better
-				const tiltSpeed = 5.0 + speedKmh * 0.02;
+				const tiltSpeed = 3.0 / (1 + speedKmh / 80);
 				this.pitch += (ts.pitch - this.pitch) * Math.min(1, tiltSpeed * dt);
 				this.roll += (ts.roll - this.roll) * Math.min(1, tiltSpeed * dt);
 				this.localVelX += -g * Math.sin(this.pitch) * dt;
@@ -301,82 +287,7 @@ export class VehiclePhysics {
 				const carHalfW = chassis.spec.halfExtents[0];
 
 				if (rb.distToWall <= carHalfW && rb.wallNormal) {
-					const wn = rb.wallNormal;
-					const worldVx = this.localVelX * sh + this.localVelY * ch;
-					const worldVz = this.localVelX * ch - this.localVelY * sh;
-
-					// Contact point: edge of car in the wall normal direction
-					// r = vector from CG to contact point (world space)
-					const contactX = this.posX + wn.x * carHalfW;
-					const contactZ = this.posZ + wn.z * carHalfW;
-					const rx = contactX - this.posX;
-					const rz = contactZ - this.posZ;
-
-					// Velocity at contact point (includes rotation contribution)
-					const vContactX = worldVx - this.yawRate * rz;
-					const vContactZ = worldVz + this.yawRate * rx;
-
-					const velAlongNormal = vContactX * wn.x + vContactZ * wn.z;
-
-					if (velAlongNormal < 0) {
-						const restitution = 0.2;
-						const impactSpeed = Math.abs(velAlongNormal);
-
-						// Effective mass at contact (accounts for rotational inertia)
-						const rCrossN = rx * wn.z - rz * wn.x;
-						const effMassInv = 1 / mass + (rCrossN * rCrossN) / chassis.yawInertia;
-
-						// Impulse magnitude
-						const j = (-(1 + restitution) * velAlongNormal) / effMassInv;
-
-						// Apply linear impulse
-						const impX = j * wn.x;
-						const impZ = j * wn.z;
-						const newWorldVx = worldVx + impX / mass;
-						const newWorldVz = worldVz + impZ / mass;
-
-						// Apply angular impulse (torque from off-center impact)
-						this.yawRate += (rx * impZ - rz * impX) / chassis.yawInertia;
-
-						// Friction impulse at contact (tangential)
-						const tangentX = -wn.z;
-						const tangentZ = wn.x;
-						const relVelTangent = vContactX * tangentX + vContactZ * tangentZ;
-						const frictionCoeff = 0.3;
-						const maxFriction = frictionCoeff * Math.abs(j);
-						const rCrossT = rx * tangentZ - rz * tangentX;
-						const effMassInvT = 1 / mass + (rCrossT * rCrossT) / chassis.yawInertia;
-						let jt = -relVelTangent / effMassInvT;
-						if (Math.abs(jt) > maxFriction) {
-							jt = maxFriction * Math.sign(jt);
-						}
-						const fricImpX = jt * tangentX;
-						const fricImpZ = jt * tangentZ;
-						this.yawRate += (rx * fricImpZ - rz * fricImpX) / chassis.yawInertia;
-
-						// Convert back to local frame
-						const finalWorldVx = newWorldVx + fricImpX / mass;
-						const finalWorldVz = newWorldVz + fricImpZ / mass;
-						this.localVelX = finalWorldVx * sh + finalWorldVz * ch;
-						this.localVelY = finalWorldVx * ch - finalWorldVz * sh;
-
-						// Energy loss on impact
-						const speedLoss = Math.min(0.2, impactSpeed * 0.015);
-						this.localVelX *= 1 - speedLoss;
-						this.localVelY *= 1 - speedLoss;
-
-						// Body tilt from wall impact (visual only)
-						if (impactSpeed > 2.0) {
-							this.rollRate += impactSpeed * 0.02 * Math.sign(wn.x);
-						}
-					}
-
-					const pushDir = rb.lateralDist >= 0 ? -1 : 1;
-					this.localVelY += pushDir * 80 * dt;
-
-					if (!rb.onRoad && !rb.onKerb && !rb.onShoulder) {
-						this.localVelY = pushDir * 5;
-					}
+					this.resolveHullRailCollision(rb, chassis, mass, sh, ch);
 				} else if (rb.onShoulder) {
 					this.localVelX *= 1 - 1.5 * dt;
 				} else if (rb.onKerb) {
@@ -384,23 +295,6 @@ export class VehiclePhysics {
 				}
 			}
 		}
-
-		// ═══════════════════════════════════════════════════════════
-		// 11b. COLLISION-INDUCED TILT
-		// ═══════════════════════════════════════════════════════════
-		// Hard landing pitch
-		if (this.verticalVel < -3.0) {
-			const impactForce = Math.abs(this.verticalVel) * this.config.chassis.mass;
-			const cgOffset = this.chassis.cgToFront - this.chassis.cgToRear;
-			this.pitchRate += impactForce * cgOffset * 1e-4 * dt;
-		}
-
-		// Damp and integrate angular rates
-		const angDamp = 1 - 2.0 * dt;
-		this.pitchRate *= Math.max(0, angDamp);
-		this.rollRate *= Math.max(0, angDamp);
-		this.pitch += this.pitchRate * dt;
-		this.roll += this.rollRate * dt;
 
 		// ═══════════════════════════════════════════════════════════
 		// 12. HEADING
@@ -477,8 +371,6 @@ export class VehiclePhysics {
 		this.localVelY = 0;
 		this.verticalVel = 0;
 		this.yawRate = 0;
-		this.pitchRate = 0;
-		this.rollRate = 0;
 		this.steerAngle = 0;
 		this.pitch = 0;
 		this.roll = 0;
@@ -493,5 +385,114 @@ export class VehiclePhysics {
 		this.state.brake = 0;
 		this.state.gear = 1;
 		this.telemetry = this.engineUnit.getTelemetry(0);
+	}
+
+	/**
+	 * Hull-based 3D collision with guardrail segments.
+	 * Builds oriented box hulls for car and rail segments, uses GJK/EPA
+	 * for detection and impulse-based resolution with angular velocity.
+	 */
+	private resolveHullRailCollision(rb: RoadBoundaryInfo, chassis: Chassis, mass: number, sh: number, ch: number): void {
+		const [halfW, halfH, halfD] = chassis.spec.halfExtents;
+		const wheelRadius = chassis.spec.wheelRadius;
+
+		// ── Build car body hull ──
+		// Box bottom at wheel height (tires handle ground contact)
+		const yOffset = wheelRadius;
+		const carHull = boxHull(halfW, halfH, halfD).map((v) => ({ x: v.x, y: v.y + yOffset, z: v.z }));
+
+		const worldVx = this.localVelX * sh + this.localVelY * ch;
+		const worldVz = this.localVelX * ch - this.localVelY * sh;
+
+		const carBody: RigidBody = {
+			pos: { x: this.posX, y: this.posY, z: this.posZ },
+			vel: { x: worldVx, y: this.verticalVel, z: worldVz },
+			angVel: { x: 0, y: 0, z: this.yawRate },
+			mass,
+			invMass: 1 / mass,
+			invInertia: { x: 1 / chassis.yawInertia, y: 1 / chassis.yawInertia, z: 1 / chassis.yawInertia },
+			hull: carHull,
+			restitution: 0.2,
+			friction: 0.3,
+		};
+
+		// ── Build rail segment hulls ──
+		const gl = rb.grassLeft;
+		const gr = rb.grassRight;
+		const tan = rb.tangent;
+		if (!gl || !gr || !tan) return;
+
+		const segments: Array<{ p1: { x: number; y: number; z: number }; p2: { x: number; y: number; z: number } }> = [];
+		if (rb.prevGrassLeft && rb.prevGrassRight) {
+			segments.push({ p1: rb.prevGrassLeft, p2: gl });
+			segments.push({ p1: rb.prevGrassRight, p2: gr });
+		}
+		if (rb.nextGrassLeft && rb.nextGrassRight) {
+			segments.push({ p1: gl, p2: rb.nextGrassLeft });
+			segments.push({ p1: gr, p2: rb.nextGrassRight });
+		}
+		if (segments.length === 0) return;
+
+		// Rail rotation from tangent direction
+		// transformHull convention: heading=0 faces +Z, so cosY=tangent.z, sinY=tangent.x
+		const tanLen = Math.sqrt(tan.x * tan.x + tan.z * tan.z);
+		if (tanLen < 0.001) return;
+		const railCosY = tan.z / tanLen;
+		const railSinY = tan.x / tanLen;
+
+		for (const seg of segments) {
+			// Rail segment midpoint and half-length
+			const midX = (seg.p1.x + seg.p2.x) / 2;
+			const midY = (seg.p1.y + seg.p2.y) / 2;
+			const midZ = (seg.p1.z + seg.p2.z) / 2;
+			const halfLen = Math.sqrt((seg.p2.x - seg.p1.x) ** 2 + (seg.p2.z - seg.p1.z) ** 2) / 2;
+			if (halfLen < 0.01) continue;
+
+			// Rail box: 0.1m wide, 0.75m tall, halfLen long
+			const railBody: RigidBody = {
+				pos: { x: midX, y: midY + 0.75, z: midZ },
+				vel: { x: 0, y: 0, z: 0 },
+				angVel: { x: 0, y: 0, z: 0 },
+				mass: 1e10,
+				invMass: 0,
+				invInertia: { x: 0, y: 0, z: 0 },
+				hull: boxHull(0.05, 0.5, halfLen),
+				restitution: 0.3,
+				friction: 0.4,
+			};
+
+			// Check collision with car rotated by heading
+			const result = checkPair(carBody, railBody, sh, ch, railCosY, railSinY);
+			if (!result) continue;
+
+			// Resolve collision (rail is static: invMass=0 → only car moves)
+			resolveCollision(result, carBody, railBody);
+
+			// Safety: kill velocity component moving into the rail
+			const intoWall = -v3Dot(carBody.vel, result.normal);
+			if (intoWall > 0) {
+				carBody.vel = {
+					x: carBody.vel.x + result.normal.x * intoWall,
+					y: carBody.vel.y + result.normal.y * intoWall,
+					z: carBody.vel.z + result.normal.z * intoWall,
+				};
+			}
+
+			// Position correction: push car out of rail by penetration depth
+			carBody.pos = {
+				x: carBody.pos.x + result.normal.x * result.depth,
+				y: carBody.pos.y + result.normal.y * result.depth,
+				z: carBody.pos.z + result.normal.z * result.depth,
+			};
+		}
+
+		// ── Apply resolved state back to vehicle ──
+		this.posX = carBody.pos.x;
+		this.posY = carBody.pos.y;
+		this.posZ = carBody.pos.z;
+		this.localVelX = carBody.vel.x * sh + carBody.vel.z * ch;
+		this.localVelY = carBody.vel.x * ch - carBody.vel.z * sh;
+		this.verticalVel = carBody.vel.y;
+		this.yawRate = carBody.angVel.z;
 	}
 }
