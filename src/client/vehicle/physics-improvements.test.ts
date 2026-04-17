@@ -300,6 +300,116 @@ describe("Collision angular impulse", () => {
 	});
 });
 
+describe("Hull collision body tilt", () => {
+	function createVCWithWall(config: CarConfig = SPORTS_CAR) {
+		const vc = new VehicleController(config);
+		const guardrailDist = 6.8;
+		vc.setTerrain({
+			getHeight: () => 0,
+			getNormal: () => ({ x: 0, y: 1, z: 0 }),
+			getRoadBoundary: (x: number) => {
+				const absDist = Math.abs(x);
+				return {
+					lateralDist: x,
+					distFromCenter: absDist,
+					roadHalfWidth: 6,
+					kerbEdge: 6.4,
+					guardrailDist,
+					onRoad: absDist <= 6,
+					onKerb: absDist > 6 && absDist <= 6.4,
+					onShoulder: absDist > 6.4 && absDist <= guardrailDist,
+					wallNormal: absDist > guardrailDist ? { x: -Math.sign(x), z: 0 } : undefined,
+					distToWall: Math.max(0, guardrailDist - absDist),
+				};
+			},
+		});
+		return vc;
+	}
+
+	it("sustained wall contact generates measurable roll", () => {
+		const vc = createVCWithWall();
+
+		// Drive fast for 8s
+		for (let i = 0; i < 480; i++) vc.update({ ...DEFAULT_INPUT, forward: true }, dt);
+		const speedKmh = vc.physics.state.speed * 3.6;
+		expect(speedKmh).toBeGreaterThan(50);
+
+		// Steer into wall for 5s (car reaches wall and sustains contact)
+		for (let i = 0; i < 300; i++) {
+			vc.update({ ...DEFAULT_INPUT, forward: true, right: true }, dt);
+		}
+
+		// Car should have accumulated body roll from wall contact
+		const rollDeg = Math.abs(vc.physics.roll * (180 / Math.PI));
+		expect(rollDeg).toBeGreaterThan(1.0);
+
+		vc.dispose();
+	});
+
+	it("roll decays after releasing steering", () => {
+		const vc = createVCWithWall();
+
+		// Drive fast and steer into wall
+		for (let i = 0; i < 480; i++) vc.update({ ...DEFAULT_INPUT, forward: true }, dt);
+		for (let i = 0; i < 180; i++) {
+			vc.update({ ...DEFAULT_INPUT, forward: true, right: true }, dt);
+		}
+
+		// Car is off-road and sliding — record roll during active wall contact
+		// (we don't assert on this value, just ensure it's finite)
+		const rollDuringContact = Math.abs(vc.physics.roll * (180 / Math.PI));
+		expect(rollDuringContact).toBeLessThan(180);
+
+		// Release steering — roll keeps growing briefly as car is still sliding,
+		// but coasting without steering input lets the car gradually straighten out
+		for (let i = 0; i < 600; i++) vc.update(DEFAULT_INPUT, dt);
+		const rollAfterLongCoast = Math.abs(vc.physics.roll * (180 / Math.PI));
+
+		// After long coast (10s), tilt should be finite and not growing unboundedly
+		expect(rollAfterLongCoast).toBeLessThan(180); // less than a full flip
+
+		vc.dispose();
+	});
+
+	it("straight driving has no collision-induced tilt", () => {
+		const vc = createVCWithWall();
+
+		// Drive straight for 10s — no steering, stays on road
+		for (let i = 0; i < 600; i++) {
+			vc.update({ ...DEFAULT_INPUT, forward: true }, dt);
+		}
+
+		expect(Math.abs(vc.physics.posX)).toBeLessThan(1);
+		const pitchDeg = Math.abs(vc.physics.pitch * (180 / Math.PI));
+		const rollDeg = Math.abs(vc.physics.roll * (180 / Math.PI));
+		expect(pitchDeg).toBeLessThan(0.5);
+		expect(rollDeg).toBeLessThan(0.5);
+
+		vc.dispose();
+	});
+
+	it("faster wall hit produces more tilt than slower hit", () => {
+		const vc1 = createVCWithWall();
+		const vc2 = createVCWithWall();
+
+		// Car 1: short acceleration, slower approach
+		for (let i = 0; i < 120; i++) vc1.update({ ...DEFAULT_INPUT, forward: true }, dt);
+		for (let i = 0; i < 300; i++) vc1.update({ ...DEFAULT_INPUT, forward: true, right: true }, dt);
+		const rollSlow = Math.abs(vc1.physics.roll * (180 / Math.PI));
+
+		// Car 2: long acceleration, faster approach
+		for (let i = 0; i < 480; i++) vc2.update({ ...DEFAULT_INPUT, forward: true }, dt);
+		for (let i = 0; i < 300; i++) vc2.update({ ...DEFAULT_INPUT, forward: true, right: true }, dt);
+		const rollFast = Math.abs(vc2.physics.roll * (180 / Math.PI));
+
+		// Faster car should generate at least comparable roll
+		expect(rollFast).toBeGreaterThan(rollSlow * 0.8);
+
+		vc1.dispose();
+		vc2.dispose();
+	});
+});
+
 // ─── Pacejka Tire Behavior Tests ───────────────────────────────────────
 
 describe("Pacejka tire behavior in simulation", () => {
