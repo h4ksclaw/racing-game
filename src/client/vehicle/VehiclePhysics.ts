@@ -19,6 +19,7 @@
 
 import { DragModel } from "./aero/DragModel.ts";
 import { Chassis } from "./chassis/Chassis.ts";
+import { checkPair, createBody, resolveCollision } from "./collision/index.ts";
 import type { CarConfig } from "./configs.ts";
 import { EngineUnit } from "./engine/EngineUnit.ts";
 import { Brakes } from "./suspension/Brakes.ts";
@@ -58,6 +59,9 @@ export class VehiclePhysics {
 	// 3D angular velocity (rad/s) — pitch, yaw, roll
 	private pitchRate: number;
 	private rollRate: number;
+
+	// Hull collision body (reusable for wall collision checks)
+	private hullBody: ReturnType<typeof createBody>;
 
 	// Body orientation (terrain tilt)
 	pitch: number;
@@ -109,6 +113,13 @@ export class VehiclePhysics {
 		this.roll = 0;
 		this.steerAngle = 0;
 		this.terrainHandler = new TerrainHandler();
+
+		// Pre-build hull collision body (reused for wall checks)
+		this.hullBody = createBody({
+			mass: config.chassis.mass,
+			halfExtents: config.chassis.halfExtents,
+			pos: { x: 0, y: 0, z: 0 },
+		});
 	}
 
 	setTerrain(terrain: TerrainProvider): void {
@@ -123,6 +134,13 @@ export class VehiclePhysics {
 			maxTraction: this.config.chassis.mass * this.config.tires.tractionPct * 9.82,
 		};
 		this.tires = new TireModel(tireConfig);
+
+		// Rebuild hull body with new dimensions
+		this.hullBody = createBody({
+			mass: this.config.chassis.mass,
+			halfExtents: this.config.chassis.halfExtents,
+			pos: { x: this.posX, y: this.posY, z: this.posZ },
+		});
 	}
 
 	update(input: VehicleInput, delta: number): void {
@@ -310,7 +328,11 @@ export class VehiclePhysics {
 				this.localVelX += -g * Math.sin(this.pitch) * dt;
 			}
 
-			// ── Road boundary collisions (with angular impulse) ──
+			// ── Road boundary collisions (hull-based impulse) ──
+			// TODO: Replace roadBoundary trigger with full hull-vs-static-body
+			// checkPair() once wall geometry is available as convex hulls.
+			// The hull system gives proper 3D angular response (pitch/roll/yaw)
+			// instead of the old yaw-only impulse calculation.
 			if (ts.roadBoundary) {
 				const rb = ts.roadBoundary;
 				const carHalfW = chassis.spec.halfExtents[0];
@@ -320,67 +342,45 @@ export class VehiclePhysics {
 					const worldVx = this.localVelX * sh + this.localVelY * ch;
 					const worldVz = this.localVelX * ch - this.localVelY * sh;
 
-					// Contact point: edge of car in the wall normal direction
-					// r = vector from CG to contact point (world space)
-					const contactX = this.posX + wn.x * carHalfW;
-					const contactZ = this.posZ + wn.z * carHalfW;
-					const rx = contactX - this.posX;
-					const rz = contactZ - this.posZ;
+					// Build a thin immovable wall body at the collision point.
+					// TODO: Cache wall bodies per-frame instead of allocating per hit.
+					const wallDist = carHalfW + rb.distToWall;
+					const wallBody = createBody({
+						mass: 1e10,
+						halfExtents: [0.01, chassis.spec.halfExtents[1] * 4, carHalfW * 2],
+						pos: {
+							x: this.posX + wn.x * wallDist,
+							y: this.posY,
+							z: this.posZ + wn.z * wallDist,
+						},
+						restitution: 0.2,
+						friction: 0.3,
+					});
 
-					// Velocity at contact point (includes rotation contribution)
-					const vContactX = worldVx - this.yawRate * rz;
-					const vContactZ = worldVz + this.yawRate * rx;
+					// Update car hull for collision check
+					this.hullBody.pos = { x: this.posX, y: this.posY, z: this.posZ };
+					this.hullBody.vel = { x: worldVx, y: this.verticalVel, z: worldVz };
 
-					const velAlongNormal = vContactX * wn.x + vContactZ * wn.z;
+					const result = checkPair(this.hullBody, wallBody);
+					if (result) {
+						resolveCollision(result, this.hullBody, wallBody);
 
-					if (velAlongNormal < 0) {
-						const restitution = 0.2;
-						const impactSpeed = Math.abs(velAlongNormal);
+						// Convert resolved velocity back to local frame
+						const resolvedVx = this.hullBody.vel.x;
+						const resolvedVz = this.hullBody.vel.z;
+						this.localVelX = resolvedVx * sh + resolvedVz * ch;
+						this.localVelY = resolvedVx * ch - resolvedVz * sh;
+						this.verticalVel = this.hullBody.vel.y;
 
-						// Effective mass at contact (accounts for rotational inertia)
-						const rCrossN = rx * wn.z - rz * wn.x;
-						const effMassInv = 1 / mass + (rCrossN * rCrossN) / chassis.yawInertia;
+						// Yaw from hull angular response
+						this.yawRate += this.hullBody.angVel.y * 0.3;
 
-						// Impulse magnitude
-						const j = (-(1 + restitution) * velAlongNormal) / effMassInv;
-
-						// Apply linear impulse
-						const impX = j * wn.x;
-						const impZ = j * wn.z;
-						const newWorldVx = worldVx + impX / mass;
-						const newWorldVz = worldVz + impZ / mass;
-
-						// Apply angular impulse (torque from off-center impact)
-						this.yawRate += (rx * impZ - rz * impX) / chassis.yawInertia;
-
-						// Friction impulse at contact (tangential)
-						const tangentX = -wn.z;
-						const tangentZ = wn.x;
-						const relVelTangent = vContactX * tangentX + vContactZ * tangentZ;
-						const frictionCoeff = 0.3;
-						const maxFriction = frictionCoeff * Math.abs(j);
-						const rCrossT = rx * tangentZ - rz * tangentX;
-						const effMassInvT = 1 / mass + (rCrossT * rCrossT) / chassis.yawInertia;
-						let jt = -relVelTangent / effMassInvT;
-						if (Math.abs(jt) > maxFriction) {
-							jt = maxFriction * Math.sign(jt);
-						}
-						const fricImpX = jt * tangentX;
-						const fricImpZ = jt * tangentZ;
-						this.yawRate += (rx * fricImpZ - rz * fricImpX) / chassis.yawInertia;
-
-						// Convert back to local frame
-						const finalWorldVx = newWorldVx + fricImpX / mass;
-						const finalWorldVz = newWorldVz + fricImpZ / mass;
-						this.localVelX = finalWorldVx * sh + finalWorldVz * ch;
-						this.localVelY = finalWorldVx * ch - finalWorldVz * sh;
-
-						// Energy loss on impact
-						const speedLoss = Math.min(0.2, impactSpeed * 0.015);
-						this.localVelX *= 1 - speedLoss;
-						this.localVelY *= 1 - speedLoss;
+						// Pitch/roll from off-center wall hits
+						this.pitchRate += this.hullBody.angVel.x * 0.2;
+						this.rollRate += this.hullBody.angVel.z * 0.2;
 					}
 
+					// Game-feel: lateral push prevents clipping through walls
 					const pushDir = rb.lateralDist >= 0 ? -1 : 1;
 					this.localVelY += pushDir * 80 * dt;
 
