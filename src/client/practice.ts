@@ -35,6 +35,7 @@ const seed = Number(urlParams.get("seed")) || 42;
 const hour = Number(urlParams.get("hour")) || 14;
 const weather = (urlParams.get("weather") as WeatherType) || "clear";
 const perfLow = urlParams.get("perf") === "low";
+const debugMode = urlParams.get("debug") === "true" || urlParams.get("debug") === "1";
 
 // ── UI component refs ───────────────────────────────────────────────────
 let uiReady = false;
@@ -173,7 +174,7 @@ function resetCar(): void {
 	const groundY = world.terrain.getHeight(s.point.x, s.point.z);
 	// Body center = ground + wheelRadius + suspensionRestLength + wheelConnectionOffset
 	const cfg = vehicle.config.chassis;
-	const bodyY = groundY + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1] * 0.5;
+	const bodyY = groundY + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1];
 	vehicle.reset(s.point.x, bodyY, s.point.z, tangentAngle);
 	camMode = "chase";
 }
@@ -369,6 +370,23 @@ window.addEventListener("resize", () => {
 	world.renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// ── Debug overlay (?debug=true) ─────────────────────────────────────────
+let debugEl: HTMLDivElement | null = null;
+
+function updateDebugOverlay(v: RapierVehicleController): void {
+	if (!debugEl) {
+		debugEl = document.createElement("div");
+		debugEl.id = "debug-overlay";
+		debugEl.style.cssText =
+			"position:fixed;top:8px;left:8px;background:rgba(0,0,0,0.85);color:#0f0;font:12px/1.6 monospace;padding:10px;z-index:9999;pointer-events:none;white-space:pre;";
+		document.body.appendChild(debugEl);
+	}
+	const info = v.getDebugInfo();
+	debugEl.textContent = Object.entries(info)
+		.map(([k, val]) => `${k}: ${val}`)
+		.join("\n");
+}
+
 // ── Main loop ───────────────────────────────────────────────────────────
 
 let lastTime = performance.now();
@@ -450,6 +468,11 @@ function animate(): void {
 
 	updateWeather(delta);
 	updateTerrainShadows();
+
+	// Debug overlay
+	if (debugMode && vehicle) {
+		updateDebugOverlay(vehicle);
+	}
 
 	if (state.composer) {
 		state.composer.render();

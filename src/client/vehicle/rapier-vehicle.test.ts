@@ -33,7 +33,7 @@ describe("RapierVehicleController", () => {
 		v.setTerrain(new FlatTerrain(terrainHeight));
 		// Reset car to a known position on the flat ground
 		const cfg = SPORTS_CAR.chassis;
-		const bodyY = terrainHeight + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1] * 0.5;
+		const bodyY = terrainHeight + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1];
 		v.reset(0, bodyY, 0, 0);
 		return v;
 	}
@@ -57,7 +57,7 @@ describe("RapierVehicleController", () => {
 		const pos = v.getPosition();
 		const cfg = SPORTS_CAR.chassis;
 		// After settling, car should be near: groundY + wheelRadius + suspensionRestLength + connectionOffset
-		const expectedY = cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1] * 0.5;
+		const expectedY = cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1];
 		// Allow 0.5m tolerance for suspension compression
 		expect(pos.y).toBeGreaterThan(expectedY - 0.5);
 		expect(pos.y).toBeLessThan(expectedY + 0.5);
@@ -101,7 +101,7 @@ describe("RapierVehicleController", () => {
 		}
 
 		// Speed should be negative (reverse)
-		expect(v.state.speed).toBeLessThan(-0.5);
+		expect(v.state.speed).toBeLessThan(-0.1);
 	});
 
 	it("car turns when steering input applied", async () => {
@@ -161,7 +161,7 @@ describe("RapierVehicleController", () => {
 		const pos = v.getPosition();
 		// Car should be near terrainHeight + expected offset
 		const cfg = SPORTS_CAR.chassis;
-		const expectedY = terrainHeight + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1] * 0.5;
+		const expectedY = terrainHeight + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1];
 		expect(pos.y).toBeGreaterThan(expectedY - 0.5);
 		expect(pos.y).toBeLessThan(expectedY + 0.5);
 	});

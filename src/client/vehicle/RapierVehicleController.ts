@@ -179,7 +179,7 @@ export class RapierVehicleController {
 		const susRest = chassis.suspensionRestLength;
 		const susTravel = 0.3;
 		const wl = halfW * 0.85;
-		const wy = -halfH * 0.5;
+		const wy = -halfH;
 		const wheelOpts = [
 			{ x: -wl, z: halfD * 0.7 },
 			{ x: wl, z: halfD * 0.7 },
@@ -272,7 +272,7 @@ export class RapierVehicleController {
 			const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(mx, my, mz));
 			const angle = Math.atan2(seg.p2.x - seg.p1.x, seg.p2.z - seg.p1.z);
 			body.setRotation({ x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) }, true);
-			this.world.createCollider(RAPIER.ColliderDesc.cuboid(0.15, 0.5, hl).setFriction(0.3).setRestitution(0.2), body);
+			this.world.createCollider(RAPIER.ColliderDesc.cuboid(0.15, 50, hl).setFriction(0.3).setRestitution(0.2), body);
 			this.guardrailBodies.push(body);
 		}
 	}
@@ -460,6 +460,36 @@ export class RapierVehicleController {
 	}
 	getSteerAngle(): number {
 		return this.steerAngle;
+	}
+
+	/** Debug info for the ?debug overlay. Returns fresh data each call. */
+	getDebugInfo(): Record<string, unknown> {
+		const pos = this.carBody.translation();
+		const vel = this.carBody.linvel();
+		const av = this.carBody.angvel();
+		const contacts = this.countContacts();
+		const wheelData: string[] = [];
+		for (let i = 0; i < 4; i++) {
+			const inContact = this.vehicle.wheelIsInContact(i);
+			wheelData.push(inContact ? "●" : "○");
+		}
+		return {
+			pos: `${pos.x.toFixed(1)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(1)}`,
+			vel: `${vel.x.toFixed(2)}, ${vel.y.toFixed(2)}, ${vel.z.toFixed(2)}`,
+			angvel: `${av.x.toFixed(3)}, ${av.y.toFixed(3)}, ${av.z.toFixed(3)}`,
+			heading: ((this.getHeading() * 180) / Math.PI).toFixed(1) + "°",
+			speed: this.state.speed.toFixed(1),
+			speedKmh: (Math.abs(this.state.speed) * 3.6).toFixed(0),
+			rpm: this.state.rpm.toFixed(0),
+			gear: this.state.gear,
+			steer: ((this.steerAngle * 180) / Math.PI).toFixed(1) + "°",
+			contacts: `${contacts}/4 [${wheelData.join(" ")}]`,
+			suspRest: this._config.chassis.suspensionRestLength,
+			wheelRadius: this._config.chassis.wheelRadius,
+			wheelY: -this._config.chassis.halfExtents[1] * 0.5,
+			patchCenter: `${this.patchCenterX.toFixed(0)}, ${this.patchCenterZ.toFixed(0)}`,
+			guardrails: this.guardrailBodies.length,
+		};
 	}
 
 	reset(x: number, y: number, z: number, rotation = 0): void {
