@@ -329,17 +329,23 @@ export class RapierVehicleController {
 		const brakeF = this.brakes.getForce(chassis.mass);
 
 		// ── Engine force → rear wheels ──
-		let engF = engine.getWheelForce(
-			gearbox.effectiveRatio,
-			chassis.wheelRadius,
-			chassis.mass * tires.tractionPct * 9.82,
-		);
+		// Traction limit is total for all driven wheels; split per wheel (2 driven)
+		const tractionPerWheel = (chassis.mass * tires.tractionPct * 9.82) / 2;
+		let engF = engine.getWheelForce(gearbox.effectiveRatio, chassis.wheelRadius, tractionPerWheel);
 		if (gearbox.isShifting) engF *= 0.3;
 		if (isReverse) engF = -engineSpec.torqueNm * 0.4;
-		const totalEngF = engF * 2;
-		// Negate engine force: Rapier forward is +Z but model faces -Z
-		this.vehicle.setWheelEngineForce(this.wheelRL, -totalEngF);
-		this.vehicle.setWheelEngineForce(this.wheelRR, -totalEngF);
+
+		// ── Aero drag + rolling resistance ──
+		// IMPORTANT: Do NOT use carBody.addForce() for drag when the vehicle
+		// controller is active. External body forces create a feedback loop with
+		// the tire solver, causing oscillation (push-back feel). Instead, subtract
+		// drag from the engine force so the controller handles everything.
+		const dragF = this.drag.getForce(Math.abs(localVelX));
+		engF = Math.max(0, engF - dragF);
+
+		// Positive engine force pushes in -Z (model forward) per Rapier's wheel convention
+		this.vehicle.setWheelEngineForce(this.wheelRL, engF);
+		this.vehicle.setWheelEngineForce(this.wheelRR, engF);
 
 		// ── Engine braking → rear wheels (retarding force when off-throttle) ──
 		const engineBrakeF =
@@ -348,10 +354,6 @@ export class RapierVehicleController {
 				: 0;
 
 		// ── Brake force → all wheels ──
-		// brakeF is negative (deceleration), setWheelBrake expects positive = brake
-		// NOTE: drag/rolling resistance is NOT applied as wheel brake — it creates
-		// a constant-friction feel. Linear damping on the body handles aero drag;
-		// rolling resistance is handled implicitly by tire friction.
 		const brakeValue = Math.abs(brakeF) + engineBrakeF;
 		const handF = input.handbrake ? chassis.mass * this._config.brakes.handbrakeG * 9.82 : 0;
 		for (let i = 0; i < 4; i++) this.vehicle.setWheelBrake(i, brakeValue + handF);
@@ -359,16 +361,6 @@ export class RapierVehicleController {
 		// ── Steering → front wheels ──
 		this.vehicle.setWheelSteering(this.wheelFL, this.steerAngle);
 		this.vehicle.setWheelSteering(this.wheelFR, this.steerAngle);
-
-		// ── Aero drag as body force (opposes velocity direction) ──
-		const dragF = this.drag.getForce(Math.abs(localVelX));
-		if (dragF > 0.01) {
-			const speedMs2 = vx * vx + vz * vz;
-			if (speedMs2 > 0.0001) {
-				const invSpeed = 1 / Math.sqrt(speedMs2);
-				this.carBody.addForce({ x: -vx * invSpeed * dragF, y: 0, z: -vz * invSpeed * dragF }, true);
-			}
-		}
 
 		// ── Step physics ──
 		this.vehicle.updateVehicle(dt);
