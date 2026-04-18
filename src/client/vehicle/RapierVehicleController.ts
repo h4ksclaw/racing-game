@@ -202,8 +202,8 @@ export class RapierVehicleController {
 			this.vehicle.setWheelSuspensionRelaxation(i, chassis.dampingRelaxation);
 			this.vehicle.setWheelMaxSuspensionTravel(i, susTravel);
 			this.vehicle.setWheelMaxSuspensionForce(i, 100000);
-			this.vehicle.setWheelFrictionSlip(i, 3.0);
-			this.vehicle.setWheelSideFrictionStiffness(i, 4.0);
+			this.vehicle.setWheelFrictionSlip(i, 2.0);
+			this.vehicle.setWheelSideFrictionStiffness(i, 2.5);
 		}
 
 		this.rebuildGroundPatch(0, 0);
@@ -387,6 +387,15 @@ export class RapierVehicleController {
 		// Angular damping on the rigid body (5.0) handles roll/pitch suppression.
 		// No post-step rotation manipulation — avoids the pump/pumpy oscillation
 		// that occurred when we fought Rapier's solver with quaternion lerping.
+
+		// Suppress micro-yaw from tire solver noise when not steering.
+		// The solver generates small asymmetric lateral forces from numerical
+		// noise in ground contact normals, causing the car to slowly yaw.
+		if (Math.abs(this.steerAngle) < 0.01) {
+			const av = this.carBody.angvel();
+			const yawDamp = Math.exp(-15.0 * dt);
+			this.carBody.setAngvel({ x: av.x, y: av.y * yawDamp, z: av.z }, true);
+		}
 
 		// ── Output state ──
 		this.state.speed = localVelX;
