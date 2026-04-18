@@ -290,7 +290,8 @@ export class RapierVehicleController {
 		const ry = rot.y;
 		const rz = rot.z;
 		const heading = Math.atan2(2 * (rw * ry + rz * rx), 1 - 2 * (ry * ry + rx * rx));
-		const localVelX = vz * Math.cos(heading) + vx * Math.sin(heading);
+		// Negated: model faces -Z (GLTF convention), so forward velocity is -Z in world space
+		const localVelX = -(vz * Math.cos(heading) + vx * Math.sin(heading));
 		const speedMs = Math.sqrt(vx * vx + vz * vz);
 		const speedKmh = speedMs * 3.6;
 
@@ -333,8 +334,9 @@ export class RapierVehicleController {
 		if (gearbox.isShifting) engF *= 0.3;
 		if (isReverse) engF = -engineSpec.torqueNm * 0.4;
 		const totalEngF = engF * 2;
-		this.vehicle.setWheelEngineForce(this.wheelRL, totalEngF);
-		this.vehicle.setWheelEngineForce(this.wheelRR, totalEngF);
+		// Negate engine force: Rapier forward is +Z but model faces -Z
+		this.vehicle.setWheelEngineForce(this.wheelRL, -totalEngF);
+		this.vehicle.setWheelEngineForce(this.wheelRR, -totalEngF);
 
 		// ── Brake force → all wheels ──
 		const handF = input.handbrake ? 150 : 0;
