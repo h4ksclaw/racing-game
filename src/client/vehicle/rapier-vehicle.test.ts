@@ -4,11 +4,14 @@ import { SPORTS_CAR } from "./configs.ts";
 import { RapierVehicleController } from "./RapierVehicleController.ts";
 import type { TerrainProvider, VehicleInput } from "./types.ts";
 
-/** Mock terrain that returns a flat height everywhere. */
+/** Mock terrain: getHeight = visual height, physics trimesh = visual + 0.3. */
 class FlatTerrain implements TerrainProvider {
 	constructor(private height = 0) {}
 	getHeight() {
 		return this.height;
+	}
+	get physicsHeight() {
+		return this.height + 0.3;
 	}
 }
 
@@ -33,7 +36,7 @@ describe("RapierVehicleController", () => {
 		v.setTerrain(new FlatTerrain(terrainHeight));
 		// Reset car to a known position on the flat ground
 		const cfg = SPORTS_CAR.chassis;
-		const bodyY = terrainHeight + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1];
+		const bodyY = terrainHeight + 0.3 + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1];
 		v.reset(0, bodyY, 0, 0);
 		return v;
 	}
@@ -57,7 +60,7 @@ describe("RapierVehicleController", () => {
 		const pos = v.getPosition();
 		const cfg = SPORTS_CAR.chassis;
 		// After settling, car should be near: groundY + wheelRadius + suspensionRestLength + connectionOffset
-		const expectedY = cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1];
+		const expectedY = 0.3 + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1];
 		// Allow 0.5m tolerance for suspension compression
 		expect(pos.y).toBeGreaterThan(expectedY - 0.5);
 		expect(pos.y).toBeLessThan(expectedY + 0.5);
@@ -159,9 +162,9 @@ describe("RapierVehicleController", () => {
 		const v = await makeVehicle(terrainHeight);
 		settle(v);
 		const pos = v.getPosition();
-		// Car should be near terrainHeight + expected offset
+		// Car should be near physics surface (terrainHeight + 0.3) + offset
 		const cfg = SPORTS_CAR.chassis;
-		const expectedY = terrainHeight + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1];
+		const expectedY = terrainHeight + 0.3 + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1];
 		expect(pos.y).toBeGreaterThan(expectedY - 0.5);
 		expect(pos.y).toBeLessThan(expectedY + 0.5);
 	});

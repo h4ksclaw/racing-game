@@ -1,83 +1,116 @@
 /**
  * Renders Rapier physics colliders as Three.js wireframes in-world.
- *
- * Uses Rapier's built-in debugRenderPipeline to get vertices+colors,
- * then builds a single LineSegments mesh updated each frame.
- *
- * Rapier's debug colors:
- *   Red/orange  — dynamic bodies (car chassis)
- *   Green       — fixed bodies (ground trimesh, guardrails)
- *   Blue        — kinematic bodies
+ * Uses Rapier's debugRenderPipeline → vertices+colors → LineSegments.
  */
 
 import type RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 
-const MAX_VERTS = 500_000;
+const MAX_VERTS = 600_000;
 
 export class RapierDebugRenderer {
-	private lines: THREE.LineSegments;
-	private geometry: THREE.BufferGeometry;
-	private positions: Float32Array;
-	private colors: Float32Array;
+	private mesh: THREE.LineSegments;
+	private pos: Float32Array;
+	private col: Float32Array;
+	private posAttr: THREE.BufferAttribute;
+	private colAttr: THREE.BufferAttribute;
+	private updateCount = 0;
 
 	constructor(scene: THREE.Scene) {
-		this.positions = new Float32Array(MAX_VERTS * 3);
-		this.colors = new Float32Array(MAX_VERTS * 3);
-		this.geometry = new THREE.BufferGeometry();
-		this.geometry.setAttribute("position", new THREE.Float32BufferAttribute(this.positions, 3));
-		this.geometry.setAttribute("color", new THREE.Float32BufferAttribute(this.colors, 3));
+		this.pos = new Float32Array(MAX_VERTS * 3);
+		this.col = new Float32Array(MAX_VERTS * 3);
+
+		const geom = new THREE.BufferGeometry();
+		this.posAttr = new THREE.Float32BufferAttribute(this.pos, 3);
+		this.colAttr = new THREE.Float32BufferAttribute(this.col, 3);
+		geom.setAttribute("position", this.posAttr);
+		geom.setAttribute("color", this.colAttr);
 
 		const mat = new THREE.LineBasicMaterial({
 			vertexColors: true,
 			depthTest: false,
 			transparent: true,
-			opacity: 0.8,
+			opacity: 0.85,
 		});
 
-		this.lines = new THREE.LineSegments(this.geometry, mat);
-		this.lines.frustumCulled = false;
-		scene.add(this.lines);
+		this.mesh = new THREE.LineSegments(geom, mat);
+		this.mesh.frustumCulled = false;
+		this.mesh.renderOrder = 999;
+
+		// Magenta cross at world origin — proves the renderer is in the scene
+		const cross = new THREE.BufferGeometry();
+		cross.setAttribute(
+			"position",
+			new THREE.Float32BufferAttribute(new Float32Array([0, 0, -10, 0, 0, 10, -10, 0, 0, 10, 0, 0]), 3),
+		);
+		scene.add(new THREE.LineSegments(cross, new THREE.LineBasicMaterial({ color: 0xff00ff, depthTest: false })));
+
+		scene.add(this.mesh);
+		console.log("[rapier-debug] constructor done, added to scene");
 	}
 
-	/** Update wireframe mesh from Rapier world. Call after physics step. */
-	private frameCount = 0;
-
 	update(world: RAPIER.World): void {
-		const buffers = world.debugRender();
-		const verts = buffers.vertices;
-		const cols = buffers.colors;
-		const vertCount = Math.min(verts.length / 3, MAX_VERTS);
-
-		// Log once to confirm we're getting data
-		if (this.frameCount < 3) {
-			console.log(`[debug-render] frame ${this.frameCount}: ${vertCount} verts`);
-			this.frameCount++;
+		this.updateCount++;
+		if (this.updateCount <= 3) {
+			console.log(`[rapier-debug] update #${this.updateCount}`);
 		}
 
-		for (let i = 0; i < vertCount; i++) {
-			this.positions[i * 3] = verts[i * 3];
-			this.positions[i * 3 + 1] = verts[i * 3 + 1];
-			this.positions[i * 3 + 2] = verts[i * 3 + 2];
+		let vertCount = 0;
+		try {
+			const buf = world.debugRender();
+			vertCount = Math.min(buf.vertices.length / 3, MAX_VERTS);
 
-			this.colors[i * 3] = cols[i * 3];
-			this.colors[i * 3 + 1] = cols[i * 3 + 1];
-			this.colors[i * 3 + 2] = cols[i * 3 + 2];
+			for (let i = 0; i < vertCount; i++) {
+				const i3 = i * 3;
+				this.pos[i3] = buf.vertices[i3];
+				this.pos[i3 + 1] = buf.vertices[i3 + 1];
+				this.pos[i3 + 2] = buf.vertices[i3 + 2];
+				this.col[i3] = buf.colors[i3];
+				this.col[i3 + 1] = buf.colors[i3 + 1];
+				this.col[i3 + 2] = buf.colors[i3 + 2];
+			}
+		} catch (e) {
+			console.error("[rapier-debug] debugRender error:", e);
 		}
 
-		// Zero stale verts beyond current data
-		const clearEnd = Math.min(vertCount * 3 + 300, this.positions.length);
-		for (let i = vertCount * 3; i < clearEnd; i++) {
-			this.positions[i] = 0;
-			this.colors[i] = 0;
+		if (this.updateCount <= 3) {
+			// Log bounding box of debug verts to diagnose offset
+			let minY = Infinity,
+				maxY = -Infinity,
+				minX = Infinity,
+				maxX = -Infinity,
+				minZ = Infinity,
+				maxZ = -Infinity;
+			for (let i = 0; i < vertCount; i++) {
+				const x = this.pos[i * 3],
+					y = this.pos[i * 3 + 1],
+					z = this.pos[i * 3 + 2];
+				if (y < minY) minY = y;
+				if (y > maxY) maxY = y;
+				if (x < minX) minX = x;
+				if (x > maxX) maxX = x;
+				if (z < minZ) minZ = z;
+				if (z > maxZ) maxZ = z;
+			}
+			console.log(
+				`[rapier-debug] bbox: x[${minX.toFixed(1)},${maxX.toFixed(1)}] y[${minY.toFixed(1)},${maxY.toFixed(1)}] z[${minZ.toFixed(1)},${maxZ.toFixed(1)}]`,
+			);
+			console.log(`[rapier-debug] ${vertCount} collider verts`);
 		}
 
-		(this.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-		(this.geometry.attributes.color as THREE.BufferAttribute).needsUpdate = true;
-		this.geometry.setDrawRange(0, vertCount);
+		// Zero stale verts
+		const end = Math.min(vertCount * 3 + 600, this.pos.length);
+		for (let i = vertCount * 3; i < end; i++) {
+			this.pos[i] = 0;
+			this.col[i] = 0;
+		}
+
+		this.posAttr.needsUpdate = true;
+		this.colAttr.needsUpdate = true;
+		this.mesh.geometry.setDrawRange(0, vertCount);
 	}
 
 	dispose(): void {
-		this.geometry.dispose();
+		this.mesh.geometry.dispose();
 	}
 }

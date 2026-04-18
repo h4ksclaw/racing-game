@@ -173,7 +173,7 @@ function resetCar(): void {
 	}
 	const s = samples[nearestIdx];
 	const tangentAngle = Math.atan2(s.tangent.x, s.tangent.z);
-	const groundY = world.terrain.getHeight(s.point.x, s.point.z);
+	const groundY = world.terrain.getHeight(s.point.x, s.point.z) + 0.3;
 	// Body center = ground + wheelRadius + suspensionRestLength + wheelConnectionOffset
 	const cfg = vehicle.config.chassis;
 	const bodyY = groundY + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1];
