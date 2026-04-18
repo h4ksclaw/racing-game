@@ -34,6 +34,7 @@ const urlParams = new URLSearchParams(window.location.search);
 const seed = Number(urlParams.get("seed")) || 42;
 const hour = Number(urlParams.get("hour")) || 14;
 const weather = (urlParams.get("weather") as WeatherType) || "clear";
+const perfLow = urlParams.get("perf") === "low";
 
 // ── UI component refs ───────────────────────────────────────────────────
 let uiReady = false;
@@ -287,11 +288,13 @@ async function buildPractice(): Promise<void> {
 		seed,
 		hour,
 		weather,
-		pixelRatioCap: 2,
-		shadowResolution: 2048,
-		shadowExtent: 100,
-		shadowFar: 300,
-		toneMapping: true,
+		pixelRatioCap: perfLow ? 1 : 2,
+		shadowResolution: perfLow ? 512 : 2048,
+		shadowExtent: perfLow ? 50 : 100,
+		shadowFar: perfLow ? 100 : 300,
+		toneMapping: !perfLow,
+		antialias: !perfLow,
+		skipScenery: perfLow,
 	});
 
 	const carParam = urlParams.get("car");

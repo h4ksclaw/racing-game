@@ -48,6 +48,10 @@ export interface WorldOptions {
 	shadowFar?: number;
 	/** Enable ACES filmic tone mapping (default: false) */
 	toneMapping?: boolean;
+	/** Enable antialiasing (default: true) */
+	antialias?: boolean;
+	/** Skip scenery/trees (default: false) */
+	skipScenery?: boolean;
 }
 
 export interface WorldResult {
@@ -82,6 +86,7 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 	const shadowExtent = options.shadowExtent ?? 200;
 	const shadowFar = options.shadowFar ?? 500;
 	const useToneMapping = options.toneMapping ?? false;
+	const useAntialias = options.antialias ?? true;
 
 	state.currentTime = hour;
 	state.currentWeather = weather;
@@ -104,12 +109,12 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 
 	// ── Renderer ──
 	const renderer = new THREE.WebGLRenderer({
-		antialias: true,
+		antialias: useAntialias,
 		powerPreference: "high-performance",
 	});
 	renderer.setSize(window.innerWidth, window.innerHeight);
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio, pixelRatioCap));
-	renderer.shadowMap.enabled = true;
+	renderer.shadowMap.enabled = !options.skipScenery;
 	renderer.shadowMap.type = THREE.PCFShadowMap;
 	if (useToneMapping) {
 		renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -210,22 +215,24 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 		const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
 		await loadLightModel(new GLTFLoader(), biome.lightModel);
 	}
-	const scenery = generateScenery(trackData.seed, trackData.samples, {
-		treeTypes: biome.treeTypes,
-		grassTypes: biome.grassTypes,
-		treeDensity: biome.treeDensity,
-		grassDensity: biome.grassDensity,
-		rockDensity: biome.rockDensity,
-		avoidZones:
-			houseItems.length > 0
-				? houseItems.map((h) => ({
-						x: h.position.x,
-						z: h.position.z,
-						radius: (biome.houses?.flattenRadius ?? 10) + 2,
-					}))
-				: undefined,
-	});
-	scene.add(buildInstancedScenery(scenery, terrain));
+	const scenery = options.skipScenery
+		? []
+		: generateScenery(trackData.seed, trackData.samples, {
+				treeTypes: biome.treeTypes,
+				grassTypes: biome.grassTypes,
+				treeDensity: biome.treeDensity,
+				grassDensity: biome.grassDensity,
+				rockDensity: biome.rockDensity,
+				avoidZones:
+					houseItems.length > 0
+						? houseItems.map((h) => ({
+								x: h.position.x,
+								z: h.position.z,
+								radius: (biome.houses?.flattenRadius ?? 10) + 2,
+							}))
+						: undefined,
+			});
+	if (!options.skipScenery) scene.add(buildInstancedScenery(scenery, terrain));
 
 	// ── Cloud layer ──
 	const clouds = buildCloudLayer();
