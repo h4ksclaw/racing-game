@@ -357,8 +357,8 @@ export class RapierVehicleController {
 		for (let i = 0; i < 4; i++) this.vehicle.setWheelBrake(i, brakeValue + handF);
 
 		// ── Steering → front wheels ──
-		this.vehicle.setWheelSteering(this.wheelFL, -this.steerAngle);
-		this.vehicle.setWheelSteering(this.wheelFR, -this.steerAngle);
+		this.vehicle.setWheelSteering(this.wheelFL, this.steerAngle);
+		this.vehicle.setWheelSteering(this.wheelFR, this.steerAngle);
 
 		// ── Step physics ──
 		this.vehicle.updateVehicle(dt);
