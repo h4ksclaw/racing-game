@@ -16,7 +16,7 @@
  *   - Gearbox (auto-shift, shift timing)
  *   - Brakes (brake + handbrake model)
  *
- * Coordinate convention matches Rapier: Y-up, Z-forward.
+ * Coordinate convention: Rapier Y-up, car faces +Z (front wheels at +Z).
  */
 
 import RAPIER from "@dimforge/rapier3d-compat";
@@ -293,7 +293,7 @@ export class RapierVehicleController {
 		const ry = rot.y;
 		const rz = rot.z;
 		const heading = Math.atan2(2 * (rw * ry + rz * rx), 1 - 2 * (ry * ry + rx * rx));
-		// Negated: model faces -Z (GLTF convention), so forward velocity is -Z in world space
+		// Forward velocity: dot product of world velocity with car's forward direction (+Z at heading=0)
 		const localVelX = vz * Math.cos(heading) + vx * Math.sin(heading);
 		const speedMs = Math.sqrt(vx * vx + vz * vz);
 		const speedKmh = speedMs * 3.6;
