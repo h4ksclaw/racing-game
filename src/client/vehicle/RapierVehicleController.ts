@@ -20,6 +20,7 @@
  */
 
 import RAPIER from "@dimforge/rapier3d-compat";
+import { DragModel } from "./aero/DragModel.ts";
 import type { CarConfig } from "./configs.ts";
 import { EngineUnit } from "./engine/EngineUnit.ts";
 import { Brakes } from "./suspension/Brakes.ts";
@@ -97,6 +98,7 @@ export class RapierVehicleController {
 
 	private readonly engineUnit: EngineUnit;
 	private readonly brakes: Brakes;
+	private readonly drag: DragModel;
 	private readonly _config: CarConfig;
 
 	private terrain: TerrainProvider | null = null;
@@ -133,6 +135,7 @@ export class RapierVehicleController {
 		this._config = config;
 		this.engineUnit = new EngineUnit(config.engine, config.gearbox, config.chassis.wheelRadius);
 		this.brakes = new Brakes(config.brakes);
+		this.drag = new DragModel(config.drag);
 		this.state = {
 			speed: 0,
 			rpm: config.engine.idleRPM,
@@ -338,9 +341,20 @@ export class RapierVehicleController {
 		this.vehicle.setWheelEngineForce(this.wheelRL, -totalEngF);
 		this.vehicle.setWheelEngineForce(this.wheelRR, -totalEngF);
 
+		// ── Engine braking → rear wheels (retarding force when off-throttle) ──
+		const engineBrakeF =
+			!input.forward && localVelX > 0.1
+				? engine.config.engineBraking * (engine.rpm / engine.config.maxRPM) * chassis.mass
+				: 0;
+
+		// ── Rolling resistance → all wheels ──
+		const dragF = this.drag.getForce(Math.abs(localVelX));
+
 		// ── Brake force → all wheels ──
-		const handF = input.handbrake ? 150 : 0;
-		for (let i = 0; i < 4; i++) this.vehicle.setWheelBrake(i, -brakeF + handF);
+		// brakeF is negative (deceleration), setWheelBrake expects positive = brake
+		const brakeValue = Math.abs(brakeF) + engineBrakeF + dragF;
+		const handF = input.handbrake ? chassis.mass * this._config.brakes.handbrakeG * 9.82 : 0;
+		for (let i = 0; i < 4; i++) this.vehicle.setWheelBrake(i, brakeValue + handF);
 
 		// ── Steering → front wheels ──
 		this.vehicle.setWheelSteering(this.wheelFL, -this.steerAngle);
