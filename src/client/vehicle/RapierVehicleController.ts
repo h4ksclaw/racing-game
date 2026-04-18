@@ -58,7 +58,7 @@ function buildTerrainTrimesh(
 			const x = minX + col * step;
 			const y = terrain.getHeight(x, z);
 			vertices[vi++] = x;
-			vertices[vi++] = y;
+			vertices[vi++] = y + 0.3; // offset: getHeight() subtracts 0.3, physics needs actual surface
 			vertices[vi++] = z;
 		}
 	}
@@ -360,12 +360,22 @@ export class RapierVehicleController {
 			this.pendingGuardrailUpdate = null;
 		}
 
-		// ── Post-step: kill roll/pitch, keep only yaw ──
+		// ── Post-step: gently kill roll/pitch, keep yaw ──
 		const r2 = this.carBody.rotation();
 		const yaw2 = Math.atan2(2 * (r2.w * r2.y + r2.z * r2.x), 1 - 2 * (r2.y * r2.y + r2.x * r2.x));
-		this.carBody.setRotation({ x: 0, y: Math.sin(yaw2 / 2), z: 0, w: Math.cos(yaw2 / 2) }, true);
+		const targetQ = { x: 0, y: Math.sin(yaw2 / 2), z: 0, w: Math.cos(yaw2 / 2) };
+		const lf = 0.15;
+		this.carBody.setRotation(
+			{
+				x: r2.x + (targetQ.x - r2.x) * lf,
+				y: r2.y + (targetQ.y - r2.y) * lf,
+				z: r2.z + (targetQ.z - r2.z) * lf,
+				w: r2.w + (targetQ.w - r2.w) * lf,
+			},
+			true,
+		);
 		const av = this.carBody.angvel();
-		this.carBody.setAngvel({ x: 0, y: av.y, z: 0 }, true);
+		this.carBody.setAngvel({ x: av.x * (1 - lf), y: av.y, z: av.z * (1 - lf) }, true);
 
 		// ── Output state ──
 		this.state.speed = localVelX;
