@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { AudioBus } from "./audio/AudioBus.ts";
 import { deriveSoundConfig } from "./audio/audio-profiles.ts";
+import { RapierDebugRenderer } from "./rapier-debug-renderer.ts";
 import { state } from "./scene.ts";
 import { applyTimeOfDay } from "./sky.ts";
 import { updateTerrainShadows } from "./terrain.ts";
@@ -151,6 +152,7 @@ window.addEventListener("keyup", (e) => {
 // ── Vehicle ─────────────────────────────────────────────────────────────
 let vehicle: RapierVehicleController;
 let renderer: VehicleRenderer | null = null;
+let physicsDebug: RapierDebugRenderer | null = null;
 let world: WorldResult | null = null;
 let engineAudio: import("./audio/EngineAudio.ts").EngineAudio | null = null;
 
@@ -352,6 +354,11 @@ async function buildPractice(): Promise<void> {
 
 	initUI();
 
+	// Initialize physics wireframe debug renderer
+	if (debugMode) {
+		physicsDebug = new RapierDebugRenderer(world.scene);
+	}
+
 	if (loading) loading.visible = false;
 
 	uiReady = true;
@@ -472,6 +479,7 @@ function animate(): void {
 	// Debug overlay
 	if (debugMode && vehicle) {
 		updateDebugOverlay(vehicle);
+		if (physicsDebug) physicsDebug.update(vehicle.rapierWorld);
 	}
 
 	if (state.composer) {

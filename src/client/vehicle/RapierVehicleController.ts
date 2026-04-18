@@ -534,6 +534,11 @@ export class RapierVehicleController {
 	get config(): CarConfig {
 		return this._config;
 	}
+
+	/** Expose the Rapier world for debug rendering. */
+	get rapierWorld(): RAPIER.World {
+		return this.world;
+	}
 	initAudio(): void {}
 	async loadModel(): Promise<null> {
 		return null;
