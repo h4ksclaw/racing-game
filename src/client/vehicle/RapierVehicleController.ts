@@ -16,7 +16,6 @@
  */
 
 import RAPIER from "@dimforge/rapier3d-compat";
-import { DragModel } from "./aero/DragModel.ts";
 import type { CarConfig } from "./configs.ts";
 import { EngineUnit } from "./engine/EngineUnit.ts";
 import { Brakes } from "./suspension/Brakes.ts";
@@ -36,7 +35,6 @@ export class RapierVehicleController {
 
 	private readonly engineUnit: EngineUnit;
 	private readonly brakes: Brakes;
-	private readonly drag: DragModel;
 	private readonly _config: CarConfig;
 
 	private terrain: TerrainProvider | null = null;
@@ -59,7 +57,6 @@ export class RapierVehicleController {
 		this._config = config;
 		this.engineUnit = new EngineUnit(config.engine, config.gearbox, config.chassis.wheelRadius);
 		this.brakes = new Brakes(config.brakes);
-		this.drag = new DragModel(config.drag);
 		this.state = {
 			speed: 0,
 			rpm: config.engine.idleRPM,
@@ -208,9 +205,30 @@ export class RapierVehicleController {
 		const engine = this.engineUnit.engine;
 		const gearbox = this.engineUnit.gearbox;
 
-		// 1. Steering
+		// ── Read physics state (copy values immediately, don't hold WASM refs) ──
+		const pos = this.carBody.translation();
 		const vel = this.carBody.linvel();
-		const speedKmh = Math.sqrt(vel.x ** 2 + vel.z ** 2) * 3.6;
+		const vx = vel.x;
+		const vz = vel.z;
+		const rot = this.carBody.rotation();
+		const rw = rot.w;
+		const rx = rot.x;
+		const ry = rot.y;
+		const rz = rot.z;
+		const heading = Math.atan2(2 * (rw * ry + rz * rx), 1 - 2 * (ry * ry + rx * rx));
+		const localVelX = vz * Math.cos(heading) + vx * Math.sin(heading);
+		const speedMs = Math.sqrt(vx * vx + vz * vz);
+		const speedKmh = speedMs * 3.6;
+
+		// ── Update ground BEFORE physics step (not after) ──
+		const gdx = pos.x - this.lastGroundX;
+		const gdz = pos.z - this.lastGroundZ;
+		if (gdx * gdx + gdz * gdz > this.GROUND_RESAMPLE_DIST * this.GROUND_RESAMPLE_DIST) {
+			this.rebuildGroundPatch(pos.x, pos.z);
+		}
+		this.updateGuardrails(pos.x, pos.z);
+
+		// ── Steering ──
 		const speedRed = Math.max(0.15, 1 - (speedKmh / 140) ** 1.5);
 		const targetSteer = ((input.left ? 1 : 0) - (input.right ? 1 : 0)) * chassis.maxSteerAngle * speedRed;
 		const maxD = this.STEER_SPEED * dt;
@@ -218,20 +236,18 @@ export class RapierVehicleController {
 		this.steerAngle = Math.abs(sd) < maxD ? targetSteer : this.steerAngle + Math.sign(sd) * maxD;
 		this.state.steeringAngle = this.steerAngle;
 
-		// 2. Engine + gearbox
-		const heading = this.getHeading();
-		const localVelX = vel.z * Math.cos(heading) + vel.x * Math.sin(heading);
+		// ── Engine + gearbox ──
 		const isReverse = !!input.backward && !input.forward && localVelX < 1.0;
 		engine.throttle = input.forward ? 1 : isReverse ? 0.5 : 0;
 		gearbox.update(dt, engine, localVelX, false);
 		engine.update(localVelX, gearbox.effectiveRatio, chassis.wheelRadius, dt);
 
-		// 3. Brakes
+		// ── Brakes ──
 		this.brakes.isBraking = !!input.backward && !input.forward && localVelX > 0.1;
 		this.brakes.isHandbrake = !!input.handbrake;
 		const brakeF = this.brakes.getForce(chassis.mass);
 
-		// 4. Engine force → rear wheels
+		// ── Engine force → rear wheels ──
 		let engF = engine.getWheelForce(
 			gearbox.effectiveRatio,
 			chassis.wheelRadius,
@@ -239,48 +255,32 @@ export class RapierVehicleController {
 		);
 		if (gearbox.isShifting) engF *= 0.3;
 		if (isReverse) engF = -engineSpec.torqueNm * 0.4;
-		const rEngF = engF * 5;
-		this.vehicle.setWheelEngineForce(this.wheelRL, rEngF);
-		this.vehicle.setWheelEngineForce(this.wheelRR, rEngF);
+		this.vehicle.setWheelEngineForce(this.wheelRL, engF);
+		this.vehicle.setWheelEngineForce(this.wheelRR, engF);
 
-		// 5. Brake force → all wheels
+		// ── Brake force → all wheels ──
 		const handF = input.handbrake ? 150 : 0;
-		for (let i = 0; i < 4; i++) this.vehicle.setWheelBrake(i, brakeF * 2 + handF);
+		for (let i = 0; i < 4; i++) this.vehicle.setWheelBrake(i, brakeF + handF);
 
-		// 6. Steering → front wheels
+		// ── Steering → front wheels ──
 		this.vehicle.setWheelSteering(this.wheelFL, this.steerAngle);
 		this.vehicle.setWheelSteering(this.wheelFR, this.steerAngle);
 
-		// 7. Aero drag
-		const dragF = -this.drag.getForce(localVelX);
-		this.carBody.addForce({ x: dragF * Math.sin(heading), y: 0, z: dragF * Math.cos(heading) }, true);
-
-		// 8. Step physics
+		// ── Step physics ──
 		this.vehicle.updateVehicle(dt);
 		this.world.step();
 
-		// 9. Kill roll/pitch — keep only yaw
-		const r = this.carBody.rotation();
-		const yaw = Math.atan2(2 * (r.w * r.y + r.z * r.x), 1 - 2 * (r.y * r.y + r.x * r.x));
-		this.carBody.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true);
+		// ── Post-step: kill roll/pitch, keep only yaw ──
+		const r2 = this.carBody.rotation();
+		const yaw2 = Math.atan2(2 * (r2.w * r2.y + r2.z * r2.x), 1 - 2 * (r2.y * r2.y + r2.x * r2.x));
+		this.carBody.setRotation({ x: 0, y: Math.sin(yaw2 / 2), z: 0, w: Math.cos(yaw2 / 2) }, true);
 		const av = this.carBody.angvel();
 		this.carBody.setAngvel({ x: 0, y: av.y, z: 0 }, true);
 
-		// 10. Follow car with ground (only rebuild when moved far enough)
-		const np = this.carBody.translation();
-		const dx = np.x - this.lastGroundX;
-		const dz = np.z - this.lastGroundZ;
-		if (dx * dx + dz * dz > this.GROUND_RESAMPLE_DIST * this.GROUND_RESAMPLE_DIST) {
-			this.rebuildGroundPatch(np.x, np.z);
-		}
-		this.updateGuardrails(np.x, np.z);
-
-		// 11. Output state
-		const nv = this.carBody.linvel();
-		const nlv = nv.z * Math.cos(this.getHeading()) + nv.x * Math.sin(this.getHeading());
-		this.state.speed = nlv;
+		// ── Output state ──
+		this.state.speed = localVelX;
 		this.state.rpm = engine.rpm;
-		this.state.gear = isReverse && nlv < -0.1 ? -1 : gearbox.currentGear + 1;
+		this.state.gear = isReverse && localVelX < -0.1 ? -1 : gearbox.currentGear + 1;
 		this.state.throttle = engine.throttle;
 		this.state.brake = this.brakes.brakePressure;
 		this.state.onGround = this.countContacts() > 0;
@@ -295,7 +295,7 @@ export class RapierVehicleController {
 			throttle: engine.throttle,
 			load: engine.load,
 			boost: this.engineUnit.isTurbo ? this.boostCalc() : 0,
-			speed: nlv,
+			speed: localVelX,
 			isShifting: gearbox.isShifting,
 			revLimited: engine.revLimited,
 			isTurbo: this.engineUnit.isTurbo,
