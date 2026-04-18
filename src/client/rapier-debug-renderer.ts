@@ -30,7 +30,9 @@ export class RapierDebugRenderer {
 
 		const mat = new THREE.LineBasicMaterial({
 			vertexColors: true,
-			depthTest: true,
+			depthTest: false,
+			transparent: true,
+			opacity: 0.8,
 		});
 
 		this.lines = new THREE.LineSegments(this.geometry, mat);
@@ -39,12 +41,19 @@ export class RapierDebugRenderer {
 	}
 
 	/** Update wireframe mesh from Rapier world. Call after physics step. */
+	private frameCount = 0;
+
 	update(world: RAPIER.World): void {
 		const buffers = world.debugRender();
 		const verts = buffers.vertices;
 		const cols = buffers.colors;
-
 		const vertCount = Math.min(verts.length / 3, MAX_VERTS);
+
+		// Log once to confirm we're getting data
+		if (this.frameCount < 3) {
+			console.log(`[debug-render] frame ${this.frameCount}: ${vertCount} verts`);
+			this.frameCount++;
+		}
 
 		for (let i = 0; i < vertCount; i++) {
 			this.positions[i * 3] = verts[i * 3];
