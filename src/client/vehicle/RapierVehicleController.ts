@@ -6,11 +6,15 @@
  *   - Rigid body dynamics (3D forces, inertia, collision)
  *   - Built-in collision detection (walls, guardrails, car-vs-car)
  *
+ * Terrain collision uses a local trimesh patch sampled from TerrainProvider.getHeight().
+ * The patch is a grid of triangles centered on the car, rebuilt when the car moves
+ * far enough from the patch center. This gives smooth, seam-free driving over
+ * the actual terrain geometry — no flat cuboids or height discontinuities.
+ *
  * Keeps our game-feel modules:
  *   - EngineUnit (RPM, torque curves, rev limiter, turbo)
  *   - Gearbox (auto-shift, shift timing)
  *   - Brakes (brake + handbrake model)
- *   - DragModel (aero + rolling resistance)
  *
  * Coordinate convention matches Rapier: Y-up, Z-forward.
  */
@@ -22,6 +26,64 @@ import { Brakes } from "./suspension/Brakes.ts";
 import type { EngineTelemetry, TerrainProvider, VehicleInput, VehicleState } from "./types.ts";
 
 export type { TerrainProvider, VehicleInput } from "./types.ts";
+
+/**
+ * Build a trimesh from a terrain grid.
+ * Creates a (cols+1)×(rows+1) vertex grid over [minX..maxX] × [minZ..maxZ],
+ * samples getHeight at each vertex, then triangulates into two triangles per cell.
+ */
+function buildTerrainTrimesh(
+	terrain: TerrainProvider,
+	centerX: number,
+	centerZ: number,
+	size: number,
+	resolution: number,
+): { vertices: Float32Array; indices: Uint32Array } {
+	const cols = Math.ceil(size / resolution);
+	const rows = Math.ceil(size / resolution);
+	const vertexCount = (cols + 1) * (rows + 1);
+	const vertices = new Float32Array(vertexCount * 3);
+	const indices = new Uint32Array(cols * rows * 6);
+
+	const halfSize = size / 2;
+	const minX = centerX - halfSize;
+	const minZ = centerZ - halfSize;
+	const step = size / cols;
+
+	// Fill vertices
+	let vi = 0;
+	for (let row = 0; row <= rows; row++) {
+		const z = minZ + row * step;
+		for (let col = 0; col <= cols; col++) {
+			const x = minX + col * step;
+			const y = terrain.getHeight(x, z);
+			vertices[vi++] = x;
+			vertices[vi++] = y;
+			vertices[vi++] = z;
+		}
+	}
+
+	// Fill indices (two triangles per cell)
+	let ii = 0;
+	for (let row = 0; row < rows; row++) {
+		for (let col = 0; col < cols; col++) {
+			const tl = row * (cols + 1) + col;
+			const tr = tl + 1;
+			const bl = tl + (cols + 1);
+			const br = bl + 1;
+			// Triangle 1: top-left, bottom-left, top-right
+			indices[ii++] = tl;
+			indices[ii++] = bl;
+			indices[ii++] = tr;
+			// Triangle 2: top-right, bottom-left, bottom-right
+			indices[ii++] = tr;
+			indices[ii++] = bl;
+			indices[ii++] = br;
+		}
+	}
+
+	return { vertices, indices };
+}
 
 export class RapierVehicleController {
 	private world!: RAPIER.World;
@@ -38,13 +100,27 @@ export class RapierVehicleController {
 	private readonly _config: CarConfig;
 
 	private terrain: TerrainProvider | null = null;
+
+	// ── Terrain trimesh patch ──
 	private groundBody: RAPIER.RigidBody | null = null;
-	private lastGroundX = Number.POSITIVE_INFINITY;
-	private lastGroundZ = Number.POSITIVE_INFINITY;
-	private readonly GROUND_SIZE = 100; // meters per side
-	private readonly GROUND_RESAMPLE_DIST = 5; // rebuild when car moves this far
+	private patchCenterX = Number.POSITIVE_INFINITY;
+	private patchCenterZ = Number.POSITIVE_INFINITY;
+	/** Patch size in meters (square). 200m = 100m in each direction. */
+	private readonly PATCH_SIZE = 200;
+	/** Grid resolution in meters per cell. 2m = smooth enough for road driving. */
+	private readonly PATCH_RESOLUTION = 2;
+	/** Rebuild when car moves this far from patch center. */
+	private readonly PATCH_REBUILD_DIST = 60;
+	/** Extra margin beyond patch edge before forcing rebuild. */
+	private readonly PATCH_EDGE_MARGIN = 30;
+
+	// ── Guardrails ──
 	private guardrailBodies: RAPIER.RigidBody[] = [];
 	private lastGuardrailHash = "";
+
+	// ── Deferred rebuilds (applied AFTER world.step() to avoid WASM aliasing) ──
+	private pendingGroundRebuild: { x: number; z: number } | null = null;
+	private pendingGuardrailUpdate: { x: number; z: number } | null = null;
 
 	state: VehicleState;
 	telemetry: EngineTelemetry;
@@ -144,24 +220,30 @@ export class RapierVehicleController {
 		}
 	}
 
+	/**
+	 * Rebuild the terrain trimesh collider from a grid of getHeight() samples.
+	 * This creates a smooth, continuous mesh that exactly matches the visual terrain.
+	 * At 2m resolution over 200m: 101×101 = ~10K vertices, ~20K triangles.
+	 */
 	private rebuildGroundPatch(cx: number, cz: number): void {
+		// Remove old ground body (collider is removed with it)
 		if (this.groundBody) {
 			this.world.removeRigidBody(this.groundBody);
 			this.groundBody = null;
 		}
 		if (!this.terrain) return;
 
-		// Use a flat cuboid positioned at the terrain height under the car.
-		// This is simple and works for relatively flat terrain.
-		// The car drives on the road, so getHeight returns the road height.
-		const h = this.terrain.getHeight(cx, cz);
-		const half = this.GROUND_SIZE / 2;
+		const { vertices, indices } = buildTerrainTrimesh(this.terrain, cx, cz, this.PATCH_SIZE, this.PATCH_RESOLUTION);
 
-		this.groundBody = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(cx, h - 0.5, cz));
-		this.world.createCollider(RAPIER.ColliderDesc.cuboid(half, 0.5, half).setFriction(0.8), this.groundBody);
+		// Create a fixed body at origin — the trimesh vertices are in world space
+		this.groundBody = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+		this.world.createCollider(
+			RAPIER.ColliderDesc.trimesh(vertices, indices).setFriction(0.8).setRestitution(0.0),
+			this.groundBody,
+		);
 
-		this.lastGroundX = cx;
-		this.lastGroundZ = cz;
+		this.patchCenterX = cx;
+		this.patchCenterZ = cz;
 	}
 
 	private updateGuardrails(cx: number, cz: number): void {
@@ -220,13 +302,16 @@ export class RapierVehicleController {
 		const speedMs = Math.sqrt(vx * vx + vz * vz);
 		const speedKmh = speedMs * 3.6;
 
-		// ── Update ground BEFORE physics step (not after) ──
-		const gdx = pos.x - this.lastGroundX;
-		const gdz = pos.z - this.lastGroundZ;
-		if (gdx * gdx + gdz * gdz > this.GROUND_RESAMPLE_DIST * this.GROUND_RESAMPLE_DIST) {
-			this.rebuildGroundPatch(pos.x, pos.z);
+		// ── Check if terrain patch needs rebuild ──
+		const dx = pos.x - this.patchCenterX;
+		const dz = pos.z - this.patchCenterZ;
+		const distFromCenter = Math.sqrt(dx * dx + dz * dz);
+		// Rebuild if car moved >60m from center, OR if car is within 30m of patch edge
+		const distFromEdge = this.PATCH_SIZE / 2 - distFromCenter;
+		if (distFromCenter > this.PATCH_REBUILD_DIST || distFromEdge < this.PATCH_EDGE_MARGIN) {
+			this.pendingGroundRebuild = { x: pos.x, z: pos.z };
 		}
-		this.updateGuardrails(pos.x, pos.z);
+		this.pendingGuardrailUpdate = { x: pos.x, z: pos.z };
 
 		// ── Steering ──
 		const speedRed = Math.max(0.15, 1 - (speedKmh / 140) ** 1.5);
@@ -255,8 +340,9 @@ export class RapierVehicleController {
 		);
 		if (gearbox.isShifting) engF *= 0.3;
 		if (isReverse) engF = -engineSpec.torqueNm * 0.4;
-		this.vehicle.setWheelEngineForce(this.wheelRL, engF);
-		this.vehicle.setWheelEngineForce(this.wheelRR, engF);
+		const totalEngF = engF * 2;
+		this.vehicle.setWheelEngineForce(this.wheelRL, totalEngF);
+		this.vehicle.setWheelEngineForce(this.wheelRR, totalEngF);
 
 		// ── Brake force → all wheels ──
 		const handF = input.handbrake ? 150 : 0;
@@ -269,6 +355,16 @@ export class RapierVehicleController {
 		// ── Step physics ──
 		this.vehicle.updateVehicle(dt);
 		this.world.step();
+
+		// ── Post-step: rebuild ground/guardrails (safe after step) ──
+		if (this.pendingGroundRebuild) {
+			this.rebuildGroundPatch(this.pendingGroundRebuild.x, this.pendingGroundRebuild.z);
+			this.pendingGroundRebuild = null;
+		}
+		if (this.pendingGuardrailUpdate) {
+			this.updateGuardrails(this.pendingGuardrailUpdate.x, this.pendingGuardrailUpdate.z);
+			this.pendingGuardrailUpdate = null;
+		}
 
 		// ── Post-step: kill roll/pitch, keep only yaw ──
 		const r2 = this.carBody.rotation();
@@ -370,7 +466,10 @@ export class RapierVehicleController {
 			onGround: true,
 		};
 		this.telemetry = this.engineUnit.getTelemetry(0);
-		if (this.terrain) this.rebuildGroundPatch(x, z);
+		// Force immediate ground rebuild at reset position
+		if (this.terrain) {
+			this.rebuildGroundPatch(x, z);
+		}
 	}
 
 	// ── Stub properties for practice.ts compatibility ──
