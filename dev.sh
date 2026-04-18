@@ -34,7 +34,7 @@ fi
 
 # Start Cloudflare tunnel
 echo "[3/3] Starting Cloudflare tunnel..."
-/tmp/cloudflared tunnel --url http://127.0.0.1:3000 > /tmp/cloudflared.log 2>&1 &
+cloudflared tunnel --url http://127.0.0.1:3000 > /tmp/cloudflared.log 2>&1 &
 sleep 5
 
 # Extract URL

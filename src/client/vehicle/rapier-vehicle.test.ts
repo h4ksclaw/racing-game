@@ -78,6 +78,32 @@ describe("RapierVehicleController", () => {
 		expect(speedAfter).toBeGreaterThan(0.5); // Should be moving at least 0.5 m/s
 	});
 
+	it("throttle produces positive speed (W = forward)", async () => {
+		const v = await makeVehicle(0);
+		settle(v);
+
+		// Apply throttle for 120 frames (2 seconds)
+		for (let i = 0; i < 120; i++) {
+			v.update(flatInput({ forward: true }), 1 / 60);
+		}
+
+		// Speed should be positive (forward), not negative (backward)
+		expect(v.state.speed).toBeGreaterThan(1.0);
+	});
+
+	it("reverse produces negative speed (S = backward)", async () => {
+		const v = await makeVehicle(0);
+		settle(v);
+
+		// Apply reverse for 120 frames
+		for (let i = 0; i < 120; i++) {
+			v.update(flatInput({ backward: true }), 1 / 60);
+		}
+
+		// Speed should be negative (reverse)
+		expect(v.state.speed).toBeLessThan(-0.5);
+	});
+
 	it("car turns when steering input applied", async () => {
 		const v = await makeVehicle(0);
 		// Get the car moving first

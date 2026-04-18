@@ -294,7 +294,7 @@ export class RapierVehicleController {
 		const rz = rot.z;
 		const heading = Math.atan2(2 * (rw * ry + rz * rx), 1 - 2 * (ry * ry + rx * rx));
 		// Negated: model faces -Z (GLTF convention), so forward velocity is -Z in world space
-		const localVelX = -(vz * Math.cos(heading) + vx * Math.sin(heading));
+		const localVelX = vz * Math.cos(heading) + vx * Math.sin(heading);
 		const speedMs = Math.sqrt(vx * vx + vz * vz);
 		const speedKmh = speedMs * 3.6;
 
@@ -333,19 +333,25 @@ export class RapierVehicleController {
 		const tractionPerWheel = (chassis.mass * tires.tractionPct * 9.82) / 2;
 		let engF = engine.getWheelForce(gearbox.effectiveRatio, chassis.wheelRadius, tractionPerWheel);
 		if (gearbox.isShifting) engF *= 0.3;
-		if (isReverse) engF = -engineSpec.torqueNm * 0.4;
+		if (isReverse) engF = -(engineSpec.torqueNm * 0.4);
 
-		// ── Aero drag + rolling resistance ──
+		// ── Aero drag ──
 		// IMPORTANT: Do NOT use carBody.addForce() for drag when the vehicle
 		// controller is active. External body forces create a feedback loop with
-		// the tire solver, causing oscillation (push-back feel). Instead, subtract
-		// drag from the engine force so the controller handles everything.
-		const dragF = this.drag.getForce(Math.abs(localVelX));
-		engF = Math.max(0, engF - dragF);
+		// the tire solver, causing oscillation (push-back feel). Subtract aero
+		// drag from engine force instead.
+		// Note: rolling resistance is handled by engine braking when off-throttle.
+		const aeroF = this.drag.config.aeroDrag * Math.abs(localVelX) * Math.abs(localVelX);
+		if (engF >= 0) {
+			engF = Math.max(0, engF - aeroF);
+		} else {
+			engF = Math.min(0, engF + aeroF);
+		}
 
-		// Positive engine force pushes in -Z (model forward) per Rapier's wheel convention
-		this.vehicle.setWheelEngineForce(this.wheelRL, engF);
-		this.vehicle.setWheelEngineForce(this.wheelRR, engF);
+		// Rapier's wheel cross product (axle × suspension) gives rolling direction = -Z,
+		// but our car faces +Z. Negate so positive engF pushes forward (+Z).
+		this.vehicle.setWheelEngineForce(this.wheelRL, -engF);
+		this.vehicle.setWheelEngineForce(this.wheelRR, -engF);
 
 		// ── Engine braking → rear wheels (retarding force when off-throttle) ──
 		const engineBrakeF =
@@ -396,6 +402,7 @@ export class RapierVehicleController {
 
 		// ── Output state ──
 		this.state.speed = localVelX;
+
 		this.state.rpm = engine.rpm;
 		this.state.gear = isReverse && localVelX < -0.1 ? -1 : gearbox.currentGear + 1;
 		this.state.throttle = engine.throttle;
