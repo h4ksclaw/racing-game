@@ -38,6 +38,7 @@
     "vitest": "^4.1.4"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "express": "^5.2.1",
     "lit": "^3.3.2",
     "simplex-noise": "^4.0.3",

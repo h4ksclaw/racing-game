@@ -24,7 +24,8 @@ import type { SpeedTrap } from "./ui/speed-trap.ts";
 import type { SteerIndicator } from "./ui/steer-indicator.ts";
 import type { WeatherType } from "./utils.ts";
 import { SPORTS_CAR } from "./vehicle/configs.ts";
-import { DEFAULT_INPUT, VehicleController, type VehicleInput } from "./vehicle/index.ts";
+import { DEFAULT_INPUT, RapierVehicleController, type VehicleInput } from "./vehicle/index.ts";
+import { VehicleRenderer } from "./vehicle/VehicleRenderer.ts";
 import { updateWeather } from "./weather.ts";
 import { buildWorld, type WorldResult } from "./world.ts";
 
@@ -146,8 +147,10 @@ window.addEventListener("keyup", (e) => {
 });
 
 // ── Vehicle ─────────────────────────────────────────────────────────────
-let vehicle: VehicleController;
+let vehicle: RapierVehicleController;
+let renderer: VehicleRenderer | null = null;
 let world: WorldResult | null = null;
+let engineAudio: import("./audio/EngineAudio.ts").EngineAudio | null = null;
 
 function resetCar(): void {
 	if (!world || !vehicle) return;
@@ -167,7 +170,10 @@ function resetCar(): void {
 	const s = samples[nearestIdx];
 	const tangentAngle = Math.atan2(s.tangent.x, s.tangent.z);
 	const groundY = world.terrain.getHeight(s.point.x, s.point.z);
-	vehicle.reset(s.point.x, groundY + 2, s.point.z, tangentAngle);
+	// Body center = ground + wheelRadius + suspensionRestLength + wheelConnectionOffset
+	const cfg = vehicle.config.chassis;
+	const bodyY = groundY + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1] * 0.5;
+	vehicle.reset(s.point.x, bodyY, s.point.z, tangentAngle);
 	camMode = "chase";
 }
 
@@ -292,8 +298,17 @@ async function buildPractice(): Promise<void> {
 	const customCfg = loadCustomConfig();
 	const carConfig =
 		customCfg && (carParam === "custom" || !carParam) ? applyOverrides(SPORTS_CAR, customCfg) : SPORTS_CAR;
-	vehicle = new VehicleController(carConfig);
-	const carModel = await vehicle.loadModel();
+
+	// Create Rapier vehicle controller
+	vehicle = new RapierVehicleController(carConfig);
+	await vehicle.init();
+	vehicle.setTerrain(world.terrain);
+
+	// Create renderer for visuals (separate from physics)
+	renderer = new VehicleRenderer(carConfig);
+	const carModel = await renderer.loadModel(() => {
+		// Handle marker auto-derivation config changes
+	});
 	carModel.castShadow = true;
 	carModel.traverse((child) => {
 		if (child instanceof THREE.Mesh) {
@@ -303,9 +318,8 @@ async function buildPractice(): Promise<void> {
 	});
 	world.scene.add(carModel);
 
-	vehicle.setTerrain(world.terrain);
-
 	const startAudio = () => {
+		if (engineAudio) return;
 		const soundConfig =
 			carConfig.sound ||
 			deriveSoundConfig({
@@ -314,15 +328,20 @@ async function buildPractice(): Promise<void> {
 				maxRPM: carConfig.engine.maxRPM,
 				turbo: carConfig.engine.turbo,
 			});
-		console.log("[audio] config:", JSON.stringify({ volume: soundConfig.volume, cylinders: soundConfig.cylinders }));
-		vehicle.initAudio(soundConfig);
+		AudioBus.getInstance().acquire();
+		import("./audio/EngineAudio.ts")
+			.then(({ EngineAudio }) => {
+				engineAudio = new EngineAudio(soundConfig);
+				engineAudio.start();
+			})
+			.catch((e) => console.error("[audio] Failed to load EngineAudio:", e));
 		window.removeEventListener("keydown", startAudio);
 		window.removeEventListener("click", startAudio);
 	};
 	window.addEventListener("keydown", startAudio);
 	window.addEventListener("click", startAudio);
 
-	state.headlights = vehicle.headlights;
+	state.headlights = renderer.headlights;
 	applyTimeOfDay(hour);
 	setupCameraInput(world.renderer);
 	resetCar();
@@ -359,31 +378,42 @@ function animate(): void {
 
 	if (vehicle) {
 		vehicle.update(input, delta);
-		vehicle.syncVisuals();
-		updateCamera();
 
-		// Update audio listener to match camera position
-		if (vehicle.audio && world) {
-			const cam = world.camera;
-			const fwd = new THREE.Vector3();
-			cam.getWorldDirection(fwd);
-			AudioBus.getInstance().updateListener(
-				{ x: cam.position.x, y: cam.position.y, z: cam.position.z },
-				{ x: fwd.x, y: fwd.y, z: fwd.z },
+		// Sync Three.js visuals from Rapier physics state
+		if (renderer) {
+			renderer.sync(
+				vehicle.getPosition(),
+				vehicle.getHeading(),
+				vehicle.getPitch(),
+				vehicle.getRoll(),
+				vehicle.getSteerAngle(),
+				vehicle.state.speed,
+				renderer.getModelGroundOffset(),
+				vehicle.config.chassis.wheelRadius,
 			);
 		}
 
+		updateCamera();
+
 		// Update terrain shader with car headlight data
-		const headlightData = vehicle.renderer.getHeadlightData(vehicle.getForward());
-		if (headlightData && state.terrainMaterial) {
-			const u = state.terrainMaterial.uniforms;
-			const posArr = u.uCarLightPos.value as THREE.Vector3[];
-			const dirArr = u.uCarLightDir.value as THREE.Vector3[];
-			for (let i = 0; i < 2; i++) {
-				if (headlightData.positions[i]) posArr[i].copy(headlightData.positions[i]);
-				if (headlightData.directions[i]) dirArr[i].copy(headlightData.directions[i]);
+		if (renderer) {
+			const headlightData = renderer.getHeadlightData(vehicle.getForward());
+			if (headlightData && state.terrainMaterial) {
+				const u = state.terrainMaterial.uniforms;
+				const posArr = u.uCarLightPos.value as THREE.Vector3[];
+				const dirArr = u.uCarLightDir.value as THREE.Vector3[];
+				for (let i = 0; i < 2; i++) {
+					if (headlightData.positions[i]) posArr[i].copy(headlightData.positions[i]);
+					if (headlightData.directions[i]) dirArr[i].copy(headlightData.directions[i]);
+				}
+				u.uCarLightIntensity.value = headlightData.intensity;
 			}
-			u.uCarLightIntensity.value = headlightData.intensity;
+		}
+
+		// Feed telemetry to audio
+		if (engineAudio) {
+			engineAudio.update(vehicle.telemetry, vehicle.getPosition());
+			AudioBus.getInstance().updateListener(vehicle.getPosition(), vehicle.getForward());
 		}
 
 		const speed = Math.abs(vehicle.state.speed * 3.6);
@@ -407,8 +437,8 @@ function animate(): void {
 			mapEl.heading = Math.atan2(fwd.x, fwd.z);
 		}
 
-		if (state.sun && vehicle.model) {
-			const cp = vehicle.model.position;
+		if (state.sun && renderer?.model) {
+			const cp = renderer.model.position;
 			state.sun.position.set(cp.x + 100, cp.y + 150, cp.z + 50);
 			state.sun.target.position.set(cp.x, cp.y, cp.z);
 			state.sun.target.updateMatrixWorld();

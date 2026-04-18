@@ -21,6 +21,8 @@ export { Engine } from "./engine/Engine.ts";
 // Subsystems
 export { EngineUnit } from "./engine/EngineUnit.ts";
 export { Gearbox } from "./engine/Gearbox.ts";
+// Composition root — Rapier is the default now
+export { RapierVehicleController } from "./RapierVehicleController.ts";
 export { Brakes } from "./suspension/Brakes.ts";
 export { frictionCircleClamp, pacejka, TireModel } from "./suspension/TireModel.ts";
 export {
@@ -32,7 +34,6 @@ export {
 	type VehicleState,
 	type WheelVisual,
 } from "./types.ts";
-// Composition root
 export { VehicleController } from "./VehicleController.ts";
 export { VehiclePhysics } from "./VehiclePhysics.ts";
 export { VehicleRenderer } from "./VehicleRenderer.ts";
