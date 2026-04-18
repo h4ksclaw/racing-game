@@ -128,7 +128,7 @@ export class RapierVehicleController {
 	telemetry: EngineTelemetry;
 	private simBoostNorm = 0;
 	private steerAngle = 0;
-	private readonly STEER_SPEED = 4.0;
+	private readonly STEER_SPEED = 6.0;
 	private initialized = false;
 
 	constructor(config: CarConfig) {
@@ -162,7 +162,7 @@ export class RapierVehicleController {
 
 		// Car body
 		this.carBody = this.world.createRigidBody(
-			RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 3, 0).setLinearDamping(0.05).setAngularDamping(0.8),
+			RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 3, 0).setLinearDamping(0.0).setAngularDamping(0.8),
 		);
 		this.world.createCollider(
 			RAPIER.ColliderDesc.cuboid(halfW, halfH, halfD)
@@ -347,18 +347,28 @@ export class RapierVehicleController {
 				? engine.config.engineBraking * (engine.rpm / engine.config.maxRPM) * chassis.mass
 				: 0;
 
-		// ── Rolling resistance → all wheels ──
-		const dragF = this.drag.getForce(Math.abs(localVelX));
-
 		// ── Brake force → all wheels ──
 		// brakeF is negative (deceleration), setWheelBrake expects positive = brake
-		const brakeValue = Math.abs(brakeF) + engineBrakeF + dragF;
+		// NOTE: drag/rolling resistance is NOT applied as wheel brake — it creates
+		// a constant-friction feel. Linear damping on the body handles aero drag;
+		// rolling resistance is handled implicitly by tire friction.
+		const brakeValue = Math.abs(brakeF) + engineBrakeF;
 		const handF = input.handbrake ? chassis.mass * this._config.brakes.handbrakeG * 9.82 : 0;
 		for (let i = 0; i < 4; i++) this.vehicle.setWheelBrake(i, brakeValue + handF);
 
 		// ── Steering → front wheels ──
 		this.vehicle.setWheelSteering(this.wheelFL, this.steerAngle);
 		this.vehicle.setWheelSteering(this.wheelFR, this.steerAngle);
+
+		// ── Aero drag as body force (opposes velocity direction) ──
+		const dragF = this.drag.getForce(Math.abs(localVelX));
+		if (dragF > 0.01) {
+			const speedMs2 = vx * vx + vz * vz;
+			if (speedMs2 > 0.0001) {
+				const invSpeed = 1 / Math.sqrt(speedMs2);
+				this.carBody.addForce({ x: -vx * invSpeed * dragF, y: 0, z: -vz * invSpeed * dragF }, true);
+			}
+		}
 
 		// ── Step physics ──
 		this.vehicle.updateVehicle(dt);
@@ -378,7 +388,8 @@ export class RapierVehicleController {
 		const r2 = this.carBody.rotation();
 		const yaw2 = Math.atan2(2 * (r2.w * r2.y + r2.z * r2.x), 1 - 2 * (r2.y * r2.y + r2.x * r2.x));
 		const targetQ = { x: 0, y: Math.sin(yaw2 / 2), z: 0, w: Math.cos(yaw2 / 2) };
-		const lf = 0.15;
+		// dt-dependent lerp: stronger at low fps, weaker at high fps
+		const lf = 1 - 0.001 ** dt;
 		this.carBody.setRotation(
 			{
 				x: r2.x + (targetQ.x - r2.x) * lf,
