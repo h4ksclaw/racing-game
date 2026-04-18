@@ -161,8 +161,10 @@ export class RapierVehicleController {
 		const [halfW, halfH, halfD] = halfExtents;
 
 		// Car body
+		// High angular damping suppresses unwanted roll/pitch from terrain bumps
+		// while letting the vehicle controller handle steering yaw.
 		this.carBody = this.world.createRigidBody(
-			RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 3, 0).setLinearDamping(0.0).setAngularDamping(0.8),
+			RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 3, 0).setLinearDamping(0.0).setAngularDamping(5.0),
 		);
 		this.world.createCollider(
 			RAPIER.ColliderDesc.cuboid(halfW, halfH, halfD)
@@ -382,23 +384,9 @@ export class RapierVehicleController {
 			this.pendingGuardrailUpdate = null;
 		}
 
-		// ── Post-step: gently kill roll/pitch, keep yaw ──
-		const r2 = this.carBody.rotation();
-		const yaw2 = Math.atan2(2 * (r2.w * r2.y + r2.z * r2.x), 1 - 2 * (r2.y * r2.y + r2.x * r2.x));
-		const targetQ = { x: 0, y: Math.sin(yaw2 / 2), z: 0, w: Math.cos(yaw2 / 2) };
-		// dt-dependent lerp: stronger at low fps, weaker at high fps
-		const lf = 1 - 0.001 ** dt;
-		this.carBody.setRotation(
-			{
-				x: r2.x + (targetQ.x - r2.x) * lf,
-				y: r2.y + (targetQ.y - r2.y) * lf,
-				z: r2.z + (targetQ.z - r2.z) * lf,
-				w: r2.w + (targetQ.w - r2.w) * lf,
-			},
-			true,
-		);
-		const av = this.carBody.angvel();
-		this.carBody.setAngvel({ x: av.x * (1 - lf), y: av.y, z: av.z * (1 - lf) }, true);
+		// Angular damping on the rigid body (5.0) handles roll/pitch suppression.
+		// No post-step rotation manipulation — avoids the pump/pumpy oscillation
+		// that occurred when we fought Rapier's solver with quaternion lerping.
 
 		// ── Output state ──
 		this.state.speed = localVelX;

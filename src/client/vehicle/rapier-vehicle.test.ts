@@ -165,4 +165,26 @@ describe("RapierVehicleController", () => {
 		expect(pos.y).toBeGreaterThan(expectedY - 0.5);
 		expect(pos.y).toBeLessThan(expectedY + 0.5);
 	});
+
+	it("drives straight without steering input — no pump/pumpy oscillation", async () => {
+		const v = await makeVehicle(0);
+		// Get up to speed
+		for (let i = 0; i < 120; i++) {
+			v.update(flatInput({ forward: true }), 1 / 60);
+		}
+		// Sample heading over 3 seconds of straight driving
+		const headings: number[] = [];
+		for (let i = 0; i < 180; i++) {
+			v.update(flatInput({ forward: true }), 1 / 60);
+			headings.push(v.getHeading());
+		}
+		// Heading should not oscillate wildly — max change between any two frames
+		// should be small (< 0.02 rad ≈ 1.1° per frame at ~60fps)
+		let maxDelta = 0;
+		for (let i = 1; i < headings.length; i++) {
+			const delta = Math.abs(headings[i] - headings[i - 1]);
+			maxDelta = Math.max(maxDelta, delta);
+		}
+		expect(maxDelta).toBeLessThan(0.02);
+	});
 });
