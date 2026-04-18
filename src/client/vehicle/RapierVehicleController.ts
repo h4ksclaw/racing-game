@@ -168,14 +168,6 @@ export class RapierVehicleController {
 				.setRestitution(0.1),
 			this.carBody,
 		);
-		// Low ballast for stable COM
-		this.world.createCollider(
-			RAPIER.ColliderDesc.cuboid(halfW * 0.7, 0.1, halfD * 0.7)
-				.setDensity((mass * 0.5) / (halfW * 1.4 * 0.2 * halfD * 1.4))
-				.setTranslation(0, -halfH - 0.05, 0)
-				.setFriction(0.0),
-			this.carBody,
-		);
 
 		// Vehicle controller
 		this.vehicle = this.world.createVehicleController(this.carBody);
@@ -193,7 +185,7 @@ export class RapierVehicleController {
 			this.vehicle.addWheel(
 				{ x: wo.x, y: wy, z: wo.z },
 				{ x: 0, y: -1, z: 0 },
-				{ x: -1, y: 0, z: 0 },
+				{ x: 1, y: 0, z: 0 },
 				susRest,
 				wheelRadius,
 			);
@@ -346,7 +338,7 @@ export class RapierVehicleController {
 
 		// ── Brake force → all wheels ──
 		const handF = input.handbrake ? 150 : 0;
-		for (let i = 0; i < 4; i++) this.vehicle.setWheelBrake(i, brakeF + handF);
+		for (let i = 0; i < 4; i++) this.vehicle.setWheelBrake(i, -brakeF + handF);
 
 		// ── Steering → front wheels ──
 		this.vehicle.setWheelSteering(this.wheelFL, this.steerAngle);
