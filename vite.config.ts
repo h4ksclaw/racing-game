@@ -22,7 +22,7 @@ export default defineConfig({
 	},
 	server: {
 		port: 3000,
-		allowedHosts: true,
+		allowedHosts: [".trycloudflare.com"],
 		watch: {
 			ignored: [
 				"**/node_modules/**",

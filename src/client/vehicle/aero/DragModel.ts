@@ -9,7 +9,7 @@ import type { DragSpec } from "../configs.ts";
 export interface DragConfig extends DragSpec {}
 
 export class DragModel {
-	private config: DragConfig;
+	readonly config: DragConfig;
 
 	constructor(config: DragConfig) {
 		this.config = config;

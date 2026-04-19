@@ -8,6 +8,8 @@
 import * as THREE from "three";
 import { AudioBus } from "./audio/AudioBus.ts";
 import { deriveSoundConfig } from "./audio/audio-profiles.ts";
+import { CameraController } from "./CameraController.ts";
+import { RapierDebugRenderer } from "./rapier-debug-renderer.ts";
 import { state } from "./scene.ts";
 import { applyTimeOfDay } from "./sky.ts";
 import { updateTerrainShadows } from "./terrain.ts";
@@ -24,7 +26,8 @@ import type { SpeedTrap } from "./ui/speed-trap.ts";
 import type { SteerIndicator } from "./ui/steer-indicator.ts";
 import type { WeatherType } from "./utils.ts";
 import { SPORTS_CAR } from "./vehicle/configs.ts";
-import { DEFAULT_INPUT, VehicleController, type VehicleInput } from "./vehicle/index.ts";
+import { DEFAULT_INPUT, RapierVehicleController, type VehicleInput } from "./vehicle/index.ts";
+import { VehicleRenderer } from "./vehicle/VehicleRenderer.ts";
 import { updateWeather } from "./weather.ts";
 import { buildWorld, type WorldResult } from "./world.ts";
 
@@ -33,6 +36,8 @@ const urlParams = new URLSearchParams(window.location.search);
 const seed = Number(urlParams.get("seed")) || 42;
 const hour = Number(urlParams.get("hour")) || 14;
 const weather = (urlParams.get("weather") as WeatherType) || "clear";
+const perfLow = urlParams.get("perf") === "low";
+const debugMode = urlParams.get("debug") === "true" || urlParams.get("debug") === "1";
 
 // ── UI component refs ───────────────────────────────────────────────────
 let uiReady = false;
@@ -146,8 +151,12 @@ window.addEventListener("keyup", (e) => {
 });
 
 // ── Vehicle ─────────────────────────────────────────────────────────────
-let vehicle: VehicleController;
+let vehicle: RapierVehicleController;
+let renderer: VehicleRenderer | null = null;
+let physicsDebug: RapierDebugRenderer | null = null;
+let cameraCtrl: CameraController;
 let world: WorldResult | null = null;
+let engineAudio: import("./audio/EngineAudio.ts").EngineAudio | null = null;
 
 function resetCar(): void {
 	if (!world || !vehicle) return;
@@ -166,110 +175,11 @@ function resetCar(): void {
 	}
 	const s = samples[nearestIdx];
 	const tangentAngle = Math.atan2(s.tangent.x, s.tangent.z);
-	const groundY = world.terrain.getHeight(s.point.x, s.point.z);
-	vehicle.reset(s.point.x, groundY + 2, s.point.z, tangentAngle);
-	camMode = "chase";
-}
-
-// ── Camera: Chase + Orbit (GTA-style) ───────────────────────────────────
-type CameraMode = "chase" | "orbit";
-let camMode: CameraMode = "chase";
-
-let orbitYaw = 0;
-let orbitPitch = 0.3;
-let orbitDist = 10;
-const orbitTarget = new THREE.Vector3();
-const orbitSpherical = new THREE.Spherical();
-
-const CHASE_HEIGHT = 4;
-const CHASE_DIST = 8;
-const CHASE_LOOK_AHEAD = 5;
-const CHASE_SMOOTH = 0.08;
-
-let isDragging = false;
-let lastMouseX = 0;
-let lastMouseY = 0;
-
-function setupCameraInput(renderer: THREE.WebGLRenderer): void {
-	renderer.domElement.addEventListener("mousedown", (e) => {
-		if (e.button === 0 && !isDragging) {
-			camMode = "chase";
-			return;
-		}
-	});
-
-	renderer.domElement.addEventListener("contextmenu", (e) => {
-		e.preventDefault();
-	});
-
-	renderer.domElement.addEventListener("mousedown", (e) => {
-		if (e.button === 2) {
-			isDragging = true;
-			lastMouseX = e.clientX;
-			lastMouseY = e.clientY;
-			camMode = "orbit";
-		}
-	});
-
-	window.addEventListener("mouseup", () => {
-		isDragging = false;
-	});
-
-	window.addEventListener("mousemove", (e) => {
-		if (!isDragging) return;
-		const dx = e.clientX - lastMouseX;
-		const dy = e.clientY - lastMouseY;
-		lastMouseX = e.clientX;
-		lastMouseY = e.clientY;
-		orbitYaw -= dx * 0.005;
-		orbitPitch = Math.max(-0.5, Math.min(1.2, orbitPitch + dy * 0.005));
-	});
-
-	renderer.domElement.addEventListener("wheel", (e) => {
-		if (camMode === "orbit") {
-			orbitDist = Math.max(3, Math.min(30, orbitDist + e.deltaY * 0.01));
-		}
-	});
-}
-
-function updateCamera(): void {
-	if (!vehicle || !world) return;
-	const camera = world.camera;
-
-	const pos = vehicle.getPosition();
-	const fwd = vehicle.getForward();
-	orbitTarget.set(pos.x, pos.y + 1, pos.z);
-
-	if (camMode === "chase") {
-		const targetX = pos.x - fwd.x * CHASE_DIST;
-		const targetY = pos.y + CHASE_HEIGHT;
-		const targetZ = pos.z - fwd.z * CHASE_DIST;
-
-		camera.position.x += (targetX - camera.position.x) * CHASE_SMOOTH;
-		camera.position.y += (targetY - camera.position.y) * CHASE_SMOOTH;
-		camera.position.z += (targetZ - camera.position.z) * CHASE_SMOOTH;
-
-		const lookX = pos.x + fwd.x * CHASE_LOOK_AHEAD;
-		const lookZ = pos.z + fwd.z * CHASE_LOOK_AHEAD;
-		camera.lookAt(lookX, pos.y + 1, lookZ);
-
-		orbitYaw = Math.atan2(camera.position.x - pos.x, camera.position.z - pos.z);
-		orbitDist = camera.position.distanceTo(orbitTarget);
-		orbitPitch = Math.atan2(
-			camera.position.y - pos.y - 1,
-			Math.sqrt((camera.position.x - pos.x) ** 2 + (camera.position.z - pos.z) ** 2),
-		);
-	} else {
-		const carYaw = Math.atan2(fwd.x, fwd.z);
-		orbitYaw += ((carYaw - orbitYaw + Math.PI) % (2 * Math.PI)) - Math.PI;
-
-		orbitSpherical.set(orbitDist, Math.PI / 2 - orbitPitch, orbitYaw);
-		const targetPos = new THREE.Vector3().setFromSpherical(orbitSpherical);
-		targetPos.add(orbitTarget);
-
-		camera.position.lerp(targetPos, 0.1);
-		camera.lookAt(orbitTarget);
-	}
+	const groundY = world.terrain.getHeight(s.point.x, s.point.z) + 0.3;
+	const cfg = vehicle.config.chassis;
+	const bodyY = groundY + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1];
+	vehicle.reset(s.point.x, bodyY, s.point.z, tangentAngle);
+	cameraCtrl.setChaseMode();
 }
 
 // ── Build ───────────────────────────────────────────────────────────────
@@ -281,19 +191,30 @@ async function buildPractice(): Promise<void> {
 		seed,
 		hour,
 		weather,
-		pixelRatioCap: 2,
-		shadowResolution: 2048,
-		shadowExtent: 100,
-		shadowFar: 300,
-		toneMapping: true,
+		pixelRatioCap: perfLow ? 1 : 2,
+		shadowResolution: perfLow ? 512 : 2048,
+		shadowExtent: perfLow ? 50 : 100,
+		shadowFar: perfLow ? 100 : 300,
+		toneMapping: !perfLow,
+		antialias: !perfLow,
+		skipScenery: perfLow,
 	});
 
 	const carParam = urlParams.get("car");
 	const customCfg = loadCustomConfig();
 	const carConfig =
 		customCfg && (carParam === "custom" || !carParam) ? applyOverrides(SPORTS_CAR, customCfg) : SPORTS_CAR;
-	vehicle = new VehicleController(carConfig);
-	const carModel = await vehicle.loadModel();
+
+	// Create Rapier vehicle controller
+	vehicle = new RapierVehicleController(carConfig);
+	await vehicle.init();
+	vehicle.setTerrain(world.terrain);
+
+	// Create renderer for visuals (separate from physics)
+	renderer = new VehicleRenderer(carConfig);
+	const carModel = await renderer.loadModel(() => {
+		// Handle marker auto-derivation config changes
+	});
 	carModel.castShadow = true;
 	carModel.traverse((child) => {
 		if (child instanceof THREE.Mesh) {
@@ -303,9 +224,13 @@ async function buildPractice(): Promise<void> {
 	});
 	world.scene.add(carModel);
 
-	vehicle.setTerrain(world.terrain);
+	// Camera
+	cameraCtrl = new CameraController();
+	cameraCtrl.setupInput(world.renderer);
 
+	// Audio (starts on first user gesture)
 	const startAudio = () => {
+		if (engineAudio) return;
 		const soundConfig =
 			carConfig.sound ||
 			deriveSoundConfig({
@@ -314,20 +239,39 @@ async function buildPractice(): Promise<void> {
 				maxRPM: carConfig.engine.maxRPM,
 				turbo: carConfig.engine.turbo,
 			});
-		console.log("[audio] config:", JSON.stringify({ volume: soundConfig.volume, cylinders: soundConfig.cylinders }));
-		vehicle.initAudio(soundConfig);
+		AudioBus.getInstance().acquire();
+		import("./audio/EngineAudio.ts")
+			.then(({ EngineAudio }) => {
+				engineAudio = new EngineAudio(soundConfig);
+				engineAudio.start();
+			})
+			.catch((e) => console.error("[audio] Failed to load EngineAudio:", e));
 		window.removeEventListener("keydown", startAudio);
 		window.removeEventListener("click", startAudio);
 	};
 	window.addEventListener("keydown", startAudio);
 	window.addEventListener("click", startAudio);
 
-	state.headlights = vehicle.headlights;
+	state.headlights = renderer.headlights;
 	applyTimeOfDay(hour);
-	setupCameraInput(world.renderer);
-	resetCar();
 
 	initUI();
+
+	if (debugMode) {
+		try {
+			physicsDebug = new RapierDebugRenderer(world.scene);
+		} catch (e) {
+			console.error("[practice] RapierDebugRenderer failed:", e);
+		}
+	}
+
+	// Initial placement: put car at track start (first sample)
+	const startSample = world.trackData.samples[0];
+	const startAngle = Math.atan2(startSample.tangent.x, startSample.tangent.z);
+	const startGroundY = world.terrain.getHeight(startSample.point.x, startSample.point.z) + 0.3;
+	const startCfg = vehicle.config.chassis;
+	const startBodyY = startGroundY + startCfg.wheelRadius + startCfg.suspensionRestLength + startCfg.halfExtents[1];
+	vehicle.reset(startSample.point.x, startBodyY, startSample.point.z, startAngle);
 
 	if (loading) loading.visible = false;
 
@@ -347,6 +291,23 @@ window.addEventListener("resize", () => {
 	world.renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// ── Debug overlay (?debug=true) ─────────────────────────────────────────
+let debugEl: HTMLDivElement | null = null;
+
+function updateDebugOverlay(v: RapierVehicleController): void {
+	if (!debugEl) {
+		debugEl = document.createElement("div");
+		debugEl.id = "debug-overlay";
+		debugEl.style.cssText =
+			"position:fixed;top:8px;left:8px;background:rgba(0,0,0,0.85);color:#0f0;font:12px/1.6 monospace;padding:10px;z-index:9999;pointer-events:none;white-space:pre;";
+		document.body.appendChild(debugEl);
+	}
+	const info = v.getDebugInfo();
+	debugEl.textContent = Object.entries(info)
+		.map(([k, val]) => `${k}: ${val}`)
+		.join("\n");
+}
+
 // ── Main loop ───────────────────────────────────────────────────────────
 
 let lastTime = performance.now();
@@ -359,40 +320,61 @@ function animate(): void {
 
 	if (vehicle) {
 		vehicle.update(input, delta);
-		vehicle.syncVisuals();
-		updateCamera();
 
-		// Update audio listener to match camera position
-		if (vehicle.audio && world) {
-			const cam = world.camera;
-			const fwd = new THREE.Vector3();
-			cam.getWorldDirection(fwd);
-			AudioBus.getInstance().updateListener(
-				{ x: cam.position.x, y: cam.position.y, z: cam.position.z },
-				{ x: fwd.x, y: fwd.y, z: fwd.z },
-			);
-		}
+		// Sync Three.js visuals directly from Rapier physics body
+		if (renderer?.model && vehicle.physicsBody) {
+			const body = vehicle.physicsBody;
+			const p = body.translation();
+			const r = body.rotation();
 
-		// Update terrain shader with car headlight data
-		const headlightData = vehicle.renderer.getHeadlightData(vehicle.getForward());
-		if (headlightData && state.terrainMaterial) {
-			const u = state.terrainMaterial.uniforms;
-			const posArr = u.uCarLightPos.value as THREE.Vector3[];
-			const dirArr = u.uCarLightDir.value as THREE.Vector3[];
-			for (let i = 0; i < 2; i++) {
-				if (headlightData.positions[i]) posArr[i].copy(headlightData.positions[i]);
-				if (headlightData.directions[i]) dirArr[i].copy(headlightData.directions[i]);
+			renderer.model.position.set(p.x, p.y + renderer.getModelGroundOffset(), p.z);
+			renderer.model.quaternion.set(r.x, r.y, r.z, r.w);
+
+			// Wheel steering + spin (local-space, unaffected by body rotation)
+			for (let i = 0; i < 4; i++) {
+				const mesh = renderer.wheelMeshes[i];
+				if (!mesh) continue;
+				const steer = i < 2 ? vehicle.getSteerAngle() : 0;
+				mesh.quaternion.setFromEuler(new THREE.Euler(0, steer, 0));
+				const spinAngle = (vehicle.state.speed / vehicle.config.chassis.wheelRadius) * 0.016;
+				const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), spinAngle);
+				mesh.quaternion.multiply(spinQ);
 			}
-			u.uCarLightIntensity.value = headlightData.intensity;
 		}
 
+		// Camera
+		if (world) {
+			cameraCtrl.update(world.camera, vehicle);
+		}
+
+		// Terrain shader headlight data
+		if (renderer) {
+			const headlightData = renderer.getHeadlightData(vehicle.getForward());
+			if (headlightData && state.terrainMaterial) {
+				const u = state.terrainMaterial.uniforms;
+				const posArr = u.uCarLightPos.value as THREE.Vector3[];
+				const dirArr = u.uCarLightDir.value as THREE.Vector3[];
+				for (let i = 0; i < 2; i++) {
+					if (headlightData.positions[i]) posArr[i].copy(headlightData.positions[i]);
+					if (headlightData.directions[i]) dirArr[i].copy(headlightData.directions[i]);
+				}
+				u.uCarLightIntensity.value = headlightData.intensity;
+			}
+		}
+
+		// Audio
+		if (engineAudio) {
+			engineAudio.update(vehicle.telemetry, vehicle.getPosition());
+			AudioBus.getInstance().updateListener(vehicle.getPosition(), vehicle.getForward());
+		}
+
+		// HUD
 		const speed = Math.abs(vehicle.state.speed * 3.6);
 		const gear = vehicle.state.gear;
 		const rpmFrac =
 			(vehicle.state.rpm - vehicle.config.engine.idleRPM) /
 			(vehicle.config.engine.maxRPM - vehicle.config.engine.idleRPM);
 		const clampedRpm = Math.max(0, Math.min(1, rpmFrac));
-
 		const steerInput = (input.left ? -1 : 0) + (input.right ? 1 : 0);
 		const throttle = input.forward ? 1 : 0;
 		const brake = input.backward ? 1 : 0;
@@ -407,8 +389,8 @@ function animate(): void {
 			mapEl.heading = Math.atan2(fwd.x, fwd.z);
 		}
 
-		if (state.sun && vehicle.model) {
-			const cp = vehicle.model.position;
+		if (state.sun && renderer?.model) {
+			const cp = renderer.model.position;
 			state.sun.position.set(cp.x + 100, cp.y + 150, cp.z + 50);
 			state.sun.target.position.set(cp.x, cp.y, cp.z);
 			state.sun.target.updateMatrixWorld();
@@ -417,6 +399,14 @@ function animate(): void {
 
 	updateWeather(delta);
 	updateTerrainShadows();
+
+	// Debug overlay
+	if (debugMode && vehicle) {
+		updateDebugOverlay(vehicle);
+		if (physicsDebug) {
+			physicsDebug.update(vehicle.rapierWorld, vehicle.physicsBody);
+		}
+	}
 
 	if (state.composer) {
 		state.composer.render();
