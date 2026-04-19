@@ -18,7 +18,7 @@ import type { CarConfig } from "./configs.ts";
 
 export class VehicleRenderer {
 	model: THREE.Group | null = null;
-	private wheelMeshes: THREE.Object3D[] = [];
+	readonly wheelMeshes: THREE.Object3D[] = [];
 	headlights: THREE.SpotLight[] = [];
 	private _modelGroundOffset = 0;
 	private config: CarConfig;
@@ -67,7 +67,7 @@ export class VehicleRenderer {
 		if (onConfigChanged) onConfigChanged(this.config);
 
 		// ── Find wheel meshes ──
-		this.wheelMeshes = [];
+		while (this.wheelMeshes.length > 0) this.wheelMeshes.pop();
 		for (const name of ["wheel-front-left", "wheel-front-right", "wheel-back-left", "wheel-back-right"]) {
 			const obj = this.model.getObjectByName(name);
 			if (obj) this.wheelMeshes.push(obj);

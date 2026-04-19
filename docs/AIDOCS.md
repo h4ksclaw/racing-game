@@ -13,19 +13,24 @@ A browser-based procedural racing game built with **Three.js** + **TypeScript** 
                                     │
                          ┌──────────┴──────────┐
                          ▼                     ▼
-                   VehicleController      world.ts
-                   (composition root)    (scene builder)
-                    ┌────┼────┐
-                    ▼    ▼    ▼
-              Physics  Renderer  Audio
-              (math)   (Three.js) (Web Audio)
-                │
-         ┌──────┼──────┐
-         ▼      ▼      ▼
-      Engine  Tires  Chassis
-      Unit    Brakes  Terrain
-      Gearbox Drag    Handler
+                RapierVehicleController   world.ts
+                (physics + integration)   (scene builder)
+                 ┌────┼────┐
+                 ▼    ▼    ▼
+           Terrain   Guardrails  Renderer
+           Collider  (road      (Three.js)
+           (trimesh)  edges)
+                 │
+           ┌─────┼─────┐
+           ▼     ▼     ▼
+        Engine  Brakes  Drag
+        Unit    Model
+        Gearbox
 ```
+
+**Note:** `VehicleController` + `VehiclePhysics` (pure math) are preserved for
+`debug-physics.ts` and backward compatibility. Practice mode uses
+`RapierVehicleController` exclusively.
 
 ### Data Flow (per frame)
 ```
@@ -218,14 +223,18 @@ npm run test          # vitest watch mode
 npm run test:run      # vitest single run (167 tests)
 ```
 
-### Test Files (167 tests across 8 files)
+### Test Files (266 tests across 12 files)
 | File | Tests | Coverage |
 |------|-------|----------|
 | `track.test.ts` | 14 | PRNG, determinism, sample structure |
 | `biomes.test.ts` | 7 | Biome selection, seed mapping |
 | `road.test.ts` | 10 | Road mesh geometry validation |
-| `VehicleController.test.ts` | 50 | Full vehicle lifecycle, inputs, gears, forces |
+| `VehicleController.test.ts` | 50 | Full vehicle lifecycle, inputs, gears, forces (math physics) |
+| `rapier-vehicle.test.ts` | 22 | Rapier physics: ground contact, acceleration, braking stability, steering, reset |
+| `rapier-terrain-collider.test.ts` | 11 | Trimesh building: vertices, indices, height offset, slopes |
+| `physics-improvements.test.ts` | 38 | Pacejka tire model, collision impulse, hull guardrail (4 skipped) |
 | `vehicle-edge-cases.test.ts` | 30 | Gear shifting, stability, endurance, edge cases |
+| `collision.test.ts` | 32 | GJK, EPA, ConvexHull, CollisionSystem |
 | `biomes-validation.test.ts` | 11 | Biome config constraints, guardrails, houses |
 | `ui.test.ts` | 36 | Lit component rendering, properties, themes |
 | `audio.test.ts` | 9 | AudioBus singleton, deriveSoundConfig, EXHAUST_SYSTEMS |
@@ -236,7 +245,6 @@ npm run test:run      # vitest single run (167 tests)
 ```bash
 npm run dev          # Vite dev server
 npm run dev:server   # Express API server
-npm run dev:full     # Both + Cloudflare tunnel
 npm run build        # tsc + vite build
 npm run lint         # biome check
 npm run lint:fix     # biome check --write
@@ -250,7 +258,7 @@ npm run check        # tsc + biome + knip (full check)
 - **TypeScript**: strict mode with `noUnusedLocals` and `noUnusedParameters`
 - **Biome**: 0 errors, 0 warnings, 0 suggestions enforced
 - **Knip**: zero dead code / unused dependencies
-- **Vitest**: 167 tests across 8 files
+- **Vitest**: 266 tests across 12 files
 - **Husky + lint-staged**: pre-commit hooks (biome formatting)
 - **GitHub Actions**: typecheck, lint, knip, tests, build, Docker
 

@@ -8,6 +8,7 @@
 import * as THREE from "three";
 import { AudioBus } from "./audio/AudioBus.ts";
 import { deriveSoundConfig } from "./audio/audio-profiles.ts";
+import { CameraController } from "./CameraController.ts";
 import { RapierDebugRenderer } from "./rapier-debug-renderer.ts";
 import { state } from "./scene.ts";
 import { applyTimeOfDay } from "./sky.ts";
@@ -153,6 +154,7 @@ window.addEventListener("keyup", (e) => {
 let vehicle: RapierVehicleController;
 let renderer: VehicleRenderer | null = null;
 let physicsDebug: RapierDebugRenderer | null = null;
+let cameraCtrl: CameraController;
 let world: WorldResult | null = null;
 let engineAudio: import("./audio/EngineAudio.ts").EngineAudio | null = null;
 
@@ -174,112 +176,10 @@ function resetCar(): void {
 	const s = samples[nearestIdx];
 	const tangentAngle = Math.atan2(s.tangent.x, s.tangent.z);
 	const groundY = world.terrain.getHeight(s.point.x, s.point.z) + 0.3;
-	// Body center = ground + wheelRadius + suspensionRestLength + wheelConnectionOffset
 	const cfg = vehicle.config.chassis;
 	const bodyY = groundY + cfg.wheelRadius + cfg.suspensionRestLength + cfg.halfExtents[1];
 	vehicle.reset(s.point.x, bodyY, s.point.z, tangentAngle);
-	camMode = "chase";
-}
-
-// ── Camera: Chase + Orbit (GTA-style) ───────────────────────────────────
-type CameraMode = "chase" | "orbit";
-let camMode: CameraMode = "chase";
-
-let orbitYaw = 0;
-let orbitPitch = 0.3;
-let orbitDist = 10;
-const orbitTarget = new THREE.Vector3();
-const orbitSpherical = new THREE.Spherical();
-
-const CHASE_HEIGHT = 4;
-const CHASE_DIST = 8;
-const CHASE_LOOK_AHEAD = 5;
-const CHASE_SMOOTH = 0.08;
-
-let isDragging = false;
-let lastMouseX = 0;
-let lastMouseY = 0;
-
-function setupCameraInput(renderer: THREE.WebGLRenderer): void {
-	renderer.domElement.addEventListener("mousedown", (e) => {
-		if (e.button === 0 && !isDragging) {
-			camMode = "chase";
-			return;
-		}
-	});
-
-	renderer.domElement.addEventListener("contextmenu", (e) => {
-		e.preventDefault();
-	});
-
-	renderer.domElement.addEventListener("mousedown", (e) => {
-		if (e.button === 2) {
-			isDragging = true;
-			lastMouseX = e.clientX;
-			lastMouseY = e.clientY;
-			camMode = "orbit";
-		}
-	});
-
-	window.addEventListener("mouseup", () => {
-		isDragging = false;
-	});
-
-	window.addEventListener("mousemove", (e) => {
-		if (!isDragging) return;
-		const dx = e.clientX - lastMouseX;
-		const dy = e.clientY - lastMouseY;
-		lastMouseX = e.clientX;
-		lastMouseY = e.clientY;
-		orbitYaw -= dx * 0.005;
-		orbitPitch = Math.max(-0.5, Math.min(1.2, orbitPitch + dy * 0.005));
-	});
-
-	renderer.domElement.addEventListener("wheel", (e) => {
-		if (camMode === "orbit") {
-			orbitDist = Math.max(3, Math.min(30, orbitDist + e.deltaY * 0.01));
-		}
-	});
-}
-
-function updateCamera(): void {
-	if (!vehicle || !world) return;
-	const camera = world.camera;
-
-	const pos = vehicle.getPosition();
-	const fwd = vehicle.getForward();
-	orbitTarget.set(pos.x, pos.y + 1, pos.z);
-
-	if (camMode === "chase") {
-		const targetX = pos.x - fwd.x * CHASE_DIST;
-		const targetY = pos.y + CHASE_HEIGHT;
-		const targetZ = pos.z - fwd.z * CHASE_DIST;
-
-		camera.position.x += (targetX - camera.position.x) * CHASE_SMOOTH;
-		camera.position.y += (targetY - camera.position.y) * CHASE_SMOOTH;
-		camera.position.z += (targetZ - camera.position.z) * CHASE_SMOOTH;
-
-		const lookX = pos.x + fwd.x * CHASE_LOOK_AHEAD;
-		const lookZ = pos.z + fwd.z * CHASE_LOOK_AHEAD;
-		camera.lookAt(lookX, pos.y + 1, lookZ);
-
-		orbitYaw = Math.atan2(camera.position.x - pos.x, camera.position.z - pos.z);
-		orbitDist = camera.position.distanceTo(orbitTarget);
-		orbitPitch = Math.atan2(
-			camera.position.y - pos.y - 1,
-			Math.sqrt((camera.position.x - pos.x) ** 2 + (camera.position.z - pos.z) ** 2),
-		);
-	} else {
-		const carYaw = Math.atan2(fwd.x, fwd.z);
-		orbitYaw += ((carYaw - orbitYaw + Math.PI) % (2 * Math.PI)) - Math.PI;
-
-		orbitSpherical.set(orbitDist, Math.PI / 2 - orbitPitch, orbitYaw);
-		const targetPos = new THREE.Vector3().setFromSpherical(orbitSpherical);
-		targetPos.add(orbitTarget);
-
-		camera.position.lerp(targetPos, 0.1);
-		camera.lookAt(orbitTarget);
-	}
+	cameraCtrl.setChaseMode();
 }
 
 // ── Build ───────────────────────────────────────────────────────────────
@@ -324,6 +224,11 @@ async function buildPractice(): Promise<void> {
 	});
 	world.scene.add(carModel);
 
+	// Camera
+	cameraCtrl = new CameraController();
+	cameraCtrl.setupInput(world.renderer);
+
+	// Audio (starts on first user gesture)
 	const startAudio = () => {
 		if (engineAudio) return;
 		const soundConfig =
@@ -349,15 +254,24 @@ async function buildPractice(): Promise<void> {
 
 	state.headlights = renderer.headlights;
 	applyTimeOfDay(hour);
-	setupCameraInput(world.renderer);
-	resetCar();
 
 	initUI();
 
-	// Initialize physics wireframe debug renderer
 	if (debugMode) {
-		physicsDebug = new RapierDebugRenderer(world.scene);
+		try {
+			physicsDebug = new RapierDebugRenderer(world.scene);
+		} catch (e) {
+			console.error("[practice] RapierDebugRenderer failed:", e);
+		}
 	}
+
+	// Initial placement: put car at track start (first sample)
+	const startSample = world.trackData.samples[0];
+	const startAngle = Math.atan2(startSample.tangent.x, startSample.tangent.z);
+	const startGroundY = world.terrain.getHeight(startSample.point.x, startSample.point.z) + 0.3;
+	const startCfg = vehicle.config.chassis;
+	const startBodyY = startGroundY + startCfg.wheelRadius + startCfg.suspensionRestLength + startCfg.halfExtents[1];
+	vehicle.reset(startSample.point.x, startBodyY, startSample.point.z, startAngle);
 
 	if (loading) loading.visible = false;
 
@@ -407,23 +321,33 @@ function animate(): void {
 	if (vehicle) {
 		vehicle.update(input, delta);
 
-		// Sync Three.js visuals from Rapier physics state
-		if (renderer) {
-			renderer.sync(
-				vehicle.getPosition(),
-				vehicle.getHeading(),
-				vehicle.getPitch(),
-				vehicle.getRoll(),
-				vehicle.getSteerAngle(),
-				vehicle.state.speed,
-				renderer.getModelGroundOffset(),
-				vehicle.config.chassis.wheelRadius,
-			);
+		// Sync Three.js visuals directly from Rapier physics body
+		if (renderer?.model && vehicle.physicsBody) {
+			const body = vehicle.physicsBody;
+			const p = body.translation();
+			const r = body.rotation();
+
+			renderer.model.position.set(p.x, p.y + renderer.getModelGroundOffset(), p.z);
+			renderer.model.quaternion.set(r.x, r.y, r.z, r.w);
+
+			// Wheel steering + spin (local-space, unaffected by body rotation)
+			for (let i = 0; i < 4; i++) {
+				const mesh = renderer.wheelMeshes[i];
+				if (!mesh) continue;
+				const steer = i < 2 ? vehicle.getSteerAngle() : 0;
+				mesh.quaternion.setFromEuler(new THREE.Euler(0, steer, 0));
+				const spinAngle = (vehicle.state.speed / vehicle.config.chassis.wheelRadius) * 0.016;
+				const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), spinAngle);
+				mesh.quaternion.multiply(spinQ);
+			}
 		}
 
-		updateCamera();
+		// Camera
+		if (world) {
+			cameraCtrl.update(world.camera, vehicle);
+		}
 
-		// Update terrain shader with car headlight data
+		// Terrain shader headlight data
 		if (renderer) {
 			const headlightData = renderer.getHeadlightData(vehicle.getForward());
 			if (headlightData && state.terrainMaterial) {
@@ -438,19 +362,19 @@ function animate(): void {
 			}
 		}
 
-		// Feed telemetry to audio
+		// Audio
 		if (engineAudio) {
 			engineAudio.update(vehicle.telemetry, vehicle.getPosition());
 			AudioBus.getInstance().updateListener(vehicle.getPosition(), vehicle.getForward());
 		}
 
+		// HUD
 		const speed = Math.abs(vehicle.state.speed * 3.6);
 		const gear = vehicle.state.gear;
 		const rpmFrac =
 			(vehicle.state.rpm - vehicle.config.engine.idleRPM) /
 			(vehicle.config.engine.maxRPM - vehicle.config.engine.idleRPM);
 		const clampedRpm = Math.max(0, Math.min(1, rpmFrac));
-
 		const steerInput = (input.left ? -1 : 0) + (input.right ? 1 : 0);
 		const throttle = input.forward ? 1 : 0;
 		const brake = input.backward ? 1 : 0;
@@ -479,7 +403,9 @@ function animate(): void {
 	// Debug overlay
 	if (debugMode && vehicle) {
 		updateDebugOverlay(vehicle);
-		if (physicsDebug) physicsDebug.update(vehicle.rapierWorld);
+		if (physicsDebug) {
+			physicsDebug.update(vehicle.rapierWorld, vehicle.physicsBody);
+		}
 	}
 
 	if (state.composer) {

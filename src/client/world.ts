@@ -210,7 +210,7 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 	// ── Scenery ──
 	setFallbackBiome(biome.name);
 	setLightModel(biome.lightModel);
-	await loadDecorations();
+	if (!options.skipScenery) await loadDecorations();
 	if (biome.lightModel) {
 		const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
 		await loadLightModel(new GLTFLoader(), biome.lightModel);
