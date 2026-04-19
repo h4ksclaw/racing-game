@@ -246,7 +246,7 @@ export const SEDAN_CAR: CarConfig = {
  */
 export const SPORTS_CAR: CarConfig = {
 	name: "AE86 Trueno",
-	modelPath: "/assets/custom-cars/sports-car.glb",
+	modelPath: "/assets/new-car/wheels.glb",
 	modelScale: 2.1,
 	engine: {
 		torqueNm: 145,

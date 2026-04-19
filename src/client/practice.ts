@@ -205,16 +205,14 @@ async function buildPractice(): Promise<void> {
 	const carConfig =
 		customCfg && (carParam === "custom" || !carParam) ? applyOverrides(SPORTS_CAR, customCfg) : SPORTS_CAR;
 
-	// Create Rapier vehicle controller
-	vehicle = new RapierVehicleController(carConfig);
+	// Create renderer first to auto-derive chassis from model markers
+	renderer = new VehicleRenderer(carConfig);
+	const carModel = await renderer.loadModel();
+
+	// Create Rapier vehicle controller with derived config (matching visual model)
+	vehicle = new RapierVehicleController(renderer.derivedConfig);
 	await vehicle.init();
 	vehicle.setTerrain(world.terrain);
-
-	// Create renderer for visuals (separate from physics)
-	renderer = new VehicleRenderer(carConfig);
-	const carModel = await renderer.loadModel(() => {
-		// Handle marker auto-derivation config changes
-	});
 	carModel.castShadow = true;
 	carModel.traverse((child) => {
 		if (child instanceof THREE.Mesh) {
@@ -360,6 +358,14 @@ function animate(): void {
 				}
 				u.uCarLightIntensity.value = headlightData.intensity;
 			}
+		}
+
+		// Brake / reverse lights
+		if (renderer) {
+			const isBraking = input.backward || input.handbrake;
+			const isReversing = input.backward && vehicle.state.gear <= 0 && Math.abs(vehicle.state.speed) < 1;
+			renderer.setBraking(isBraking);
+			renderer.setReversing(isReversing);
 		}
 
 		// Audio
