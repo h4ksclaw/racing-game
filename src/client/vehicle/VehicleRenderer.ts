@@ -28,6 +28,55 @@ export class VehicleRenderer {
 
 	// Light effect refs
 	private headlightMeshes: THREE.Mesh[] = [];
+
+	/** Debug: return wheel state for inspection. */
+	debugWheelState(): unknown[] {
+		const result = [];
+		for (let i = 0; i < this.wheelMeshes.length; i++) {
+			const pivot = this.wheelMeshes[i];
+			pivot.updateMatrixWorld(true);
+			const wp = new THREE.Vector3();
+			pivot.getWorldPosition(wp);
+
+			const children: unknown[] = [];
+			for (const child of pivot.children) {
+				const childInfo: Record<string, unknown> = {
+					name: child.name,
+					type: child.type,
+					rot: `(${child.rotation.x.toFixed(3)}, ${child.rotation.y.toFixed(3)}, ${child.rotation.z.toFixed(3)})`,
+				};
+				for (const mesh of child.children) {
+					if (
+						(mesh as THREE.Mesh).geometry &&
+						typeof (mesh as THREE.Mesh).geometry!.computeBoundingBox === "function"
+					) {
+						(mesh as THREE.Mesh).geometry.computeBoundingBox();
+						const bb = (mesh as THREE.Mesh).geometry.boundingBox!;
+						childInfo.geoSize = {
+							x: +(bb.max.x - bb.min.x).toFixed(3),
+							y: +(bb.max.y - bb.min.y).toFixed(3),
+							z: +(bb.max.z - bb.min.z).toFixed(3),
+						};
+					}
+				}
+				children.push(childInfo);
+			}
+
+			// World-space bbox
+			const box = new THREE.Box3().setFromObject(pivot);
+			const size = new THREE.Vector3();
+			box.getSize(size);
+
+			result.push({
+				name: pivot.name,
+				worldPos: { x: +wp.x.toFixed(3), y: +wp.y.toFixed(3), z: +wp.z.toFixed(3) },
+				pivotRot: { x: +pivot.rotation.x.toFixed(3), y: +pivot.rotation.y.toFixed(3), z: +pivot.rotation.z.toFixed(3) },
+				worldBBox: { x: +size.x.toFixed(3), y: +size.y.toFixed(3), z: +size.z.toFixed(3) },
+				children,
+			});
+		}
+		return result;
+	}
 	private taillightMeshes: THREE.Mesh[] = [];
 	private _reverseLight: THREE.SpotLight | null = null;
 	private _escapeL: THREE.Object3D | null = null;
@@ -60,18 +109,11 @@ export class VehicleRenderer {
 		const gltf = await loader.loadAsync(this.config.modelPath);
 		this.model = gltf.scene;
 
-		// ── Apply model scale if specified ──
+		// ── Apply model scale on root — scales everything proportionally ──
 		const scale = this.config.modelScale && this.config.modelScale !== 1 ? this.config.modelScale : 1;
 		if (scale !== 1) {
-			this.model.traverse((child) => {
-				if (child instanceof THREE.Mesh) {
-					child.geometry.applyMatrix4(new THREE.Matrix4().makeScale(scale, scale, scale));
-				}
-				if (child.position.lengthSq() > 0) {
-					child.position.multiplyScalar(scale);
-				}
-			});
-			if (this.model) this.model.updateMatrixWorld(true);
+			this.model.scale.set(scale, scale, scale);
+			this.model.updateMatrixWorld(true);
 		}
 
 		// ── Enable shadows ──
@@ -113,9 +155,16 @@ export class VehicleRenderer {
 		// ── Add reverse light ──
 		this.addReverseLight();
 
-		// ── Apply initial light state ──
-		this.applyHeadlightEmissive(0.8);
-		this.applyTaillightEmissive(0.3);
+		// ── Initial light state: emissive OFF, let sky.ts control via setHeadlightIntensity ──
+		this.applyHeadlightEmissive(0);
+		// Set tail light base color to dark red so lighting alone doesn't trigger bloom
+		for (const mesh of this.taillightMeshes) {
+			const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+			for (const mat of mats) {
+				if (mat instanceof THREE.MeshStandardMaterial) mat.color.setHex(0x330000);
+			}
+		}
+		this.applyTaillightEmissive(0.1);
 
 		return this.model;
 	}
@@ -126,12 +175,12 @@ export class VehicleRenderer {
 		if (!this.model) return false;
 
 		const wheelNames = ["WheelRig_FrontLeft", "WheelRig_FrontRight", "WheelRig_RearLeft", "WheelRig_RearRight"];
-
-		// Check if markers exist on this model
-		if (!this.model) return false;
 		const root = this.model;
 		const markers: (THREE.Object3D | null)[] = wheelNames.map((n) => this.findMarkerRecursive(root, n));
-		if (markers.some((m) => !m)) return false;
+		if (markers.some((m) => !m)) {
+			console.warn("[VehicleRenderer] WheelRig markers not found on car model");
+			return false;
+		}
 
 		try {
 			const loader = new GLTFLoader();
@@ -145,27 +194,55 @@ export class VehicleRenderer {
 				return false;
 			}
 
-			// Clone wheel for each WheelRig marker
+			// Place wheels at each marker's world position (model.scale handles scaling)
 			for (let i = 0; i < 4; i++) {
 				const marker = markers[i];
 				if (!marker) continue;
-				const wheelClone = wheelTemplate.clone();
+
+				// Deep clone the wheel template
+				const wheelClone = wheelTemplate.clone(true);
 				wheelClone.name = `wheel_clone_${i}`;
 
-				// Position at marker location
-				const markerWorldPos = new THREE.Vector3();
-				marker.getWorldPosition(markerWorldPos);
-				wheelClone.position.copy(markerWorldPos);
+				// Reset position/scale from wheel_1 in source GLB, but KEEP the GLB rotation
+				// because children are oriented relative to it.
+				// The GLB quaternion on wheel_1 already orients the wheel (axle points up/Y).
+				// We need to compose: GLB rotation + additional Y rotation to align axle with X.
+				wheelClone.position.set(0, 0, 0);
+				wheelClone.scale.set(1, 1, 1);
 
-				// Remove marker (it's an empty, wheels replace it visually)
-				marker.parent?.remove(marker);
+				// Add Y rotation to map axle from Y (GLB's orientation) to X
+				// Left wheels: -PI/2 around Y, Right wheels: +PI/2 around Y
+				// Left wheels also get 180° around Z to flip the exterior face outward
+				const isRight = i === 1 || i === 3;
+				const additionalRot = new THREE.Quaternion().setFromEuler(
+					new THREE.Euler(0, isRight ? Math.PI / 2 : -Math.PI / 2, isRight ? 0 : Math.PI),
+				);
+				// Compose: GLB rotation first, then our additional Y rotation (world space)
+				wheelClone.quaternion.multiply(additionalRot);
 
-				// Apply wheel rotation to align axle with X axis
-				// GLTF cylinders are typically Y-up; wheels need to spin around X
-				wheelClone.rotation.set(0, 0, Math.PI / 2);
+				// Get marker's world position (includes parent chain + model.scale)
+				const markerWorld = new THREE.Vector3();
+				marker.getWorldPosition(markerWorld);
+				this.model.worldToLocal(markerWorld);
 
-				this.model.add(wheelClone);
-				this.wheelMeshes.push(wheelClone);
+				const pivot = new THREE.Group();
+				pivot.name = `wheel_pivot_${i}`;
+				pivot.position.copy(markerWorld);
+				pivot.add(wheelClone);
+
+				this.model.add(pivot);
+				this.wheelMeshes.push(pivot); // sync() rotates the pivot
+
+				console.log(
+					`[VehicleRenderer] wheel ${i}: marker=${wheelNames[i]}, ` +
+						`local=(${markerWorld.x.toFixed(3)}, ${markerWorld.y.toFixed(3)}, ${markerWorld.z.toFixed(3)})`,
+				);
+				const bb = new THREE.Box3().setFromObject(wheelClone);
+				const bsize = new THREE.Vector3();
+				bb.getSize(bsize);
+				console.log(
+					`[VehicleRenderer] wheel ${i} bbox: (${bsize.x.toFixed(3)}, ${bsize.y.toFixed(3)}, ${bsize.z.toFixed(3)})`,
+				);
 			}
 
 			console.log("[VehicleRenderer] Loaded 4 wheels from external GLB");
@@ -246,30 +323,55 @@ export class VehicleRenderer {
 
 	/** Update tail light intensity (dim vs brake). */
 	setBraking(isBraking: boolean): void {
-		if (isBraking) {
-			this.applyTaillightEmissive(3.0); // Bright brake — above bloom threshold of 1.5
-		} else {
-			this.applyTaillightEmissive(0.3); // Dim tail
+		// UnrealBloomPass applies to final pixel brightness, not just emissive.
+		// A white-lit surface can exceed the bloom threshold even with low emissive.
+		// Fix: dim the base color when not braking so lighting alone doesn't trigger bloom.
+		for (const mesh of this.taillightMeshes) {
+			const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+			for (const mat of mats) {
+				if (!(mat instanceof THREE.MeshStandardMaterial)) continue;
+				if (isBraking) {
+					mat.emissive.setHex(0xff0000);
+					mat.emissiveIntensity = 3.0;
+					mat.color.setHex(0xff0000);
+				} else {
+					mat.emissive.setHex(0xff0000);
+					mat.emissiveIntensity = 0.1;
+					mat.color.setHex(0x330000);
+				}
+			}
 		}
 	}
 
 	/** Update tail light for reverse gear + activate reverse spotlight. */
 	setReversing(isReversing: boolean): void {
-		if (isReversing) {
-			this.applyTaillightEmissive(2.0, new THREE.Color(0xffffff)); // White reverse glow
-			if (this._reverseLight) this._reverseLight.intensity = 5;
-		} else {
-			this.applyTaillightEmissive(0.3); // Back to red tail
-			if (this._reverseLight) this._reverseLight.intensity = 0;
+		for (const mesh of this.taillightMeshes) {
+			const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+			for (const mat of mats) {
+				if (!(mat instanceof THREE.MeshStandardMaterial)) continue;
+				if (isReversing) {
+					mat.emissive.setHex(0xffffff);
+					mat.emissiveIntensity = 2.0;
+					mat.color.setHex(0xffffff);
+				} else {
+					mat.emissive.setHex(0xff0000);
+					mat.emissiveIntensity = 0.1;
+					mat.color.setHex(0x330000);
+				}
+			}
 		}
+		if (this._reverseLight) this._reverseLight.intensity = isReversing ? 5 : 0;
 	}
 
-	/** Update headlight brightness (for day/night cycle). */
+	/**
+	 * Update headlight brightness for day/night cycle.
+	 * Called from sky.ts applyTimeOfDay — intensity is 0..1 (0=day, 1=full night).
+	 * Controls both SpotLight intensity and mesh emissive bloom.
+	 */
 	setHeadlightIntensity(intensity: number): void {
-		for (const light of this.headlights) {
-			light.intensity = intensity * 20; // Scale up for visible effect
-		}
-		this.applyHeadlightEmissive(intensity);
+		// SpotLight intensity is controlled by sky.ts via state.headlights array
+		// We only control the emissive mesh glow here
+		this.applyHeadlightEmissive(intensity * 2.0); // 0 in day, 2.0 at night (above bloom threshold)
 	}
 
 	// ── Reverse light ────────────────────────────────────────────────────
@@ -362,6 +464,12 @@ export class VehicleRenderer {
 				cgHeight,
 			},
 		};
+
+		console.log(
+			`[VehicleRenderer] autoDerive: wheelRadius=${avgRadius.toFixed(3)}, wheelBase=${wheelBase.toFixed(3)}, ` +
+				`halfExtents=[${bodySize.x.toFixed(3)}/2, ${bodySize.y.toFixed(3)}/2, ${bodySize.z.toFixed(3)}/2], ` +
+				`groundOffset=${this._modelGroundOffset.toFixed(3)}, pmY=${pmY.toFixed(3)}`,
+		);
 	}
 
 	// ── Helpers ──────────────────────────────────────────────────────────
@@ -402,7 +510,12 @@ export class VehicleRenderer {
 			const rimMesh = new THREE.Mesh(rimGeom, rimMat);
 			tireMesh.add(rimMesh);
 
-			tireMesh.position.copy(marker.position);
+			// Use worldToLocal to get correct position relative to model root
+			const worldPos = new THREE.Vector3();
+			marker.getWorldPosition(worldPos);
+			this.model.worldToLocal(worldPos);
+			tireMesh.position.copy(worldPos);
+
 			this.model.add(tireMesh);
 			this.wheelMeshes.push(tireMesh);
 		}
@@ -417,7 +530,7 @@ export class VehicleRenderer {
 		const y = ch.halfExtents[1] * 0.6;
 
 		for (const side of [-1, 1] as const) {
-			const light = new THREE.SpotLight(0xfff5e6, 20, 150, Math.PI / 5, 0.4, 1.5);
+			const light = new THREE.SpotLight(0xfff5e6, 0, 150, Math.PI / 5, 0.4, 1.5);
 			light.position.set(side * halfW * 0.65, y, frontZ);
 			const target = new THREE.Object3D();
 			target.position.set(side * halfW * 0.3, -2, frontZ + 20);
@@ -462,6 +575,8 @@ export class VehicleRenderer {
 		return { positions, directions, intensity: this.headlights[0].intensity };
 	}
 
+	private wheelSpinAngle = 0;
+
 	/** Sync visual position, rotation, and wheel animation from physics state. */
 	sync(
 		pos: { x: number; y: number; z: number },
@@ -472,6 +587,7 @@ export class VehicleRenderer {
 		speed: number,
 		modelGroundOffset: number,
 		wheelRadius: number,
+		dt = 1 / 60,
 	): void {
 		if (!this.model) return;
 
@@ -482,15 +598,12 @@ export class VehicleRenderer {
 			const mesh = this.wheelMeshes[i];
 			if (!mesh) continue;
 
-			if (i < 2) {
-				mesh.quaternion.setFromEuler(new THREE.Euler(0, steerAngle, 0));
-			} else {
-				mesh.quaternion.setFromEuler(new THREE.Euler(0, 0, 0));
-			}
+			const steer = i < 2 ? steerAngle : 0;
+			this.wheelSpinAngle += (speed / wheelRadius) * dt;
 
-			const spinAngle = (speed / wheelRadius) * 0.016;
-			const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), spinAngle);
-			mesh.quaternion.multiply(spinQ);
+			// Inner wheel clone rotation is baked at load time (Y rotation for axle alignment)
+			// Pivot: spin around X (axle), steer around Y
+			mesh.quaternion.setFromEuler(new THREE.Euler(this.wheelSpinAngle, steer, 0, "YXZ"));
 		}
 	}
 }

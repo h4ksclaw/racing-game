@@ -325,6 +325,8 @@ export function applyTimeOfDay(hour: number): void {
 	for (const hl of headlights) {
 		hl.intensity = headlightFactor * 120 * weatherHlMult;
 	}
+	// Headlight mesh emissive bloom (controlled by VehicleRenderer)
+	if (state.onHeadlightIntensity) state.onHeadlightIntensity(headlightFactor * weatherHlMult);
 	for (const fixture of lightFixtures) {
 		const mat = fixture.material as THREE.MeshLambertMaterial;
 		const bloomMult = (fixture.userData.bloomMult as number) ?? 1.0;

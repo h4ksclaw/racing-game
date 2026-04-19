@@ -262,14 +262,15 @@ export const SPORTS_CAR: CarConfig = {
 			[6200, 0.98],
 			[7600, 0.85],
 		],
-		engineBraking: 0.15,
+		engineBraking: 0.25,
 	},
 	gearbox: {
 		gearRatios: [3.59, 2.06, 1.38, 1.0, 0.85],
 		shiftTime: 0.15,
+		downshiftThresholds: [15, 35, 55, 75, 100],
 	},
 	brakes: {
-		maxBrakeG: 0.85,
+		maxBrakeG: 0.8,
 		handbrakeG: 1.2,
 		brakeBias: 0.55,
 	},
@@ -280,7 +281,7 @@ export const SPORTS_CAR: CarConfig = {
 		tractionPct: 0.45,
 	},
 	drag: {
-		rollingResistance: 8.0,
+		rollingResistance: 1.5,
 		aeroDrag: 0.35,
 	},
 	chassis: {

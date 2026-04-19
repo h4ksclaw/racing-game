@@ -21,6 +21,7 @@ export const state = {
 	stars: null as THREE.Points | null,
 	streetLights: [] as THREE.Light[],
 	headlights: [] as THREE.SpotLight[],
+	onHeadlightIntensity: null as ((intensity: number) => void) | null,
 	lightFixtures: [] as THREE.Mesh[],
 	houseWindows: [] as THREE.Mesh[],
 	cloudLayer: null as THREE.Group | null,

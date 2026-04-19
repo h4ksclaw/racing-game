@@ -250,7 +250,11 @@ async function buildPractice(): Promise<void> {
 	window.addEventListener("keydown", startAudio);
 	window.addEventListener("click", startAudio);
 
-	state.headlights = renderer.headlights;
+	const rendererRef = renderer;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	(window as any).__renderer = rendererRef;
+	state.headlights = rendererRef?.headlights ?? [];
+	state.onHeadlightIntensity = rendererRef ? (intensity: number) => rendererRef.setHeadlightIntensity(intensity) : null;
 	applyTimeOfDay(hour);
 
 	initUI();
@@ -328,15 +332,22 @@ function animate(): void {
 			renderer.model.position.set(p.x, p.y + renderer.getModelGroundOffset(), p.z);
 			renderer.model.quaternion.set(r.x, r.y, r.z, r.w);
 
-			// Wheel steering + spin (local-space, unaffected by body rotation)
+			// Wheel steering + spin using pivot structure
+			// Each wheelMeshes[i] is a pivot Group containing the wheel clone
+			// Inner clone has baked rotation from GLB + our axle alignment
 			for (let i = 0; i < 4; i++) {
-				const mesh = renderer.wheelMeshes[i];
-				if (!mesh) continue;
+				const pivot = renderer.wheelMeshes[i];
+				if (!pivot) continue;
+
 				const steer = i < 2 ? vehicle.getSteerAngle() : 0;
-				mesh.quaternion.setFromEuler(new THREE.Euler(0, steer, 0));
-				const spinAngle = (vehicle.state.speed / vehicle.config.chassis.wheelRadius) * 0.016;
-				const spinQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), spinAngle);
-				mesh.quaternion.multiply(spinQ);
+				const spinDelta = (vehicle.state.speed / vehicle.config.chassis.wheelRadius) * delta;
+
+				// Accumulate spin angle per wheel
+				if (!pivot.userData.spinAngle) pivot.userData.spinAngle = 0;
+				pivot.userData.spinAngle += spinDelta;
+
+				// Pivot: spin around X (axle), steer around Y
+				pivot.quaternion.setFromEuler(new THREE.Euler(pivot.userData.spinAngle, steer, 0, "YXZ"));
 			}
 		}
 
@@ -362,10 +373,13 @@ function animate(): void {
 
 		// Brake / reverse lights
 		if (renderer) {
-			const isBraking = input.backward || input.handbrake;
-			const isReversing = input.backward && vehicle.state.gear <= 0 && Math.abs(vehicle.state.speed) < 1;
-			renderer.setBraking(isBraking);
-			renderer.setReversing(isReversing);
+			const isReversing = vehicle.state.gear === -1;
+			if (isReversing) {
+				renderer.setReversing(true);
+			} else {
+				renderer.setReversing(false);
+				renderer.setBraking(vehicle.state.brake > 0 || !!input.handbrake);
+			}
 		}
 
 		// Audio

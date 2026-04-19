@@ -3,9 +3,9 @@
  *
  * Two modes:
  *   - Chase: smooth follow behind the car, auto-syncs orbit params
- *   - Orbit: right-click drag to orbit, scroll to zoom
+ *   - Orbit: left-click drag to orbit, scroll to zoom
  *
- * Left-click switches back to chase. Orbit parameters are continuously
+ * Releasing mouse snaps back to chase. Orbit parameters are continuously
  * synced from chase mode so the transition is seamless.
  */
 
@@ -50,18 +50,7 @@ export class CameraController {
 		const el = renderer.domElement;
 
 		el.addEventListener("mousedown", (e) => {
-			if (e.button === 0 && !this.isDragging) {
-				this.mode = "chase";
-				return;
-			}
-		});
-
-		el.addEventListener("contextmenu", (e) => {
-			e.preventDefault();
-		});
-
-		el.addEventListener("mousedown", (e) => {
-			if (e.button === 2) {
+			if (e.button === 0) {
 				this.isDragging = true;
 				this.lastMouseX = e.clientX;
 				this.lastMouseY = e.clientY;
@@ -69,8 +58,13 @@ export class CameraController {
 			}
 		});
 
+		el.addEventListener("contextmenu", (e) => {
+			e.preventDefault();
+		});
+
 		window.addEventListener("mouseup", () => {
 			this.isDragging = false;
+			this.mode = "chase";
 		});
 
 		window.addEventListener("mousemove", (e) => {
@@ -103,6 +97,8 @@ export class CameraController {
 		}
 	}
 
+	private carYawRef = 0;
+
 	private updateChase(
 		camera: THREE.Camera,
 		pos: { x: number; y: number; z: number },
@@ -121,7 +117,8 @@ export class CameraController {
 		camera.lookAt(lookX, pos.y + 1, lookZ);
 
 		// Sync orbit params from chase position for seamless transition
-		this.orbitYaw = Math.atan2(camera.position.x - pos.x, camera.position.z - pos.z);
+		this.carYawRef = Math.atan2(fwd.x, fwd.z);
+		this.orbitYaw = 0; // user offset relative to car
 		this.orbitDist = camera.position.distanceTo(this.orbitTarget);
 		this.orbitPitch = Math.atan2(
 			camera.position.y - pos.y - 1,
@@ -129,11 +126,9 @@ export class CameraController {
 		);
 	}
 
-	private updateOrbit(camera: THREE.Camera, fwd: { x: number; y: number; z: number }): void {
-		const carYaw = Math.atan2(fwd.x, fwd.z);
-		this.orbitYaw += ((carYaw - this.orbitYaw + Math.PI) % (2 * Math.PI)) - Math.PI;
-
-		this.orbitSpherical.set(this.orbitDist, Math.PI / 2 - this.orbitPitch, this.orbitYaw);
+	private updateOrbit(camera: THREE.Camera, _fwd: { x: number; y: number; z: number }): void {
+		const totalYaw = this.carYawRef + this.orbitYaw;
+		this.orbitSpherical.set(this.orbitDist, Math.PI / 2 - this.orbitPitch, totalYaw);
 		const targetPos = new THREE.Vector3().setFromSpherical(this.orbitSpherical);
 		targetPos.add(this.orbitTarget);
 

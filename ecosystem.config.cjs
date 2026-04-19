@@ -32,8 +32,8 @@ module.exports = {
 		},
 		{
 			name: "racing-api",
-			script: "npx",
-			args: "tsx src/server/index.ts",
+			script: "node",
+			args: "--import tsx src/server/index.ts",
 			cwd: GAME_DIR,
 			watch: false,
 			autorestart: true,

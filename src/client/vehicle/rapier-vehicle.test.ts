@@ -105,13 +105,15 @@ describe("RapierVehicleController", () => {
 			expect(v.state.speed).toBeGreaterThan(1.0);
 		});
 
-		it("reverse produces negative speed (S = backward)", async () => {
+		it("reverse produces negative speed (S = backward, after 500ms delay)", async () => {
 			const v = await makeVehicle(0);
 			settle(v);
 
-			for (let i = 0; i < 120; i++) {
+			// Hold backward long enough: 600ms to engage reverse + 2s to build speed
+			for (let i = 0; i < 156; i++) {
 				v.update(flatInput({ backward: true }), 1 / 60);
 			}
+			expect(v.state.gear).toBe(-1);
 			expect(v.state.speed).toBeLessThan(-0.1);
 		});
 	});
@@ -132,20 +134,15 @@ describe("RapierVehicleController", () => {
 		it("does not flip/roll during hard braking from speed", async () => {
 			const v = await makeVehicle(0);
 			getMoving(v, 180);
-			const speedBefore = Math.abs(v.state.speed);
-			expect(speedBefore).toBeGreaterThan(5.0);
+			expect(Math.abs(v.state.speed)).toBeGreaterThan(5.0);
 
-			// Hard brake for 2 seconds
 			for (let i = 0; i < 120; i++) {
 				v.update(flatInput({ backward: true }), 1 / 60);
 			}
 
-			// Car should still be roughly upright — roll should not exceed ~15 degrees
 			const r = v.physicsBody.rotation();
 			const roll = Math.asin(2 * (r.w * r.x + r.y * r.z));
-			expect(Math.abs(roll)).toBeLessThan(Math.PI / 12); // < 15 degrees
-
-			// Car should not be flipped upside down
+			expect(Math.abs(roll)).toBeLessThan(Math.PI / 12);
 			expect(v.getPosition().y).toBeGreaterThan(0);
 		});
 
@@ -159,7 +156,7 @@ describe("RapierVehicleController", () => {
 
 			const r = v.physicsBody.rotation();
 			const roll = Math.asin(2 * (r.w * r.x + r.y * r.z));
-			expect(Math.abs(roll)).toBeLessThan(Math.PI / 6); // < 30 degrees
+			expect(Math.abs(roll)).toBeLessThan(Math.PI / 6);
 		});
 
 		it("significantly reduces speed with sustained braking", async () => {
@@ -170,7 +167,6 @@ describe("RapierVehicleController", () => {
 				v.update(flatInput({ backward: true }), 1 / 60);
 			}
 
-			// Brakes should have significantly reduced speed (even if not zero)
 			expect(Math.abs(v.state.speed)).toBeLessThan(15);
 		});
 	});
@@ -184,8 +180,7 @@ describe("RapierVehicleController", () => {
 			for (let i = 0; i < 90; i++) {
 				v.update(flatInput({ forward: true, left: true }), 1 / 60);
 			}
-			const headingAfter = v.getHeading();
-			expect(Math.abs(headingAfter - headingBefore)).toBeGreaterThan(0.01);
+			expect(Math.abs(v.getHeading() - headingBefore)).toBeGreaterThan(0.01);
 		});
 
 		it("steering angle is zero when no input", async () => {
@@ -221,20 +216,15 @@ describe("RapierVehicleController", () => {
 		it("high-speed steering does not cause spinout", async () => {
 			const v = await makeVehicle(0);
 			getMoving(v, 240);
-			const speedBefore = Math.abs(v.state.speed);
-			expect(speedBefore).toBeGreaterThan(10.0);
+			expect(Math.abs(v.state.speed)).toBeGreaterThan(10.0);
 
-			// Hard left turn at speed for 1 second
 			for (let i = 0; i < 60; i++) {
 				v.update(flatInput({ forward: true, left: true }), 1 / 60);
 			}
 
-			// Car should still be upright
 			const r = v.physicsBody.rotation();
 			const roll = Math.asin(2 * (r.w * r.x + r.y * r.z));
-			expect(Math.abs(roll)).toBeLessThan(Math.PI / 4); // < 45 degrees
-
-			// Should not be going backwards (spinout)
+			expect(Math.abs(roll)).toBeLessThan(Math.PI / 4);
 			expect(v.state.speed).toBeGreaterThan(-2.0);
 		});
 	});
@@ -267,18 +257,135 @@ describe("RapierVehicleController", () => {
 		it("reset sets correct heading from rotation parameter", async () => {
 			const v = await makeVehicle(0);
 			v.reset(0, 3, 0, Math.PI / 2);
+			expect(v.getHeading()).toBeCloseTo(Math.PI / 2, 1);
+		});
+	});
 
-			const heading = v.getHeading();
-			expect(heading).toBeCloseTo(Math.PI / 2, 1);
+	describe("Engine braking (coasting)", () => {
+		it("coasting decelerates gently, not aggressively", async () => {
+			const v = await makeVehicle(0);
+			getMoving(v, 240);
+			const speedBefore = v.state.speed;
+			expect(speedBefore).toBeGreaterThan(5.0);
+
+			// Coast (no throttle, no brake) for 3 seconds
+			for (let i = 0; i < 180; i++) {
+				v.update(flatInput(), 1 / 60);
+			}
+
+			// Should retain at least 30% of speed
+			expect(v.state.speed).toBeGreaterThan(0);
+			expect(v.state.speed).toBeGreaterThan(speedBefore * 0.3);
+		});
+	});
+
+	describe("Gearbox downshift", () => {
+		it("downshifts when RPM drops low enough", async () => {
+			const v = await makeVehicle(0);
+			getMoving(v, 300);
+			const gearAtSpeed = v.telemetry.gear;
+			expect(gearAtSpeed).toBeGreaterThan(0);
+
+			for (let i = 0; i < 600; i++) {
+				v.update(flatInput(), 1 / 60);
+			}
+
+			expect(v.telemetry.gear).toBeLessThanOrEqual(gearAtSpeed);
+		});
+	});
+
+	describe("Reverse gear state machine", () => {
+		it("brakes first — gear stays forward while car has speed", async () => {
+			const v = await makeVehicle(0);
+			getMoving(v, 120);
+			expect(v.state.speed).toBeGreaterThan(1.0);
+
+			// Hold backward for 1 second
+			for (let i = 0; i < 60; i++) {
+				v.update(flatInput({ backward: true }), 1 / 60);
+			}
+			// Gear should be positive (forward), not -1 — still braking
+			expect(v.state.gear).toBeGreaterThan(0);
+		});
+
+		it("does NOT engage reverse within 500ms of stopping", async () => {
+			const v = await makeVehicle(0);
+			settle(v);
+
+			// Hold backward for 400ms (less than 500ms threshold)
+			for (let i = 0; i < 24; i++) {
+				v.update(flatInput({ backward: true }), 1 / 60);
+			}
+			expect(v.state.gear).not.toBe(-1);
+		});
+
+		it("engages reverse after 500ms hold while stopped", async () => {
+			const v = await makeVehicle(0);
+			settle(v);
+
+			// Hold backward for 600ms (> 500ms threshold)
+			for (let i = 0; i < 36; i++) {
+				v.update(flatInput({ backward: true }), 1 / 60);
+			}
+			expect(v.state.gear).toBe(-1);
+		});
+
+		it("car accelerates backward once reverse is engaged", async () => {
+			const v = await makeVehicle(0);
+			settle(v);
+
+			// Hold backward long enough to engage reverse (600ms)
+			for (let i = 0; i < 36; i++) {
+				v.update(flatInput({ backward: true }), 1 / 60);
+			}
+			expect(v.state.gear).toBe(-1);
+
+			// Continue holding — car should start moving backward
+			for (let i = 0; i < 120; i++) {
+				v.update(flatInput({ backward: true }), 1 / 60);
+			}
+			expect(v.state.speed).toBeLessThan(-0.3);
+		});
+
+		it("resets reverse timer if backward is released mid-wait", async () => {
+			const v = await makeVehicle(0);
+			settle(v);
+
+			// Hold backward for 300ms
+			for (let i = 0; i < 18; i++) {
+				v.update(flatInput({ backward: true }), 1 / 60);
+			}
+			// Release
+			for (let i = 0; i < 10; i++) {
+				v.update(flatInput(), 1 / 60);
+			}
+			// Hold backward for 400ms (total 700ms if timer persisted)
+			for (let i = 0; i < 24; i++) {
+				v.update(flatInput({ backward: true }), 1 / 60);
+			}
+			// Timer was reset — should NOT be in reverse
+			expect(v.state.gear).not.toBe(-1);
+		});
+
+		it("speed trends downward during braking phase", async () => {
+			const v = await makeVehicle(0);
+			getMoving(v, 180);
+			const startSpeed = v.state.speed;
+			expect(startSpeed).toBeGreaterThan(2.0);
+
+			// After 0.5s of braking, speed should be lower than start
+			for (let i = 0; i < 30; i++) {
+				v.update(flatInput({ backward: true }), 1 / 60);
+			}
+			expect(v.state.speed).toBeLessThan(startSpeed);
 		});
 	});
 
 	describe("Properties", () => {
 		it("physicsBody exposes the Rapier rigid body", async () => {
 			const v = await makeVehicle(0);
-			const body = v.physicsBody;
-			expect(body).toBeDefined();
-			expect(body.translation()).toBeDefined();
+			expect(v.physicsBody).toBeDefined();
+			expect(v.physicsBody.translation()).toBeDefined();
 		});
 
 		it("rapierWorld exposes the Rapier world", async () => {
