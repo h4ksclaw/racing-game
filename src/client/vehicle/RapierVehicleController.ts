@@ -76,7 +76,6 @@ export class RapierVehicleController {
 	private simBoostNorm = 0;
 	private steerAngle = 0;
 	private initialized = false;
-	private reverseHoldTimer = 0; // ms held backward while nearly stopped → 500ms to engage reverse
 	private _diagTimer = 0; // throttle diagnostic log output
 	private _prevReverse = false;
 
@@ -213,99 +212,83 @@ export class RapierVehicleController {
 		this.steerAngle = Math.abs(sd) < maxD ? targetSteer : this.steerAngle + Math.sign(sd) * maxD;
 		this.state.steeringAngle = this.steerAngle;
 
-		// Reverse gear: requires 500ms hold while stopped
+		// ── Drive state: Forward / Neutral / Reverse / Braking ──
+		// W = forward throttle, S = brake (if moving forward) or reverse (if slow/stopped)
+		// Nothing held = neutral coast (auto-stop via wheel brakes)
+		const wantsForward = !!input.forward && !input.backward;
 		const wantsBackward = !!input.backward && !input.forward;
-		const isBraking = wantsBackward && localVelX > 0.1; // brake while still moving forward
-		const stoppedOrReverse = localVelX <= 0.1;
+		const BRAKE_HYSTERESIS = 0.3; // m/s — above this while holding S = braking
 
-		if (wantsBackward && stoppedOrReverse) {
-			this.reverseHoldTimer += dt * 1000;
-		} else if (this.reverseHoldTimer > 0 && (localVelX > 0.5 || !wantsBackward)) {
-			// Reset if key released or car genuinely accelerates (not tiny jitter)
-			this.reverseHoldTimer = 0;
+		let isBraking = false;
+		let isReverse = false;
+		if (wantsBackward) {
+			if (localVelX > BRAKE_HYSTERESIS) {
+				isBraking = true;
+			} else {
+				isReverse = true;
+			}
 		}
-		const isReverse = wantsBackward && this.reverseHoldTimer >= 500;
 
-		engine.throttle = input.forward ? 1 : isReverse ? 0.5 : 0;
+		engine.throttle = wantsForward ? 1 : isReverse ? 0.5 : 0;
 		gearbox.update(dt, engine, localVelX, isBraking);
 		engine.update(localVelX, gearbox.effectiveRatio, chassis.wheelRadius, dt);
 
-		// ── Braking & auto-stop ──
-		// Use Rapier wheel brakes as the PRIMARY braking mechanism.
-		// This keeps brake forces in the tire model alongside engine forces.
-		// Body impulses are only for drag/rolling as secondary corrections.
-		const noThrottleInput = !input.forward && !input.backward;
-		let rapierBrakeForce = 0; // brake value passed to setWheelBrake (0-10 range)
-		let bodyBrakeN = 0; // additional body impulse for auto-stop
-
+		// ── Wheel brake force (Rapier native) ──
+		let rapierBrakeForce = 0;
+		let coastBodyBrakeN = 0; // body impulse for neutral coast deceleration
 		if (isBraking || input.handbrake) {
-			// Active braking: strong wheel brakes + body impulse
 			rapierBrakeForce = input.handbrake ? 8.0 : 5.0;
-			const brakeG = input.handbrake ? this._config.brakes.handbrakeG : this._config.brakes.maxBrakeG;
-			bodyBrakeN = brakeG * chassis.mass * 9.81;
-			bodyBrakeN = Math.min(bodyBrakeN, TIRE_MU * chassis.mass * 9.81);
-		} else if (noThrottleInput && Math.abs(localVelX) > 0.1 && !isReverse) {
-			// Auto-stop: wheel brakes + moderate body impulse (automatic creep-stop)
-			// This simulates automatic transmission drag: torque converter + engine braking
+		} else if (!wantsForward && !wantsBackward && Math.abs(localVelX) > 0.1) {
+			// Neutral coast: moderate body impulse for auto creep-stop
 			const speedFactor = Math.min(1.0, Math.abs(localVelX) / 5.0);
-			rapierBrakeForce = 2.0 * speedFactor;
-			bodyBrakeN = 0.25 * chassis.mass * 9.81 * speedFactor; // 0.25g auto-stop impulse
+			coastBodyBrakeN = 0.3 * chassis.mass * 9.81 * speedFactor;
 		}
 
+		// Brake lights: ONLY active braking (S while moving forward, handbrake)
 		this.brakes.isBraking = isBraking;
 		this.brakes.isHandbrake = !!input.handbrake;
-		// brakePressure for light display: 1 = active braking, 0 = none
-		// Auto-stop is NOT "braking" — don't show brake lights for it
 		this.brakes.brakePressure = isBraking || input.handbrake ? 1 : 0;
 
 		// ── Engine force → rear wheels ──
 		const tractionPerWheel = (chassis.mass * tires.tractionPct * 9.82) / 2;
-		let engF = engine.getWheelForce(gearbox.effectiveRatio, chassis.wheelRadius, tractionPerWheel);
-		if (gearbox.isShifting) engF *= 0.3;
-		if (isReverse) {
-			// Reverse gear: use 1st gear ratio * final drive, reduced by 0.3 for realistic feel
+		let engF = 0;
+		if (wantsForward) {
+			engF = engine.getWheelForce(gearbox.effectiveRatio, chassis.wheelRadius, tractionPerWheel);
+			if (gearbox.isShifting) engF *= 0.3;
+		} else if (isReverse) {
+			// Reverse: 1st gear ratio * final drive, reduced for realistic feel
 			const firstGearRatio = this._config.gearbox.gearRatios[0] || 3.5;
 			const reverseRatio = engineSpec.finalDrive * firstGearRatio;
 			engF = -(engineSpec.torqueNm * 0.3 * reverseRatio * engine.getTorqueMultiplier()) / chassis.wheelRadius;
-			// Cap reverse at 60% of traction
 			engF = Math.max(engF, -tractionPerWheel * 0.6);
 		}
+		// else: neutral — engF stays 0
 
 		// Negate because Rapier's rolling direction = -Z, our car faces +Z
 		this.vehicle.setWheelEngineForce(this.wheelRL, -engF);
 		this.vehicle.setWheelEngineForce(this.wheelRR, -engF);
 
-		// ── Apply wheel brakes (Rapier's built-in mechanism) ──
-		// All 4 wheels get brake force — front-biased for realistic feel
-		const frontBrake = rapierBrakeForce * 1.2;
-		const rearBrake = rapierBrakeForce * 0.8;
-		this.vehicle.setWheelBrake(this.wheelFL, frontBrake);
-		this.vehicle.setWheelBrake(this.wheelFR, frontBrake);
-		this.vehicle.setWheelBrake(this.wheelRL, rearBrake);
-		this.vehicle.setWheelBrake(this.wheelRR, rearBrake);
+		// ── Apply wheel brakes (all 4, front-biased) ──
+		this.vehicle.setWheelBrake(this.wheelFL, rapierBrakeForce * 1.2);
+		this.vehicle.setWheelBrake(this.wheelFR, rapierBrakeForce * 1.2);
+		this.vehicle.setWheelBrake(this.wheelRL, rapierBrakeForce * 0.8);
+		this.vehicle.setWheelBrake(this.wheelRR, rapierBrakeForce * 0.8);
 
-		// ── Rolling resistance + aero drag as body impulses (secondary, not primary) ──
-		// Only when NOT in reverse — reverse uses wheel forces exclusively.
-		const rollingF = CRR * chassis.mass * 9.81;
-		const aeroF = this.drag.config.aeroDrag * localVelX * localVelX;
-
-		// Engine braking (only when coasting forward, not in reverse)
-		const engineBrakeF =
-			!input.forward && !isReverse && localVelX > 0.1
-				? (engine.config.engineBraking *
-						engineSpec.torqueNm *
-						gearbox.effectiveRatio *
-						(engine.rpm / engine.config.maxRPM)) /
-					chassis.wheelRadius
-				: 0;
-
-		// Apply drag/rolling as body impulse — but NEVER during reverse
-		// (reverse engine force goes through wheel controller, body impulse would fight it)
+		// ── Rolling + aero drag as light body impulse (NEVER during reverse) ──
 		let totalRetard = 0;
 		if (!isReverse && !wantsBackward) {
-			totalRetard = engineBrakeF + rollingF * 0.5 + aeroF + bodyBrakeN;
-			const maxGripForce = TIRE_MU * chassis.mass * 9.81;
-			totalRetard = Math.min(totalRetard, maxGripForce);
+			const rollingF = CRR * chassis.mass * 9.81;
+			const aeroF = this.drag.config.aeroDrag * localVelX * localVelX;
+			const engineBrakeF =
+				localVelX > 0.1
+					? (engine.config.engineBraking *
+							engineSpec.torqueNm *
+							gearbox.effectiveRatio *
+							(engine.rpm / engine.config.maxRPM)) /
+						chassis.wheelRadius
+					: 0;
+			totalRetard = engineBrakeF + rollingF * 0.5 + aeroF + coastBodyBrakeN;
+			totalRetard = Math.min(totalRetard, TIRE_MU * chassis.mass * 9.81);
 		}
 		if (totalRetard > 0 && Math.abs(localVelX) > 0.01) {
 			const fx = -totalRetard * Math.sin(heading) * Math.sign(localVelX);
@@ -313,30 +296,17 @@ export class RapierVehicleController {
 			this.carBody.applyImpulse({ x: fx * dt, y: 0, z: fz * dt }, true);
 		}
 
-		// DIAG: log brake/reverse state with engine force details
+		// DIAG
 		if (!this._diagTimer) this._diagTimer = 0;
-		if (wantsBackward) {
-			this._diagTimer += dt * 1000;
-			if (this._diagTimer >= 200) {
-				this._diagTimer = 0;
-				console.log(
-					`[BRAKE] vel=${localVelX.toFixed(3)} braking=${isBraking} reverse=${isReverse} ` +
-						`timer=${this.reverseHoldTimer.toFixed(0)}ms ` +
-						`engF=${engF.toFixed(0)}N wheelBrake=${rapierBrakeForce.toFixed(1)} ` +
-						`rolling=${rollingF.toFixed(0)}N aero=${aeroF.toFixed(1)}N ` +
-						`engBrake=${engineBrakeF.toFixed(0)}N bodyRetard=${totalRetard.toFixed(0)}N`,
-				);
-			}
-		} else if (this._prevReverse) {
-			this._diagTimer += dt * 1000;
-			if (this._diagTimer >= 200 && this._diagTimer < 2000) {
-				this._diagTimer = 0;
-				console.log(
-					`[RELEASE] vel=${localVelX.toFixed(3)} engF=${engF.toFixed(0)}N wheelBrake=${rapierBrakeForce.toFixed(1)} bodyRetard=${totalRetard.toFixed(0)}N`,
-				);
-			}
-		} else {
+		this._diagTimer += dt * 1000;
+		if (this._diagTimer >= 200) {
 			this._diagTimer = 0;
+			if (wantsBackward || this._prevReverse) {
+				console.log(
+					`[DRIVE] vel=${localVelX.toFixed(3)} state=${isReverse ? "REV" : isBraking ? "BRK" : wantsForward ? "FWD" : "---"} ` +
+						`engF=${engF.toFixed(0)}N wheelBrk=${rapierBrakeForce.toFixed(1)} bodyRetard=${totalRetard.toFixed(0)}N`,
+				);
+			}
 		}
 		this._prevReverse = isReverse;
 
@@ -371,7 +341,7 @@ export class RapierVehicleController {
 		// ── Output state ──
 		this.state.speed = localVelX;
 		this.state.rpm = engine.rpm;
-		this.state.gear = isReverse ? -1 : localVelX < -0.1 ? -1 : gearbox.currentGear + 1;
+		this.state.gear = isReverse ? -1 : gearbox.currentGear + 1;
 		this.state.throttle = engine.throttle;
 		this.state.brake = this.brakes.brakePressure;
 		this.state.onGround = this.countContacts() > 0;

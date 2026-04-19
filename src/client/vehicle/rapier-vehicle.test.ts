@@ -308,23 +308,12 @@ describe("RapierVehicleController", () => {
 			expect(v.state.gear).toBeGreaterThan(0);
 		});
 
-		it("does NOT engage reverse within 500ms of stopping", async () => {
+		it("engages reverse instantly when S held near stop (no timer)", async () => {
 			const v = await makeVehicle(0);
 			settle(v);
 
-			// Hold backward for 400ms (less than 500ms threshold)
-			for (let i = 0; i < 24; i++) {
-				v.update(flatInput({ backward: true }), 1 / 60);
-			}
-			expect(v.state.gear).not.toBe(-1);
-		});
-
-		it("engages reverse after 500ms hold while stopped", async () => {
-			const v = await makeVehicle(0);
-			settle(v);
-
-			// Hold backward for 600ms (> 500ms threshold)
-			for (let i = 0; i < 36; i++) {
+			// Hold backward — reverse should engage immediately since car is stopped
+			for (let i = 0; i < 5; i++) {
 				v.update(flatInput({ backward: true }), 1 / 60);
 			}
 			expect(v.state.gear).toBe(-1);
@@ -347,24 +336,21 @@ describe("RapierVehicleController", () => {
 			expect(v.state.speed).toBeLessThan(-0.3);
 		});
 
-		it("resets reverse timer if backward is released mid-wait", async () => {
+		it("disengages reverse when S released", async () => {
 			const v = await makeVehicle(0);
 			settle(v);
 
-			// Hold backward for 300ms
-			for (let i = 0; i < 18; i++) {
+			// Hold backward — engage reverse
+			for (let i = 0; i < 30; i++) {
 				v.update(flatInput({ backward: true }), 1 / 60);
 			}
-			// Release
+			expect(v.state.gear).toBe(-1);
+
+			// Release — should go to neutral (gear 1, no engine force)
 			for (let i = 0; i < 10; i++) {
 				v.update(flatInput(), 1 / 60);
 			}
-			// Hold backward for 400ms (total 700ms if timer persisted)
-			for (let i = 0; i < 24; i++) {
-				v.update(flatInput({ backward: true }), 1 / 60);
-			}
-			// Timer was reset — should NOT be in reverse
-			expect(v.state.gear).not.toBe(-1);
+			expect(v.state.gear).toBe(1);
 		});
 
 		it("speed trends downward during braking phase", async () => {
