@@ -8,9 +8,9 @@
  * NO scene assembly logic lives in page-specific files.
  */
 
-import type { HouseItem } from "@shared/track.ts";
-import { generateHouses, generateScenery, mulberry32 } from "@shared/track.ts";
 import * as THREE from "three";
+import type { HouseItem } from "../shared/track.ts";
+import { generateHouses, generateScenery, mulberry32 } from "../shared/track.ts";
 import { getBiomeForSeed } from "./biomes.ts";
 import { buildHouses } from "./buildings.ts";
 import { initBloom } from "./effects.ts";
@@ -98,7 +98,7 @@ export async function buildWorld(options: WorldOptions = {}): Promise<WorldResul
 		if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 		trackData = await resp.json();
 	} catch {
-		const gen = (await import("@shared/track.ts")).generateTrack(seed);
+		const gen = (await import("../shared/track.ts")).generateTrack(seed);
 		trackData = { ...gen, seed };
 	}
 	state.worldSamples = trackData.samples;

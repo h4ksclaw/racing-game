@@ -8,8 +8,8 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { generateTrack } from "@shared/track.ts";
 import express from "express";
+import { generateTrack } from "../shared/track.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 

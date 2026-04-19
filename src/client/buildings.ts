@@ -3,8 +3,8 @@
  * Creates detailed houses with windows, doors, eaves, foundation, chimneys.
  */
 
-import type { HouseItem } from "@shared/track.ts";
 import * as THREE from "three";
+import type { HouseItem } from "../shared/track.ts";
 import type { HouseConfig } from "./biomes.ts";
 import { state } from "./scene.ts";
 

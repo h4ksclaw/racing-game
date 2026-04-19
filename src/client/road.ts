@@ -1,5 +1,5 @@
-import type { TrackSample } from "@shared/track.ts";
 import * as THREE from "three";
+import type { TrackSample } from "../shared/track.ts";
 import type { BiomeConfig, GuardrailConfig } from "./biomes.ts";
 import { DEFAULT_GUARDRAIL_CONFIG } from "./biomes.ts";
 import { state } from "./scene.ts";

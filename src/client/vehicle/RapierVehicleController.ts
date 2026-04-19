@@ -57,6 +57,9 @@ export class RapierVehicleController {
 	private terrain: TerrainProvider | null = null;
 	private terrainCollider: TerrainCollider | null = null;
 	private guardrails: Guardrails | null = null;
+	get guardrailBodies(): readonly RAPIER.RigidBody[] {
+		return this.guardrails?.bodyList ?? [];
+	}
 
 	// Deferred rebuilds (applied AFTER world.step() to avoid WASM aliasing)
 	private pendingGroundRebuild: { x: number; z: number } | null = null;

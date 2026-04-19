@@ -62,6 +62,7 @@ export class Guardrails {
 		const startIdx = Math.max(0, sampleIndex - RAIL_RANGE);
 		const endIdx = Math.min(samples.length - 1, sampleIndex + RAIL_RANGE);
 
+		const isFirstBuild = this.lastHash === "";
 		const hash = `${startIdx}-${endIdx}`;
 		if (hash === this.lastHash) return false;
 		this.lastHash = hash;
@@ -73,6 +74,27 @@ export class Guardrails {
 		// Get guardrail distance from road center
 		const rb = this.terrain.getRoadBoundary(carX, carZ);
 		const railDist = rb?.guardrailDist ?? 15;
+
+		// ── Diagnostic: compare physics pos vs visual pos for first 3 segments ──
+		if (isFirstBuild) {
+			console.log("[guardrail-debug] railDist:", railDist);
+			for (let di = 0; di < Math.min(3, endIdx - startIdx); di++) {
+				const ds = samples[startIdx + di] as any;
+				if (!ds?.grassLeft || !ds?.grassRight) continue;
+				const dtLen = Math.sqrt(ds.tangent.x ** 2 + ds.tangent.z ** 2);
+				const dnx = -ds.tangent.z / dtLen;
+				const dnz = ds.tangent.x / dtLen;
+				const plx = ds.point.x + dnx * railDist;
+				const plz = ds.point.z + dnz * railDist;
+				const prx = ds.point.x - dnx * railDist;
+				const prz = ds.point.z - dnz * railDist;
+				console.log(
+					`[guardrail-debug] seg ${startIdx + di} ` +
+						`L phys(${plx.toFixed(2)},${plz.toFixed(2)}) vis(${ds.grassLeft.x.toFixed(2)},${ds.grassLeft.z.toFixed(2)}) ` +
+						`R phys(${prx.toFixed(2)},${prz.toFixed(2)}) vis(${ds.grassRight.x.toFixed(2)},${ds.grassRight.z.toFixed(2)})`,
+				);
+			}
+		}
 
 		// Build walls along road edges
 		for (let i = startIdx; i < endIdx; i++) {
@@ -95,9 +117,9 @@ export class Guardrails {
 			const my = (s.point.y + sNext.point.y) / 2;
 			const angle = Math.atan2(s.tangent.x, s.tangent.z);
 
-			// Left guardrail
-			const lx = mx + nx * railDist;
-			const lz = mz + nz * railDist;
+			// Left guardrail (note: normal direction is opposite to visual binormal)
+			const lx = mx - nx * railDist;
+			const lz = mz - nz * railDist;
 			const lBody = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(lx, my, lz));
 			lBody.setRotation({ x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) }, true);
 			this.world.createCollider(
@@ -109,8 +131,8 @@ export class Guardrails {
 			this.bodies.push(lBody);
 
 			// Right guardrail
-			const rx = mx - nx * railDist;
-			const rz = mz - nz * railDist;
+			const rx = mx + nx * railDist;
+			const rz = mz + nz * railDist;
 			const rBody = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(rx, my, rz));
 			rBody.setRotation({ x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) }, true);
 			this.world.createCollider(

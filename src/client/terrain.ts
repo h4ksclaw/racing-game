@@ -1,7 +1,7 @@
-import type { TrackSample } from "@shared/track.ts";
-import { mulberry32 } from "@shared/track.ts";
 import { createNoise2D } from "simplex-noise";
 import * as THREE from "three";
+import type { TrackSample } from "../shared/track.ts";
+import { mulberry32 } from "../shared/track.ts";
 import type { BiomeConfig } from "./biomes.ts";
 import { state } from "./scene.ts";
 import type { WorldResponse } from "./utils.ts";

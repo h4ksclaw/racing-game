@@ -1,4 +1,4 @@
-import type { SceneryType } from "@shared/track.ts";
+import type { SceneryType } from "../shared/track.ts";
 
 // ── Guardrail configuration ─────────────────────────────────────────────
 

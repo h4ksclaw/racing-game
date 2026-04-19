@@ -1,6 +1,6 @@
-import type { SceneryItem } from "@shared/track.ts";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import type { SceneryItem } from "../shared/track.ts";
 import { buildProceduralScenery } from "./procedural-scenery.ts";
 import { state } from "./scene.ts";
 import type { TerrainSampler } from "./terrain.ts";

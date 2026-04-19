@@ -35,7 +35,7 @@ export const state = {
 	roadWetness: 0.0, // 0=dry, 1=soaked (rain)
 	currentTime: 12,
 	currentWeather: "clear" as WeatherType,
-	worldSamples: [] as import("@shared/track.ts").TrackSample[],
+	worldSamples: [] as import("../shared/track.ts").TrackSample[],
 	flyover: {
 		active: false,
 		speed: 100, // km/h

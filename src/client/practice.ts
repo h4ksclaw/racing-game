@@ -404,7 +404,7 @@ function animate(): void {
 	if (debugMode && vehicle) {
 		updateDebugOverlay(vehicle);
 		if (physicsDebug) {
-			physicsDebug.update(vehicle.rapierWorld, vehicle.physicsBody);
+			physicsDebug.update(vehicle.rapierWorld, vehicle.physicsBody, vehicle.guardrailBodies);
 		}
 	}
 

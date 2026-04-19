@@ -1,4 +1,4 @@
-import type { TrackSample } from "@shared/track.ts";
+import type { TrackSample } from "../shared/track.ts";
 
 export interface V3 {
 	x: number;

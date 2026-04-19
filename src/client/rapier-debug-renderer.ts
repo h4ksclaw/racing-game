@@ -1,12 +1,11 @@
 /**
  * Wireframe debug renderer for Rapier physics.
  *
- * Renders two layers via LineSegments:
- *   1. World colliders (yellow, semi-transparent) — terrain + guardrails from world.debugRender()
- *   2. Car body (green) — from known RigidBody ref
- *
- * Guardrails are NOT drawn separately — they're already included in debugRender()
- * as part of the physics world. One system, no duplicates.
+ * Uses world.debugRender() with filterPredicate to separate colliders into
+ * three color-coded layers — all positions come directly from Rapier:
+ *   1. Terrain trimesh (yellow) — the ground surface
+ *   2. Guardrails (red) — wall cuboids along road edges, Y-clamped to ground level
+ *   3. Car body (green) — the player vehicle collider
  */
 
 import type RAPIER from "@dimforge/rapier3d-compat";
@@ -14,145 +13,112 @@ import * as THREE from "three";
 
 const MAX_VERTS = 600_000;
 
+/** Clamp guardrail wireframe Y to this range around the car (meters). */
+const GUARD_Y_RANGE = 5;
+
 export class RapierDebugRenderer {
-	private worldMesh: THREE.LineSegments;
+	private terrainMesh: THREE.LineSegments;
+	private guardMesh: THREE.LineSegments;
 	private carMesh: THREE.LineSegments;
 	private logCount = 0;
 
 	constructor(scene: THREE.Scene) {
-		this.worldMesh = this.createLine(scene, 0xffff00, 0.4);
+		this.terrainMesh = this.createLine(scene, 0xffff00, 0.4);
+		this.guardMesh = this.createLine(scene, 0xff2222, 0.9);
 		this.carMesh = this.createLine(scene, 0x22ff44, 0.9);
 	}
 
-	update(world: RAPIER.World, carBody?: RAPIER.RigidBody): void {
+	update(world: RAPIER.World, carBody?: RAPIER.RigidBody, guardBodies?: readonly RAPIER.RigidBody[]): void {
 		this.logCount++;
 		try {
-			const buf = world.debugRender();
-			if (!buf || buf.vertices.length === 0) {
-				if (this.logCount <= 3) console.log("[rapier-debug] no debug data");
-				this.worldMesh.visible = false;
-				this.carMesh.visible = false;
-				return;
+			// Build lookup sets for filter predicates
+			const guardBodySet = new Set<RAPIER.RigidBody>(guardBodies ?? []);
+
+			// Terrain: everything EXCEPT car and guardrails
+			const terrainBuf = world.debugRender(undefined, (collider) => {
+				const body = collider.parent();
+				if (!body) return true;
+				if (body === carBody) return false;
+				if (guardBodySet.has(body)) return false;
+				return true;
+			});
+
+			// Guardrails: only guardrail bodies
+			const guardBuf =
+				guardBodySet.size > 0
+					? world.debugRender(undefined, (collider) => {
+							const body = collider.parent();
+							return body != null && guardBodySet.has(body);
+						})
+					: null;
+
+			// Car: only the car body
+			const carBuf = carBody ? world.debugRender(undefined, (collider) => collider.parent() === carBody) : null;
+
+			// Update terrain (yellow) — pass through as-is
+			if (terrainBuf && terrainBuf.vertices.length > 0) {
+				const n = Math.min(terrainBuf.vertices.length / 3, MAX_VERTS);
+				this.replaceGeometry(this.terrainMesh, terrainBuf.vertices.slice(0, n * 3));
+				this.terrainMesh.visible = true;
+			} else {
+				this.terrainMesh.visible = false;
 			}
 
-			this.worldMesh.visible = true;
-			const numVerts = Math.min(buf.vertices.length / 3, MAX_VERTS);
-			this.replaceGeometry(this.worldMesh, buf.vertices.slice(0, numVerts * 3));
-
-			// Car body in green
-			if (carBody) {
-				const carVerts = this.buildCuboidWireframes([carBody]);
-				if (carVerts.length > 0) {
-					this.replaceGeometry(this.carMesh, carVerts);
-					this.carMesh.visible = true;
-				} else {
-					this.carMesh.visible = false;
+			// Update guardrails (red) — clamp Y to ground-level band around car
+			if (guardBuf && guardBuf.vertices.length > 0) {
+				const carY = carBody?.translation().y ?? 0;
+				const minY = carY - GUARD_Y_RANGE;
+				const maxY = carY + GUARD_Y_RANGE;
+				const src = guardBuf.vertices;
+				// Filter: keep line segments where at least one vertex is in Y range
+				const filtered: number[] = [];
+				for (let i = 0; i + 5 < src.length; i += 6) {
+					const y0 = src[i + 1];
+					const y1 = src[i + 4];
+					if ((y0 >= minY && y0 <= maxY) || (y1 >= minY && y1 <= maxY)) {
+						filtered.push(
+							src[i],
+							Math.max(minY, Math.min(maxY, y0)),
+							src[i + 2],
+							src[i + 3],
+							Math.max(minY, Math.min(maxY, y1)),
+							src[i + 5],
+						);
+					}
 				}
+				if (filtered.length > 0) {
+					this.replaceGeometry(this.guardMesh, new Float32Array(filtered));
+					this.guardMesh.visible = true;
+				} else {
+					this.guardMesh.visible = false;
+				}
+			} else {
+				this.guardMesh.visible = false;
+			}
+
+			// Update car (green) — pass through as-is
+			if (carBuf && carBuf.vertices.length > 0) {
+				this.replaceGeometry(this.carMesh, carBuf.vertices);
+				this.carMesh.visible = true;
 			} else {
 				this.carMesh.visible = false;
 			}
 
 			if (this.logCount <= 3) {
-				const p = buf.vertices;
-				console.log(
-					`[rapier-debug] ${numVerts} verts, ` +
-						`line1: [${p[0].toFixed(1)},${p[1].toFixed(1)},${p[2].toFixed(1)}]→[${p[3].toFixed(1)},${p[4].toFixed(1)},${p[5].toFixed(1)}]`,
-				);
+				const tv = terrainBuf?.vertices.length ?? 0;
+				const gv = guardBuf?.vertices.length ?? 0;
+				const cv = carBuf?.vertices.length ?? 0;
+				console.log(`[rapier-debug] terrain: ${tv / 3}, guardrails: ${gv / 3}, car: ${cv / 3} verts`);
+				if (guardBuf && guardBuf.vertices.length > 6) {
+					console.log(
+						"[rapier-debug] first guardrail verts:",
+						Array.from({ length: Math.min(9, guardBuf.vertices.length) }, (_, i) => guardBuf.vertices[i].toFixed(2)),
+					);
+				}
 			}
 		} catch (e) {
 			console.error("[rapier-debug] error:", e);
 		}
-	}
-
-	/**
-	 * Build wireframe edges for cuboid colliders on the given bodies.
-	 * Each cuboid → 12 edges (24 vertices).
-	 */
-	private buildCuboidWireframes(bodies: readonly RAPIER.RigidBody[]): Float32Array {
-		const verts: number[] = [];
-		for (const body of bodies) {
-			const pos = body.translation();
-			const rot = body.rotation();
-			const { x: qx, y: qy, z: qz, w: qw } = rot;
-			const xx = qx * qx;
-			const yy = qy * qy;
-			const zz = qz * qz;
-			const xy = qx * qy;
-			const xz = qx * qz;
-			const yz = qy * qz;
-			const wx = qw * qx;
-			const wy = qw * qy;
-			const wz = qw * qz;
-			// Column-major 3x3 rotation matrix from quaternion
-			const m = [
-				1 - 2 * (yy + zz),
-				2 * (xy - wz),
-				2 * (xz + wy),
-				2 * (xy + wz),
-				1 - 2 * (xx + zz),
-				2 * (yz - wx),
-				2 * (xz - wy),
-				2 * (yz + wx),
-				1 - 2 * (xx + yy),
-			];
-
-			for (let ci = 0; ci < body.numColliders(); ci++) {
-				const collider = body.collider(ci);
-				if (!collider) continue;
-				const shape = collider.shape;
-				if (!shape) continue;
-
-				let hx = 0.5;
-				let hy = 0.5;
-				let hz = 0.5;
-				const getHalfExtents = (shape as unknown as { getHalfExtents(): { x: number; y: number; z: number } })
-					.getHalfExtents;
-				if (typeof getHalfExtents === "function") {
-					const he = getHalfExtents();
-					hx = he.x;
-					hy = he.y;
-					hz = he.z;
-				}
-
-				const corners: number[][] = [
-					[-hx, -hy, -hz],
-					[hx, -hy, -hz],
-					[hx, hy, -hz],
-					[-hx, hy, -hz],
-					[-hx, -hy, hz],
-					[hx, -hy, hz],
-					[hx, hy, hz],
-					[-hx, hy, hz],
-				];
-
-				const transformed = corners.map(([cx, cy, cz]) => [
-					m[0] * cx + m[3] * cy + m[6] * cz + pos.x,
-					m[1] * cx + m[4] * cy + m[7] * cz + pos.y,
-					m[2] * cx + m[5] * cy + m[8] * cz + pos.z,
-				]);
-
-				// 12 edges of a cuboid
-				const edges: [number, number][] = [
-					[0, 1],
-					[1, 2],
-					[2, 3],
-					[3, 0],
-					[4, 5],
-					[5, 6],
-					[6, 7],
-					[7, 4],
-					[0, 4],
-					[1, 5],
-					[2, 6],
-					[3, 7],
-				];
-
-				for (const [a, b] of edges) {
-					verts.push(...transformed[a], ...transformed[b]);
-				}
-			}
-		}
-		return new Float32Array(verts);
 	}
 
 	private replaceGeometry(mesh: THREE.LineSegments, positions: Float32Array): void {
@@ -179,7 +145,8 @@ export class RapierDebugRenderer {
 	}
 
 	dispose(): void {
-		this.worldMesh.geometry.dispose();
+		this.terrainMesh.geometry.dispose();
+		this.guardMesh.geometry.dispose();
 		this.carMesh.geometry.dispose();
 	}
 }
