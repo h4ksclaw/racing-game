@@ -53,26 +53,62 @@ export class TerrainSampler {
 	private grid: Map<string, TrackSample[]>;
 	private samples: TrackSample[];
 	avgRoadY: number;
-	private readonly cellSize = 10;
-	private readonly noiseScale = 0.003;
+	private heightCache = new Map<string, number>();
+	flattenZones: FlattenZone[] = [];
+
+	/** Spatial grid cell size for nearest-road queries (m) */
+	private readonly CELL_SIZE = 10;
+	/** Noise frequency scaling for terrain FBM */
+	private readonly NOISE_SCALE = 0.003;
 	private noiseAmp: number;
 	private mountainAmp: number;
 	private worldRadius: number;
-	private heightCache = new Map<string, number>();
-	private readonly roadInfluence = 50;
-	private readonly blendStart = 20;
-	flattenZones: FlattenZone[] = [];
+	/**
+	 * Road cross-section profile for physics ground.
+	 * Defines height deltas across the road surface so the physics trimesh
+	 * matches the visual road/kerb/shoulder/edge structure.
+	 */
+	private crossSection: {
+		/** Half-width of the driving surface (m) — must match track.ts width/2 */
+		roadHalfWidth: number;
+		/** Width of the kerb/rumble strip zone (m) */
+		kerbWidth: number;
+		/** Width of the grass/gravel shoulder (m) */
+		shoulderWidth: number;
+		/** How much the kerb raises above the road surface (m) */
+		kerbRaise: number;
+		/** Shoulder height relative to road surface (m, negative = below road) */
+		shoulderDrop: number;
+		/** How far past the guardrail the concrete slab extends before dropping into terrain (m) */
+		slabExtent: number;
+		/** Maximum edge drop-off at the outer end of the slab (m) */
+		edgeDropMax: number;
+	};
 
-	// Road cross-section dimensions (must match track.ts defaults)
-	private roadHalfWidth = 4.0;
-	private kerbWidth = 0.8;
-	private shoulderWidth = 2.0;
-	private edgeDropMax = 0.15;
+	/** Maximum height rise per meter of lateral distance from road (prevents cliffs) */
+	private readonly SLOPE_CLAMP_RATE = 0.4;
+	/** Global height offset so visual terrain sits below road meshes */
+	private readonly TERRAIN_BASE_OFFSET = -0.3;
+	/** Distance from road where terrain noise starts blending in (m) */
+	private readonly BLEND_START = 20;
+	/** Distance from road where terrain is fully noise-driven (m) */
+	private readonly ROAD_INFLUENCE = 50;
 
 	constructor(
 		seed: number,
 		samples: TrackSample[],
-		opts: { noiseAmp?: number; mountainAmp?: number; worldRadius?: number } = {},
+		opts: {
+			noiseAmp?: number;
+			mountainAmp?: number;
+			worldRadius?: number;
+			roadWidth?: number;
+			kerbWidth?: number;
+			shoulderWidth?: number;
+			kerbRaise?: number;
+			shoulderDrop?: number;
+			slabExtent?: number;
+			edgeDropMax?: number;
+		} = {},
 	) {
 		const rng = mulberry32(seed + 99999);
 		this.noise2D = createNoise2D(rng);
@@ -81,13 +117,24 @@ export class TerrainSampler {
 		this.mountainAmp = opts.mountainAmp ?? 3;
 		this.worldRadius = opts.worldRadius ?? 800;
 
+		const roadHalfWidth = (opts.roadWidth ?? 8) / 2;
+		this.crossSection = {
+			roadHalfWidth,
+			kerbWidth: opts.kerbWidth ?? 0.8,
+			shoulderWidth: opts.shoulderWidth ?? 2,
+			kerbRaise: opts.kerbRaise ?? 0.01,
+			shoulderDrop: opts.shoulderDrop ?? -0.02,
+			slabExtent: opts.slabExtent ?? 0.75,
+			edgeDropMax: opts.edgeDropMax ?? 0.15,
+		};
+
 		let sumY = 0;
 		for (const s of samples) sumY += s.point.y;
 		this.avgRoadY = sumY / samples.length;
 		this.grid = new Map();
 		for (const s of samples) {
-			const cx = Math.floor(s.point.x / this.cellSize);
-			const cz = Math.floor(s.point.z / this.cellSize);
+			const cx = Math.floor(s.point.x / this.CELL_SIZE);
+			const cz = Math.floor(s.point.z / this.CELL_SIZE);
 			const key = `${cx},${cz}`;
 			let arr = this.grid.get(key);
 			if (!arr) {
@@ -118,33 +165,31 @@ export class TerrainSampler {
 	 * Kerbs are slightly raised, shoulders slightly lower, edge drops off.
 	 */
 	private crossSectionDelta(distFromCenter: number): number {
-		const kerbEdge = this.roadHalfWidth + this.kerbWidth;
-		const guardrailDist = kerbEdge + this.shoulderWidth;
+		const { roadHalfWidth, kerbWidth, shoulderWidth, kerbRaise, shoulderDrop, slabExtent, edgeDropMax } =
+			this.crossSection;
+		const kerbEdge = roadHalfWidth + kerbWidth;
+		const guardrailDist = kerbEdge + shoulderWidth;
 
-		if (distFromCenter <= this.roadHalfWidth) {
-			// On road — flat, no delta
+		if (distFromCenter <= roadHalfWidth) {
 			return 0;
 		}
 		if (distFromCenter <= kerbEdge) {
-			// Kerb zone — raised above road
-			const t = (distFromCenter - this.roadHalfWidth) / this.kerbWidth;
-			return 0.01 * t; // ramps up to +0.01m at kerb outer edge
+			// Kerb: linear ramp from road level to kerbRaise
+			const t = (distFromCenter - roadHalfWidth) / kerbWidth;
+			return kerbRaise * t;
 		}
 		if (distFromCenter <= guardrailDist) {
-			// Shoulder/grass — slightly below road
-			const t = (distFromCenter - kerbEdge) / this.shoulderWidth;
-			// Transition from kerb level (+0.01) down to shoulder level (-0.02)
-			return 0.01 * (1 - t) + -0.02 * t;
+			// Shoulder: linear blend from kerbRaise down to shoulderDrop
+			const t = (distFromCenter - kerbEdge) / shoulderWidth;
+			return kerbRaise * (1 - t) + shoulderDrop * t;
 		}
-		// Past guardrail — concrete slab drops off toward terrain
-		const slabExtent = 0.75;
+		// Past guardrail: quadratic drop into terrain
 		const t = Math.min(1, (distFromCenter - guardrailDist) / slabExtent);
-		// Quadratic drop from -0.02 to -0.17
-		return -0.02 - this.edgeDropMax * t * t;
+		return shoulderDrop - edgeDropMax * t * t;
 	}
 	nearestRoad(x: number, z: number): { dist: number; sample: TrackSample; sampleIndex: number } {
-		const cx = Math.floor(x / this.cellSize);
-		const cz = Math.floor(z / this.cellSize);
+		const cx = Math.floor(x / this.CELL_SIZE);
+		const cz = Math.floor(z / this.CELL_SIZE);
 		let best = { dist: Infinity, sample: this.samples[0], sampleIndex: 0 };
 		for (let dx = -2; dx <= 2; dx++) {
 			for (let dz = -2; dz <= 2; dz++) {
@@ -210,19 +255,20 @@ export class TerrainSampler {
 		const roadY = this.roadHeight(x, z);
 		const centerDist = Math.sqrt(x * x + z * z);
 		const mountainFactor = 1 + smoothstep(this.worldRadius * 0.75, this.worldRadius, centerDist) * this.mountainAmp;
-		const noiseH = this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp * mountainFactor;
-		const blend = smoothstep(this.blendStart, this.roadInfluence, dist);
+		const noiseH = this.fbm(x * this.NOISE_SCALE, z * this.NOISE_SCALE) * this.noiseAmp * mountainFactor;
+		const blend = smoothstep(this.BLEND_START, this.ROAD_INFLUENCE, dist);
 		const blendedY = roadY * (1 - blend) + (this.avgRoadY + noiseH) * blend;
-		// Clamp height difference to prevent cliffs: max 0.4m rise per 1m from road
-		const maxSlope = dist * 0.4;
-		const baseY = Math.max(roadY - maxSlope, Math.min(roadY + maxSlope, blendedY)) - 0.3;
+		// Clamp height difference to prevent cliffs near road
+		const maxSlope = dist * this.SLOPE_CLAMP_RATE;
+		const baseY = Math.max(roadY - maxSlope, Math.min(roadY + maxSlope, blendedY)) + this.TERRAIN_BASE_OFFSET;
 
 		// Cross-section profile: kerb raised, shoulder lower, edge drop
 		// Fades out with distance from road to blend smoothly into terrain
-		const guardrailDist = this.roadHalfWidth + this.kerbWidth + this.shoulderWidth;
-		const inCrossSection = distFromCenter < guardrailDist + 0.75;
-		// 1.0 when on road, fades to 0 at 50m from road
-		const crossSectionFade = 1 - smoothstep(this.blendStart, this.roadInfluence, dist);
+		const { roadHalfWidth, kerbWidth, shoulderWidth, slabExtent } = this.crossSection;
+		const guardrailDist = roadHalfWidth + kerbWidth + shoulderWidth;
+		const inCrossSection = distFromCenter < guardrailDist + slabExtent;
+		// 1.0 when on road, fades to 0 beyond ROAD_INFLUENCE
+		const crossSectionFade = 1 - smoothstep(this.BLEND_START, this.ROAD_INFLUENCE, dist);
 		const crossSection =
 			inCrossSection && crossSectionFade > 0.01 ? this.crossSectionDelta(distFromCenter) * crossSectionFade : 0;
 		const result = baseY + crossSection;
