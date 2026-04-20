@@ -444,10 +444,15 @@ export class VehicleRenderer {
 		const bodyTop = bodyBox.max.y;
 		const cgHeight = Math.max(pmY - bodyBottom, (bodyTop - bodyBottom) * 0.4);
 
-		this._modelGroundOffset = -pmY;
-
 		const rootPos = new THREE.Vector3();
 		this.model.getWorldPosition(rootPos);
+
+		// The Rapier cuboid should represent the chassis BODY (not including wheels).
+		// Wheels extend below the body. The wheel center Y is the natural bottom boundary.
+		// Wheel centers in GLB space = wheelWorldPositions[i].y (world, but model root is at origin)
+		const wheelCenterY = wheelWorldPositions[0].y; // all wheels at same Y
+		const bodyAboveWheels = bodyTop - wheelCenterY;
+		const chassisHalfH = bodyAboveWheels / 2;
 
 		this.config = {
 			...this.config,
@@ -460,14 +465,22 @@ export class VehicleRenderer {
 					y: wp.y - rootPos.y,
 					z: wp.z - rootPos.z,
 				})),
-				halfExtents: [bodySize.x / 2, bodySize.y / 2, bodySize.z / 2],
+				halfExtents: [bodySize.x / 2, chassisHalfH, bodySize.z / 2],
 				cgHeight,
 			},
 		};
 
+		// Position the GLB model so its content fits inside the Rapier cuboid.
+		// Rapier cuboid center = pos.y, cuboid bottom = pos.y - chassisHalfH.
+		// The body mesh top = bodyTop (in GLB space), body mesh bottom ≈ wheelCenterY.
+		// We need: model.y + bodyTop = pos.y + chassisHalfH  (tops align)
+		// => model.y = pos.y + chassisHalfH - bodyTop
+		// => offset = chassisHalfH - bodyTop
+		this._modelGroundOffset = chassisHalfH - bodyTop;
+
 		console.log(
 			`[VehicleRenderer] autoDerive: wheelRadius=${avgRadius.toFixed(3)}, wheelBase=${wheelBase.toFixed(3)}, ` +
-				`halfExtents=[${bodySize.x.toFixed(3)}/2, ${bodySize.y.toFixed(3)}/2, ${bodySize.z.toFixed(3)}/2], ` +
+				`chassisHalfH=${chassisHalfH.toFixed(3)}, wheelCenterY=${wheelCenterY.toFixed(3)}, bodyTop=${bodyTop.toFixed(3)}, ` +
 				`groundOffset=${this._modelGroundOffset.toFixed(3)}, pmY=${pmY.toFixed(3)}`,
 		);
 	}

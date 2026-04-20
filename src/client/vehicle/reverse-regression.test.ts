@@ -103,8 +103,8 @@ describe("Reverse acceleration regression", () => {
 		// Release all input — car should slow down
 		for (let i = 0; i < 120; i++) v.update(flatInput(), 1 / 60);
 
-		// Now go forward
-		for (let i = 0; i < 120; i++) v.update(flatInput({ forward: true }), 1 / 60);
+		// Now go forward — needs enough time to overcome reverse momentum
+		for (let i = 0; i < 240; i++) v.update(flatInput({ forward: true }), 1 / 60);
 
 		console.log(`[TEST] Forward speed after reverse: ${v.state.speed.toFixed(2)} m/s`);
 		expect(v.state.speed).toBeGreaterThan(1.0);

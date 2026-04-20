@@ -44,6 +44,8 @@ const YAW_DAMP_RATE = 15.0;
 const TIRE_MU = 0.85;
 // Rolling resistance coefficient (performance tires on asphalt)
 const CRR = 0.012;
+// Maximum reverse speed (m/s) — ~40 km/h, electronic limiter like real cars
+const MAX_REVERSE_SPEED_MS = 11.0;
 
 export class RapierVehicleController {
 	private world!: RAPIER.World;
@@ -250,12 +252,24 @@ export class RapierVehicleController {
 				isReverse = true;
 			}
 		}
+		// Already moving backward? Always treat S as reverse, never brake
+		if (wantsBackward && localVelX < -0.3) {
+			isBraking = false;
+			isReverse = true;
+		}
 
 		engine.throttle = wantsForward ? 1 : isReverse ? 0.5 : 0;
 		if (wantsNeutral) {
 			gearbox.effectiveRatio = 0; // neutral = no gear ratio = no engine braking
-		} else if (!isReverse) {
-			gearbox.update(dt, engine, localVelX, isBraking); // skip during reverse — R is one fixed ratio
+		} else if (isReverse) {
+			// During reverse, set a proper gear ratio so engine RPM stays in
+			// the torque curve's power band (above 1100 RPM where mult = 1.0).
+			// Without this, effectiveRatio=0 (from prior neutral) causes RPM
+			// to drop to idle where the torque multiplier is only 0.3.
+			const firstGearRatio = this._config.gearbox.gearRatios[0] || 3.5;
+			gearbox.effectiveRatio = engineSpec.finalDrive * firstGearRatio;
+		} else {
+			gearbox.update(dt, engine, localVelX, isBraking);
 		}
 		engine.update(localVelX, gearbox.effectiveRatio, chassis.wheelRadius, dt);
 
@@ -298,9 +312,9 @@ export class RapierVehicleController {
 					: 1.0;
 
 			brakeBodyN = baseMu * loadSensitivityFactor * lowSpeedFactor * highSpeedFactor * chassis.mass * 9.81;
-		} else if (!wantsForward && !wantsBackward && localVelX > 0.1) {
-			// Neutral coast (forward only): moderate body impulse for auto creep-stop
-			const speedFactor = Math.min(1.0, localVelX / 5.0);
+		} else if (wantsNeutral && Math.abs(localVelX) > 0.1) {
+			// Neutral coast (both directions): moderate body impulse for auto creep-stop
+			const speedFactor = Math.min(1.0, Math.abs(localVelX) / 5.0);
 			coastBodyBrakeN = 0.03 * chassis.mass * 9.81 * speedFactor;
 		}
 
@@ -334,12 +348,27 @@ export class RapierVehicleController {
 		this.vehicle.setWheelBrake(this.wheelRL, rapierBrakeForce * 0.8);
 		this.vehicle.setWheelBrake(this.wheelRR, rapierBrakeForce * 0.8);
 
-		// ── Rolling + aero drag as light body impulse (NEVER during reverse) ──
+		// ── Rolling + aero drag as body impulse (opposes motion in both directions) ──
 		let totalRetard = 0;
 		let debugRolling = 0;
 		let debugAero = 0;
 		let debugEngineBrake = 0;
-		if (!isReverse) {
+		const absSpeedMs = Math.abs(localVelX);
+
+		if (isReverse) {
+			// Reverse: apply rolling + aero drag (no engine braking — no gear load)
+			debugRolling = CRR * chassis.mass * 9.81 * 0.5;
+			debugAero = this.drag.config.aeroDrag * absSpeedMs * absSpeedMs;
+
+			// Hard reverse speed limiter — strong braking force near the cap
+			if (absSpeedMs > MAX_REVERSE_SPEED_MS) {
+				const overshoot = absSpeedMs - MAX_REVERSE_SPEED_MS;
+				// Aggressive clamp: 5× tire grip per m/s over the limit
+				totalRetard = TIRE_MU * chassis.mass * 9.81 * 5 * overshoot;
+			} else {
+				totalRetard = debugRolling + debugAero;
+			}
+		} else {
 			debugRolling = CRR * chassis.mass * 9.81 * 0.5;
 			debugAero = this.drag.config.aeroDrag * localVelX * localVelX;
 			debugEngineBrake =
@@ -353,7 +382,7 @@ export class RapierVehicleController {
 			totalRetard = debugEngineBrake + debugRolling + debugAero + coastBodyBrakeN + brakeBodyN;
 			totalRetard = Math.min(totalRetard, TIRE_MU * chassis.mass * 9.81);
 		}
-		if (totalRetard > 0 && Math.abs(localVelX) > 0.01) {
+		if (totalRetard > 0 && absSpeedMs > 0.01) {
 			const fx = -totalRetard * Math.sin(heading) * Math.sign(localVelX);
 			const fz = -totalRetard * Math.cos(heading) * Math.sign(localVelX);
 			this.carBody.applyImpulse({ x: fx * dt, y: 0, z: fz * dt }, true);
