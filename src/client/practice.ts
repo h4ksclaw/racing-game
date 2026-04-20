@@ -157,6 +157,7 @@ let physicsDebug: RapierDebugRenderer | null = null;
 let cameraCtrl: CameraController;
 let world: WorldResult | null = null;
 let engineAudio: import("./audio/EngineAudio.ts").EngineAudio | null = null;
+let skidAudio: import("./audio/SkidAudio.ts").SkidAudio | null = null;
 
 function resetCar(): void {
 	if (!world || !vehicle) return;
@@ -244,6 +245,11 @@ async function buildPractice(): Promise<void> {
 				engineAudio.start();
 			})
 			.catch((e) => console.error("[audio] Failed to load EngineAudio:", e));
+		import("./audio/SkidAudio.ts")
+			.then(({ SkidAudio }) => {
+				skidAudio = new SkidAudio(AudioBus.getInstance());
+			})
+			.catch((e) => console.error("[audio] Failed to load SkidAudio:", e));
 		window.removeEventListener("keydown", startAudio);
 		window.removeEventListener("click", startAudio);
 	};
@@ -488,6 +494,16 @@ function animate(): void {
 		if (engineAudio) {
 			engineAudio.update(vehicle.telemetry, vehicle.getPosition());
 			AudioBus.getInstance().updateListener(vehicle.getPosition(), vehicle.getForward());
+		}
+		// Skid sound: only when drifting at speed (not low-speed braking)
+		if (skidAudio) {
+			const td = vehicle.tireDynState;
+			if (td && td.isDrifting && Math.abs(vehicle.state.speed) > 2.0) {
+				// Intensity based on how much rear grip is lost
+				skidAudio.update(td.driftFactor);
+			} else {
+				skidAudio.update(0);
+			}
 		}
 
 		// HUD

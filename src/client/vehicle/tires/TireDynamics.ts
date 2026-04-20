@@ -61,11 +61,11 @@ export interface TireDynamicsConfig {
 // ─── Constants ─────────────────────────────────────────────────────────
 
 /**
- * Handbrake rear grip reduction: locked wheels have ~20-30% of rolling grip
- * because kinetic (sliding) friction < static (rolling) friction.
- * Locked tires can't generate cornering force — they just slide.
+ * Handbrake rear grip reduction: locked wheels have very little cornering force.
+ * Kinetic (sliding) friction << static (rolling) friction for rubber on asphalt.
+ * Locked tires can't generate meaningful lateral force — they just slide.
  */
-const HANDRAKE_LOCKED_REAR_GRIP = 0.15;
+const HANDRAKE_LOCKED_REAR_GRIP = 0.05;
 
 /**
  * Handbrake ramp time (seconds): rear grip doesn't drop instantly,
@@ -184,11 +184,11 @@ export class TireDynamics {
 	 *
 	 * @returns The rear grip multiplier to apply via setWheelSideFrictionStiffness
 	 */
-	updateHandbrake(handbrakeActive: boolean, speedMs: number, dt: number): number {
+	updateHandbrake(handbrakeActive: boolean, _speedMs: number, dt: number): number {
 		this._handbrakeActive = handbrakeActive;
 
-		if (handbrakeActive && speedMs > DRIFT_SPEED_THRESHOLD) {
-			// Ramp down rear grip
+		if (handbrakeActive) {
+			// Ramp down rear grip — always, regardless of speed
 			this._handbrakeTimer += dt;
 			const t = Math.min(1, this._handbrakeTimer / HANDRAKE_LOCK_TIME);
 			// Smooth ease-out curve for natural feel

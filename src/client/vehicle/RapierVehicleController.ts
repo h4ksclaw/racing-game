@@ -275,8 +275,10 @@ export class RapierVehicleController {
 			isReverse = true;
 		}
 
-		engine.throttle = wantsForward ? 1 : isReverse ? 0.5 : 0;
-		if (wantsNeutral) {
+		engine.throttle = wantsForward && !input.handbrake ? 1 : isReverse ? 0.5 : 0;
+		// Handbrake forces gearbox to neutral — no engine drive, no engine braking
+		const effectiveNeutral = wantsNeutral || !!input.handbrake;
+		if (effectiveNeutral) {
 			gearbox.effectiveRatio = 0; // neutral = no gear ratio = no engine braking
 		} else if (isReverse) {
 			// During reverse, set a proper gear ratio so engine RPM stays in
@@ -333,8 +335,6 @@ export class RapierVehicleController {
 			const speedFactor = Math.min(1.0, Math.abs(localVelX) / 5.0);
 			coastBodyBrakeN = 0.03 * chassis.mass * 9.81 * speedFactor;
 		}
-		// NOTE: handbrake is handled by TireDynamics (rear wheel grip reduction),
-		// NOT by the body-impulse brake model above. See post-step section below.
 
 		// Brake lights: active braking (S) or handbrake
 		this.brakes.isBraking = isBraking;
@@ -342,9 +342,10 @@ export class RapierVehicleController {
 		this.brakes.brakePressure = isBraking || input.handbrake ? 1 : 0;
 
 		// ── Engine force → rear wheels ──
+		// Handbrake cuts engine drive (already handled by effectiveNeutral above)
 		const tractionPerWheel = (chassis.mass * tires.tractionPct * 9.82) / 2;
 		let engF = 0;
-		if (wantsForward) {
+		if (!input.handbrake && wantsForward) {
 			engF = engine.getWheelForce(gearbox.effectiveRatio, chassis.wheelRadius, tractionPerWheel);
 			if (gearbox.isShifting) engF *= 0.3;
 		} else if (isReverse) {
@@ -398,6 +399,15 @@ export class RapierVehicleController {
 					: 0;
 			totalRetard = debugEngineBrake + debugRolling + debugAero + coastBodyBrakeN + brakeBodyN;
 			totalRetard = Math.min(totalRetard, TIRE_MU * chassis.mass * 9.81);
+			// Handbrake: add strong body-impulse drag for deceleration.
+			// This supplements the Rapier wheel brake — body impulse is much more effective.
+			if (input.handbrake && !isBraking) {
+				const hSpeedKmh = absSpeedMs * 3.6;
+				// Handbrake g-force: ramps from 0.5g at low speed to 0.9g
+				const hBrakeG = hSpeedKmh < 5 ? 0.5 + 0.4 * (hSpeedKmh / 5) : 0.9;
+				totalRetard += hBrakeG * chassis.mass * 9.81;
+				totalRetard = Math.min(totalRetard, TIRE_MU * chassis.mass * 9.81 * 1.2);
+			}
 		}
 		if (totalRetard > 0 && absSpeedMs > 0.01) {
 			const fx = -totalRetard * Math.sin(heading) * Math.sign(localVelX);
@@ -457,8 +467,8 @@ export class RapierVehicleController {
 
 		// Handbrake also applies Rapier brake to rear wheels only (longitudinal lock)
 		if (input.handbrake) {
-			this.vehicle.setWheelBrake(this.wheelRL, 8.0);
-			this.vehicle.setWheelBrake(this.wheelRR, 8.0);
+			this.vehicle.setWheelBrake(this.wheelRL, 50.0);
+			this.vehicle.setWheelBrake(this.wheelRR, 50.0);
 		} else {
 			this.vehicle.setWheelBrake(this.wheelRL, rapierBrakeForce * 0.8);
 			this.vehicle.setWheelBrake(this.wheelRR, rapierBrakeForce * 0.8);

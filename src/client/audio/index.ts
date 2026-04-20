@@ -20,3 +20,4 @@ export {
 	type NoiseLayerConfig,
 } from "./audio-types.ts";
 export { EngineAudio } from "./EngineAudio.ts";
+export { SkidAudio } from "./SkidAudio.ts";

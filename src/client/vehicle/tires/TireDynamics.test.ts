@@ -135,15 +135,16 @@ describe("TireDynamics", () => {
 			expect(td.rearGripMultiplier).toBeGreaterThan(0);
 		});
 
-		it("does not reduce grip at very low speed", () => {
+		it("reduces grip even at very low speed", () => {
 			const td = new TireDynamics(makeConfig());
 			const dt = 1 / 60;
 
 			for (let i = 0; i < 120; i++) {
-				td.updateHandbrake(true, 0.5, dt); // 0.5 m/s — below threshold
+				td.updateHandbrake(true, 0.5, dt); // 0.5 m/s — very slow
 			}
 
-			expect(td.rearGripMultiplier).toBeGreaterThan(0.9);
+			// Grip should still reduce — locked wheels are locked regardless of speed
+			expect(td.rearGripMultiplier).toBeLessThan(0.2);
 		});
 
 		it("recovers grip when handbrake is released", () => {
