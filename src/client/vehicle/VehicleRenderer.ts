@@ -32,8 +32,8 @@ export class VehicleRenderer {
 	private _wheelBaseY: [number, number, number, number] = [0, 0, 0, 0];
 	private config: CarConfig;
 	private readonly schema: CarModelSchema;
-	/** Brake disc meshes — parented to car body, not wheel pivots, so they don't spin. */
-	private brakeDiscMeshes: THREE.Mesh[] = [];
+	/** Per-wheel brake disc pivot groups — children of wheel pivot, steer-only (no spin). */
+	private brakeDiscPivots: THREE.Group[] = [];
 
 	// Light effect refs
 	private headlightMeshes: THREE.Mesh[] = [];
@@ -144,7 +144,7 @@ export class VehicleRenderer {
 
 		// ── Load wheels from external GLB, falling back to procedural ──
 		while (this.wheelMeshes.length > 0) this.wheelMeshes.pop();
-		while (this.brakeDiscMeshes.length > 0) this.brakeDiscMeshes.pop();
+		while (this.brakeDiscPivots.length > 0) this.brakeDiscPivots.pop();
 		const wheelsLoaded = await this.loadWheelsFromGLB();
 
 		if (!wheelsLoaded) {
@@ -274,13 +274,12 @@ export class VehicleRenderer {
 	// ── Brake disc extraction ──────────────────────────────────────────────
 
 	/**
-	 * Extract brake disc meshes from wheel hierarchy and reparent to car body.
+	 * Extract brake disc meshes from wheel hierarchy into per-wheel steer-only pivots.
 	 *
-	 * WHY: The wheel GLB stores brake discs as separate Mesh children of the wheel
-	 * group (Three.js GLTFLoader splits multi-primitive GLTF meshes into individual
-	 * Mesh objects, each with a single material). If we spin the wheel pivot, the
-	 * disc spins too — physically wrong (discs are fixed to the hub, not the wheel).
-	 * By reparenting the disc mesh to the car body, it tracks position but doesn't spin.
+	 * WHY: Brake discs are fixed to the hub (not the wheel), so they must follow
+	 * position, suspension, and steering, but NOT spin. We create a sibling Group
+	 * inside the wheel pivot that gets steer-only rotation in sync(), while the
+	 * wheel clone gets steer+spin. The disc meshes move into this Group.
 	 */
 	private extractBrakeDiscs(): void {
 		if (!this.model) return;
@@ -302,36 +301,19 @@ export class VehicleRenderer {
 				}
 			});
 
+			if (brakeMeshes.length === 0) continue;
+
+			// Create a steer-only pivot as sibling to the wheel clone.
+			// sync() will set its quaternion to steer-only (no spin).
+			const discPivot = new THREE.Group();
+			discPivot.name = `brake_disc_pivot_${i}`;
+			pivot.add(discPivot);
+			this.brakeDiscPivots.push(discPivot);
+
 			for (const brakeMesh of brakeMeshes) {
-				// Compute world position/rotation, then convert to model-local space.
-				// After reparenting, the disc sits at the wheel location but doesn't
-				// rotate with the wheel pivot.
-				brakeMesh.updateMatrixWorld(true);
-				const worldPos = new THREE.Vector3();
-				brakeMesh.getWorldPosition(worldPos);
-				const worldQuat = new THREE.Quaternion();
-				brakeMesh.getWorldQuaternion(worldQuat);
-				const worldScale = new THREE.Vector3();
-				brakeMesh.getWorldScale(worldScale);
-
-				// Convert to model-local coordinates
-				this.model.worldToLocal(worldPos);
-				const modelInvQuat = this.model.quaternion.clone().invert();
-				worldQuat.premultiply(modelInvQuat);
-
-				// Remove from wheel hierarchy, add to car body
+				// Move from wheel clone to brake disc pivot, preserving local transform.
 				brakeMesh.removeFromParent();
-				brakeMesh.position.copy(worldPos);
-				brakeMesh.quaternion.copy(worldQuat);
-				brakeMesh.scale.copy(worldScale);
-
-				// Rotate around the axle (model-local X) so the disc face
-				// points toward the back of the wheel well, like a real caliper.
-				brakeMesh.rotateX(Math.PI / 2);
-				brakeMesh.name = `brake_disc_${i}`;
-				this.model.add(brakeMesh);
-				this.brakeDiscMeshes.push(brakeMesh);
-
+				discPivot.add(brakeMesh);
 				console.log(
 					`[VehicleRenderer] Extracted brake disc ${i}: "${brakeMesh.name}", ` +
 						`${brakeMesh.geometry.getAttribute("position").count} verts`,
@@ -751,6 +733,11 @@ export class VehicleRenderer {
 			// Inner wheel clone rotation is baked at load time (Y rotation for axle alignment).
 			// Pivot: spin around X (axle), steer around Y.
 			pivot.quaternion.setFromEuler(new THREE.Euler(this.wheelSpinAngles[i], steer, 0, "YXZ"));
+
+			// Brake disc pivot: steer only, no spin.
+			if (i < this.brakeDiscPivots.length) {
+				this.brakeDiscPivots[i].quaternion.setFromEuler(new THREE.Euler(0, steer, 0, "YXZ"));
+			}
 		}
 	}
 }
