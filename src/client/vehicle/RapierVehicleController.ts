@@ -387,7 +387,7 @@ export class RapierVehicleController {
 			if (wantsBackward || this._prevReverse) {
 				console.log(
 					`[DRIVE] vel=${localVelX.toFixed(3)} state=${isReverse ? "REV" : isBraking ? "BRK" : wantsForward ? "FWD" : "---"} ` +
-						`engF=${engF.toFixed(0)}N wheelBrk=${rapierBrakeForce.toFixed(1)} bodyRetard=${totalRetard.toFixed(0)}N`,
+						`engF=${engF.toFixed(0)}N wheelBrk=${rapierBrakeForce.toFixed(1)} bodyRetard=${totalRetard.toFixed(0)}N trac=${tractionPerWheel.toFixed(0)} contacts=${this.countContacts()}`,
 				);
 			}
 		}
