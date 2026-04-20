@@ -1,13 +1,17 @@
 /**
- * SkidMarks — procedural tire marks painted on the road surface.
+ * SkidMarks — dark tire marks painted on the road surface.
  *
- * Records wheel positions over time when tires are sliding and builds
- * a mesh of thin quads (ribbon strips) that sit slightly above the surface.
- * Each strip has a lifetime — marks fade by scaling opacity toward zero,
- * then the strip is recycled.
+ * Records wheel positions when tires slide and builds a mesh of thin
+ * ribbon quads that sit slightly above the surface. Marks are visible
+ * dark rubber streaks that contrast against the road.
  *
- * The marks are purely visual — no physics interaction.
- * They "paint" on the surface by snapping Y to terrain height.
+ * Key design:
+ * - Color is dark gray (0.15, 0.15, 0.15) — visible against asphalt
+ *   which is typically 0.35-0.45 gray
+ * - Full opacity (0.85) for strong contrast
+ * - Marks persist for 12 seconds, fade over 6 seconds
+ * - Polygon offset prevents z-fighting with road surface
+ * - Per-ribbon material for independent opacity control during fade
  */
 
 import * as THREE from "three";
@@ -15,25 +19,29 @@ import * as THREE from "three";
 // ─── Tuning ─────────────────────────────────────────────────────────────
 
 /** Distance between consecutive mark points (meters) */
-const MARK_SPACING = 0.15;
-/** Mark width (meters) — matches tire contact patch */
-const MARK_WIDTH = 0.18;
+const MARK_SPACING = 0.1;
+/** Mark width (meters) — realistic tire contact patch */
+const MARK_WIDTH = 0.2;
 /** Maximum points per wheel ribbon before oldest are trimmed */
-const MAX_POINTS = 2000;
-/** Maximum mark age (seconds) before fading starts */
-const MARK_FADE_AGE = 8.0;
+const MAX_POINTS = 3000;
+/** Mark age before fading starts (seconds) */
+const MARK_FADE_AGE = 12.0;
 /** Seconds to fully fade out */
-const MARK_FADE_DURATION = 4.0;
-/** How far above surface to offset (prevents z-fighting) */
-const SURFACE_OFFSET = 0.005;
-/** Dark asphalt color with low opacity */
-const MARK_COLOR = new THREE.Color(0.05, 0.05, 0.05);
+const MARK_FADE_DURATION = 6.0;
+/** Surface offset to prevent z-fighting (meters) */
+const SURFACE_OFFSET = 0.003;
+/**
+ * Skid mark color — dark rubber gray.
+ * Road asphalt is ~0.35-0.45 gray, so 0.15 gives strong contrast.
+ */
+const MARK_COLOR = new THREE.Color(0.15, 0.15, 0.15);
+/** Base opacity — high for strong visible marks */
+const MARK_OPACITY = 0.85;
 
 interface MarkPoint {
 	x: number;
 	y: number;
 	z: number;
-	/** Direction perpendicular to movement (for ribbon width) */
 	nx: number;
 	nz: number;
 	birthTime: number;
@@ -52,7 +60,6 @@ export class SkidMarks {
 	private scene: THREE.Scene;
 	private terrain: { getHeight(x: number, z: number): number } | null = null;
 	private baseMaterial: THREE.MeshBasicMaterial;
-
 	private ribbons: Ribbon[];
 
 	constructor(scene: THREE.Scene) {
@@ -60,7 +67,7 @@ export class SkidMarks {
 		this.baseMaterial = new THREE.MeshBasicMaterial({
 			color: MARK_COLOR,
 			transparent: true,
-			opacity: 0.7,
+			opacity: MARK_OPACITY,
 			depthWrite: false,
 			polygonOffset: true,
 			polygonOffsetFactor: -1,
@@ -85,12 +92,10 @@ export class SkidMarks {
 	}
 
 	/**
-	 * Update skid marks. Call once per frame.
-	 *
 	 * @param now Current time (seconds)
 	 * @param wheelWorldPos 4 wheel world positions
-	 * @param wheelSlideIntensity 4 intensities (0-1)
-	 * @param wheelOffRoad 4 booleans — don't draw marks off-road
+	 * @param wheelSlideIntensity 4 intensities (0-1), marks drawn above 0.08
+	 * @param wheelOffRoad 4 booleans — no marks off-road
 	 */
 	update(
 		now: number,
@@ -100,24 +105,20 @@ export class SkidMarks {
 	): void {
 		for (let i = 0; i < 4; i++) {
 			const ribbon = this.ribbons[i];
-			const sliding = wheelSlideIntensity[i] > 0.1 && !wheelOffRoad[i];
+			const sliding = wheelSlideIntensity[i] > 0.08 && !wheelOffRoad[i];
 			const [wx, wy, wz] = wheelWorldPos[i];
 
 			if (sliding) {
 				ribbon.active = true;
 
-				// Check if we've moved enough to add a new point
 				if (ribbon.lastEmitPos) {
 					const dx = wx - ribbon.lastEmitPos[0];
 					const dz = wz - ribbon.lastEmitPos[2];
-					const dist = Math.sqrt(dx * dx + dz * dz);
-					if (dist < MARK_SPACING) continue;
+					if (Math.sqrt(dx * dx + dz * dz) < MARK_SPACING) continue;
 				}
 
-				// Snap to terrain surface
 				const surfaceY = this.terrain ? this.terrain.getHeight(wx, wz) + SURFACE_OFFSET : wy;
 
-				// Compute perpendicular direction from last point
 				let nx = 0;
 				let nz = 1;
 				const pts = ribbon.points;
@@ -135,7 +136,6 @@ export class SkidMarks {
 				pts.push({ x: wx, y: surfaceY, z: wz, nx, nz, birthTime: now });
 				ribbon.lastEmitPos = [wx, wy, wz];
 
-				// Trim old points
 				while (pts.length > MAX_POINTS) {
 					pts.shift();
 				}
@@ -144,7 +144,7 @@ export class SkidMarks {
 				ribbon.lastEmitPos = null;
 			}
 
-			// Remove expired points
+			// Remove expired
 			const fadeStart = now - MARK_FADE_AGE - MARK_FADE_DURATION;
 			const points = ribbon.points;
 			while (points.length > 0 && points[0].birthTime < fadeStart) {
@@ -201,18 +201,14 @@ export class SkidMarks {
 		ribbon.geometry.setIndex(indices);
 		ribbon.geometry.computeBoundingSphere();
 
-		// Compute overall opacity based on oldest visible mark
+		// Fade based on oldest mark age
 		const oldestAge = now - points[0].birthTime;
-		let opacity = 0.7;
+		let opacity = MARK_OPACITY;
 		if (oldestAge > MARK_FADE_AGE) {
 			opacity *= Math.max(0, 1 - (oldestAge - MARK_FADE_AGE) / MARK_FADE_DURATION);
 		}
 
-		// Dispose old per-ribbon material
-		if (ribbon.material) {
-			ribbon.material.dispose();
-			ribbon.material = null;
-		}
+		if (ribbon.material) ribbon.material.dispose();
 		ribbon.material = this.baseMaterial.clone();
 		ribbon.material.opacity = opacity;
 		if (ribbon.mesh) {
@@ -223,9 +219,7 @@ export class SkidMarks {
 
 	dispose(): void {
 		for (const ribbon of this.ribbons) {
-			if (ribbon.mesh) {
-				ribbon.mesh.removeFromParent();
-			}
+			ribbon.mesh?.removeFromParent();
 			ribbon.geometry?.dispose();
 			ribbon.material?.dispose();
 		}
