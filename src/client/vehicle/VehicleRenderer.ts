@@ -295,33 +295,20 @@ export class VehicleRenderer {
 			const wheelClone = pivot.children[0];
 			if (!wheelClone) continue;
 
-			// The pivot applies Euler(spin, steer, 0, "YXZ") in sync(). The spin
-			// rotates around the pivot's local X axis (the axle). To counter this
-			// on the brake disc (which is a deep descendant), we need the axle
-			// direction expressed in the disc's own local frame.
-			//
-			// At load time the pivot has identity rotation, so the transform chain
-			// from disc to pivot is just the baked hierarchy: wheelClone → Group → disc.
-			// We compute: axleDir = inverse(Q_disc_to_pivot) * (1,0,0)
-
 			const discs: { mesh: THREE.Mesh; axleDir: THREE.Vector3; baseQuat: THREE.Quaternion }[] = [];
 			wheelClone.traverse((child) => {
 				if (!(child instanceof THREE.Mesh)) return;
 				const mat = child.material;
 				if (!mat?.name || !this.schema.brakeDiscMaterials.includes(mat.name)) return;
 
-				// Compute accumulated rotation from disc up to the pivot (not including pivot).
-				// Walk parent chain: disc → ... → wheelClone (stop before pivot).
 				const qToPivot = new THREE.Quaternion();
 				let node: THREE.Object3D | null = child;
 				while (node && node !== wheelClone) {
 					qToPivot.premultiply(node.quaternion);
 					node = node.parent;
 				}
-				// Include wheelClone's own rotation
 				if (node === wheelClone) qToPivot.premultiply(wheelClone.quaternion);
 
-				// Axle in pivot-local space is X=(1,0,0). Transform to disc-local frame.
 				const axleInPivot = new THREE.Vector3(1, 0, 0);
 				const axleDir = axleInPivot.clone().applyQuaternion(qToPivot.clone().invert());
 
@@ -409,10 +396,7 @@ export class VehicleRenderer {
 		const rootPos = new THREE.Vector3();
 		this.model.getWorldPosition(rootPos);
 
-		// The Rapier cuboid should represent the chassis BODY (not including wheels).
-		// Wheels extend below the body. The wheel center Y is the natural bottom boundary.
-		// Wheel centers in GLB space = wheelWorldPositions[i].y (world, but model root is at origin)
-		const wheelCenterY = wheelWorldPositions[0].y; // all wheels at same Y
+		const wheelCenterY = wheelWorldPositions[0].y;
 		const bodyAboveWheels = bodyTop - wheelCenterY;
 		const chassisHalfH = bodyAboveWheels / 2;
 
@@ -432,12 +416,6 @@ export class VehicleRenderer {
 			},
 		};
 
-		// Position the GLB model so its content fits inside the Rapier cuboid.
-		// Rapier cuboid center = pos.y, cuboid bottom = pos.y - chassisHalfH.
-		// The body mesh top = bodyTop (in GLB space), body mesh bottom ≈ wheelCenterY.
-		// We need: model.y + bodyTop = pos.y + chassisHalfH  (tops align)
-		// => model.y = pos.y + chassisHalfH - bodyTop
-		// => offset = chassisHalfH - bodyTop
 		this._modelGroundOffset = chassisHalfH - bodyTop;
 
 		console.log(
@@ -485,7 +463,6 @@ export class VehicleRenderer {
 			const rimMesh = new THREE.Mesh(rimGeom, rimMat);
 			tireMesh.add(rimMesh);
 
-			// Use worldToLocal to get correct position relative to model root
 			const worldPos = new THREE.Vector3();
 			marker.getWorldPosition(worldPos);
 			this.model.worldToLocal(worldPos);
@@ -523,25 +500,6 @@ export class VehicleRenderer {
 		return this.lights.getHeadlightData(physicsForward);
 	}
 
-	/**
-	 * Sync visual position, rotation, and wheel animation from physics state.
-	 *
-	 * Accepts either Euler angles (legacy) or a quaternion (preferred, from Rapier body).
-	 * Handles body transform + wheel spin/steer — all rendering work lives here, not in game loop.
-	 */
-	/**
-	 * Sync the visual model to physics state. Called every frame.
-	 *
-	 * @param pos - Physics body position (Rapier world coords)
-	 * @param orientation - Body quaternion or euler angles
-	 * @param steerAngle - Front wheel steer angle (radians)
-	 * @param speed - Forward speed (m/s, positive = forward)
-	 * @param wheelRadius - For computing spin rate
-	 * @param dt - Frame timestep
-	 * @param suspLengths - Optional per-wheel current suspension length from Rapier.
-	 *   When provided, wheels visually offset vertically to simulate suspension travel.
-	 *   Positive compression (rest > current) pushes wheel down relative to body.
-	 */
 	sync(
 		pos: { x: number; y: number; z: number },
 		orientation: { x: number; y: number; z: number; w: number } | { heading: number; pitch: number; roll: number },
@@ -586,19 +544,25 @@ export class VehicleRenderer {
 
 			// ── Wheel-ground alignment diagnostic (fires 3 times) ──
 			if (this._diagCount < 3 && i === 0 && suspLengths?.[0]) {
-				// Compute visual wheel bottom in world space
 				const pivotWorld = new THREE.Vector3(0, pivot.position.y, 0);
 				pivotWorld.applyMatrix4(this.model.matrixWorld);
-				// Wheel mesh extends below pivot by its geometry height / 2
+				// Walk children to find actual mesh bounding box for visual radius
 				let visualWheelRadius = wheelRadius;
-				const child = pivot.children[0] as THREE.Mesh | undefined;
-				if (child) {
-					child.geometry.computeBoundingBox();
-					const bb = child.geometry.boundingBox!;
-					visualWheelRadius = (bb.max.y - bb.min.y) / 2;
-				}
+				const findGeo = (obj: THREE.Object3D): THREE.Box3 | null => {
+					if ((obj as THREE.Mesh).geometry) {
+						(obj as THREE.Mesh).geometry.computeBoundingBox();
+						return (obj as THREE.Mesh).geometry.boundingBox!.clone();
+					}
+					let merged: THREE.Box3 | null = null;
+					for (const c of obj.children) {
+						const bb = findGeo(c);
+						if (bb) merged = merged ? merged.union(bb) : bb;
+					}
+					return merged;
+				};
+				const bb = findGeo(pivot);
+				if (bb) visualWheelRadius = (bb.max.y - bb.min.y) / 2;
 				const visualBotY = pivotWorld.y - visualWheelRadius;
-				// Physics wheel bottom (from DebugInfoBuilder formula)
 				const halfH = this.config.chassis.halfExtents[1];
 				const susLen = suspLengths[0] as number;
 				const physicsBotY = pos.y - halfH - susLen - wheelRadius;
@@ -613,7 +577,7 @@ export class VehicleRenderer {
 						`visualBotY=${visualBotY.toFixed(3)} physicsBotY=${physicsBotY.toFixed(3)} ` +
 						`delta=${(visualBotY - physicsBotY).toFixed(4)}`,
 				);
-				if (i === 0) this._diagCount++;
+				this._diagCount++;
 			}
 
 			// Inner wheel clone rotation is baked at load time (Y rotation for axle alignment).
