@@ -22,11 +22,12 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import type { CarConfig, CarModelSchema } from "./configs.ts";
 import { DEFAULT_CAR_MODEL_SCHEMA } from "./configs.ts";
+import { VehicleLights } from "./lights/VehicleLights.ts";
 
 export class VehicleRenderer {
 	model: THREE.Group | null = null;
 	readonly wheelMeshes: THREE.Object3D[] = [];
-	headlights: THREE.SpotLight[] = [];
+	// headlights accessed via this.lights.headlights
 	private _modelGroundOffset = 0;
 	private _suspRestLength = 0;
 	/** Full local positions of wheel pivots (set at load time). Used for pitch/roll visual compensation. */
@@ -44,8 +45,8 @@ export class VehicleRenderer {
 		{ mesh: THREE.Mesh; axleDir: THREE.Vector3; baseQuat: THREE.Quaternion }[]
 	> = {};
 
-	// Light effect refs
-	private headlightMeshes: THREE.Mesh[] = [];
+	// Light management (delegated to VehicleLights)
+	readonly lights: VehicleLights;
 
 	/** Debug: return wheel state for inspection. */
 	debugWheelState(): unknown[] {
@@ -95,14 +96,14 @@ export class VehicleRenderer {
 		}
 		return result;
 	}
-	private taillightMeshes: THREE.Mesh[] = [];
-	private _reverseLight: THREE.SpotLight | null = null;
+
 	private _escapeL: THREE.Object3D | null = null;
 	private _escapeR: THREE.Object3D | null = null;
 
 	constructor(config: CarConfig) {
 		this.config = config;
 		this.schema = config.modelSchema ?? DEFAULT_CAR_MODEL_SCHEMA;
+		this.lights = new VehicleLights(this.schema, config);
 	}
 
 	/** Expose auto-derived config so physics can use it. */
@@ -144,7 +145,7 @@ export class VehicleRenderer {
 		});
 
 		// ── Find light meshes and escape pipes ──
-		this.findLightMeshes();
+		this.lights.findLightMeshes(this.model);
 		this.findEscapePipes();
 
 		// ── Auto-derive chassis from markers ──
@@ -170,21 +171,15 @@ export class VehicleRenderer {
 		}
 
 		// ── Add headlights (spotlights for terrain shader) ──
-		this.addHeadlights();
+		this.lights.addHeadlights(this.model);
 
 		// ── Add reverse light ──
-		this.addReverseLight();
+		this.lights.addReverseLight(this.model);
 
 		// ── Initial light state: emissive OFF, let sky.ts control via setHeadlightIntensity ──
-		this.applyHeadlightEmissive(0);
-		// Set tail light base color to dark red so lighting alone doesn't trigger bloom
-		for (const mesh of this.taillightMeshes) {
-			const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-			for (const mat of mats) {
-				if (mat instanceof THREE.MeshStandardMaterial) mat.color.setHex(0x330000);
-			}
-		}
-		this.applyTaillightEmissive(0.1);
+		this.lights.applyHeadlightEmissive(0);
+		// Set tail light base color
+		this.lights.initTaillightBase();
 
 		return this.model;
 	}
@@ -339,38 +334,6 @@ export class VehicleRenderer {
 		}
 	}
 
-	// ── Light meshes ─────────────────────────────────────────────────────
-
-	private findLightMeshes(): void {
-		if (!this.model) return;
-		this.headlightMeshes = [];
-		this.taillightMeshes = [];
-
-		this.model.traverse((child) => {
-			if (!(child instanceof THREE.Mesh)) return;
-			const mat = child.material;
-			if (!mat) return;
-
-			if (Array.isArray(mat)) {
-				for (const m of mat) {
-					if (m.name === this.schema.materials.headlight && !this.headlightMeshes.includes(child)) {
-						this.headlightMeshes.push(child);
-					}
-					if (m.name === this.schema.materials.taillight && !this.taillightMeshes.includes(child)) {
-						this.taillightMeshes.push(child);
-					}
-				}
-			} else {
-				if (mat.name === this.schema.materials.headlight) this.headlightMeshes.push(child);
-				if (mat.name === this.schema.materials.taillight) this.taillightMeshes.push(child);
-			}
-		});
-
-		console.log(
-			`[VehicleRenderer] Found ${this.headlightMeshes.length} headlight meshes, ${this.taillightMeshes.length} taillight meshes`,
-		);
-	}
-
 	private findEscapePipes(): void {
 		if (!this.model) return;
 		const pipes = this.schema.markers.escapePipes;
@@ -384,106 +347,7 @@ export class VehicleRenderer {
 		}
 	}
 
-	private applyHeadlightEmissive(intensity: number): void {
-		const color = new THREE.Color(0xfff5e0);
-		for (const mesh of this.headlightMeshes) {
-			const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-			for (const mat of mats) {
-				if (mat instanceof THREE.MeshStandardMaterial) {
-					mat.emissive = color;
-					mat.emissiveIntensity = intensity;
-				}
-			}
-		}
-	}
-
-	private applyTaillightEmissive(intensity: number, color?: THREE.Color): void {
-		const c = color ?? new THREE.Color(0xff0000);
-		for (const mesh of this.taillightMeshes) {
-			const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-			for (const mat of mats) {
-				if (mat instanceof THREE.MeshStandardMaterial) {
-					mat.emissive = c;
-					mat.emissiveIntensity = intensity;
-				}
-			}
-		}
-	}
-
 	// ── Light control methods ────────────────────────────────────────────
-
-	/** Update tail light intensity (dim vs brake). */
-	setBraking(isBraking: boolean): void {
-		// UnrealBloomPass applies to final pixel brightness, not just emissive.
-		// A white-lit surface can exceed the bloom threshold even with low emissive.
-		// Fix: dim the base color when not braking so lighting alone doesn't trigger bloom.
-		for (const mesh of this.taillightMeshes) {
-			const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-			for (const mat of mats) {
-				if (!(mat instanceof THREE.MeshStandardMaterial)) continue;
-				if (isBraking) {
-					mat.emissive.setHex(0xff0000);
-					mat.emissiveIntensity = 3.0;
-					mat.color.setHex(0xff0000);
-				} else {
-					mat.emissive.setHex(0xff0000);
-					mat.emissiveIntensity = 0.1;
-					mat.color.setHex(0x330000);
-				}
-			}
-		}
-	}
-
-	/** Update tail light for reverse gear + activate reverse spotlight. */
-	setReversing(isReversing: boolean): void {
-		for (const mesh of this.taillightMeshes) {
-			const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-			for (const mat of mats) {
-				if (!(mat instanceof THREE.MeshStandardMaterial)) continue;
-				if (isReversing) {
-					mat.emissive.setHex(0xffffff);
-					mat.emissiveIntensity = 2.0;
-					mat.color.setHex(0xffffff);
-				} else {
-					mat.emissive.setHex(0xff0000);
-					mat.emissiveIntensity = 0.1;
-					mat.color.setHex(0x330000);
-				}
-			}
-		}
-		if (this._reverseLight) this._reverseLight.intensity = isReversing ? 5 : 0;
-	}
-
-	/**
-	 * Update headlight brightness for day/night cycle.
-	 * Called from sky.ts applyTimeOfDay — intensity is 0..1 (0=day, 1=full night).
-	 * Controls both SpotLight intensity and mesh emissive bloom.
-	 */
-	setHeadlightIntensity(intensity: number): void {
-		// SpotLight intensity is controlled by sky.ts via state.headlights array
-		// We only control the emissive mesh glow here
-		this.applyHeadlightEmissive(intensity * 2.0); // 0 in day, 2.0 at night (above bloom threshold)
-	}
-
-	// ── Reverse light ────────────────────────────────────────────────────
-
-	private addReverseLight(): void {
-		if (!this.model) return;
-
-		const ch = this.config.chassis;
-		const rearZ = -ch.halfExtents[2];
-		const y = ch.halfExtents[1] * 0.3;
-
-		const light = new THREE.SpotLight(0xffffff, 0, 30, Math.PI / 6, 0.5, 1.5);
-		light.position.set(0, y, rearZ);
-		const target = new THREE.Object3D();
-		target.position.set(0, y - 1, rearZ - 15);
-		this.model.add(target);
-		light.target = target;
-		light.castShadow = false;
-		this.model.add(light);
-		this._reverseLight = light;
-	}
 
 	// ── Chassis auto-derivation ──────────────────────────────────────────
 
@@ -631,61 +495,32 @@ export class VehicleRenderer {
 		}
 	}
 
-	private addHeadlights(): void {
-		if (!this.model) return;
+	private wheelSpinAngles = [0, 0, 0, 0];
 
-		const ch = this.config.chassis;
-		const frontZ = ch.halfExtents[2];
-		const halfW = ch.halfExtents[0];
-		const y = ch.halfExtents[1] * 0.6;
-
-		for (const side of [-1, 1] as const) {
-			const light = new THREE.SpotLight(0xfff5e6, 0, 150, Math.PI / 5, 0.4, 1.5);
-			light.position.set(side * halfW * 0.65, y, frontZ);
-			const target = new THREE.Object3D();
-			target.position.set(side * halfW * 0.3, -2, frontZ + 20);
-			this.model.add(target);
-			light.target = target;
-			light.castShadow = false;
-			this.model.add(light);
-			this.headlights.push(light);
-		}
+	/** Delegate: update tail light intensity. */
+	setBraking(isBraking: boolean): void {
+		this.lights.setBraking(isBraking);
 	}
 
-	/** Get headlight world-space positions and directions for terrain shader. */
+	/** Delegate: update tail light for reverse + reverse spotlight. */
+	setReversing(isReversing: boolean): void {
+		this.lights.setReversing(isReversing);
+	}
+
+	/** Delegate: update headlight brightness for day/night cycle. */
+	setHeadlightIntensity(intensity: number): void {
+		this.lights.setHeadlightIntensity(intensity);
+	}
+
+	/** Delegate: get headlight world-space positions for terrain shader. */
 	getHeadlightData(physicsForward?: {
 		x: number;
 		y: number;
 		z: number;
 	}): { positions: THREE.Vector3[]; directions: THREE.Vector3[]; intensity: number } | null {
-		if (this.headlights.length === 0) return null;
 		this.model?.updateMatrixWorld(true);
-
-		const positions: THREE.Vector3[] = [];
-		const directions: THREE.Vector3[] = [];
-
-		let fwd: THREE.Vector3;
-		if (physicsForward) {
-			fwd = new THREE.Vector3(physicsForward.x, physicsForward.y, physicsForward.z);
-		} else {
-			fwd = new THREE.Vector3(0, 0, 1);
-			fwd.applyQuaternion(this.model?.quaternion ?? new THREE.Quaternion());
-		}
-
-		for (const light of this.headlights) {
-			const pos = new THREE.Vector3();
-			light.getWorldPosition(pos);
-			positions.push(pos);
-			const dir = fwd.clone();
-			dir.y = -0.1;
-			dir.normalize();
-			directions.push(dir);
-		}
-
-		return { positions, directions, intensity: this.headlights[0].intensity };
+		return this.lights.getHeadlightData(physicsForward);
 	}
-
-	private wheelSpinAngles = [0, 0, 0, 0];
 
 	/**
 	 * Sync visual position, rotation, and wheel animation from physics state.

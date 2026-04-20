@@ -253,7 +253,7 @@ async function buildPractice(): Promise<void> {
 	const rendererRef = renderer;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	(window as any).__renderer = rendererRef;
-	state.headlights = rendererRef?.headlights ?? [];
+	state.headlights = rendererRef?.lights.headlights ?? [];
 	state.onHeadlightIntensity = rendererRef ? (intensity: number) => rendererRef.setHeadlightIntensity(intensity) : null;
 	applyTimeOfDay(hour);
 

@@ -21,6 +21,9 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import { DragModel } from "./aero/DragModel.ts";
 import type { CarConfig } from "./configs.ts";
+import { buildDebugInfo } from "./DebugInfoBuilder.ts";
+import { DriveState } from "./drive/DriveState.ts";
+import { computeForces } from "./drive/ForceComputer.ts";
 import { EngineUnit } from "./engine/EngineUnit.ts";
 import { Guardrails } from "./rapier-guardrails.ts";
 import { TerrainCollider } from "./rapier-terrain-collider.ts";
@@ -44,11 +47,8 @@ const YAW_DAMP_RATE = 15.0;
 
 // ── Real-world braking physics ──
 // Tire-road friction coefficient (dry asphalt, performance tires)
-const TIRE_MU = 0.85;
 // Rolling resistance coefficient (performance tires on asphalt)
-const CRR = 0.012;
 // Maximum reverse speed (m/s) — ~40 km/h, electronic limiter like real cars
-const MAX_REVERSE_SPEED_MS = 11.0;
 
 export class RapierVehicleController {
 	private world!: RAPIER.World;
@@ -84,7 +84,7 @@ export class RapierVehicleController {
 	private steerAngle = 0;
 	private initialized = false;
 	private _diagTimer = 0; // throttle diagnostic log output
-	private _prevReverse = false;
+	private readonly driveState = new DriveState();
 	/** Tire dynamics state snapshot (updated each frame after physics step) */
 	tireDynState: TireDynamicsState | null = null;
 	/** Current frame force breakdown for debug visualization (world-space) */
@@ -259,35 +259,14 @@ export class RapierVehicleController {
 		this.state.steeringAngle = this.steerAngle;
 
 		// ── Drive state machine ──
-		// WHY: A single S key must serve double duty — brake when moving forward,
-		// reverse when slow/stopped. Without hysteresis the car would flicker between
-		// braking and reversing at the transition speed.
-		// W = forward throttle, S = brake (if fast) or reverse (if slow/stopped)
-		// Nothing held = neutral coast
 		const wantsForward = !!input.forward && !input.backward;
 		const wantsBackward = !!input.backward && !input.forward;
-		const BRAKE_HYSTERESIS = 0.15; // m/s — above this while holding S = braking
-
-		let isBraking = false;
-		let isReverse = false;
-		const wantsNeutral = !wantsForward && !wantsBackward;
-		if (wantsBackward) {
-			if (localVelX > BRAKE_HYSTERESIS && !this._prevReverse) {
-				// Moving forward fast enough — brake (but NOT if we were already in reverse)
-				isBraking = true;
-			} else {
-				isReverse = true;
-			}
-		}
-		// Already moving backward? Always treat S as reverse, never brake
-		if (wantsBackward && localVelX < -0.3) {
-			isBraking = false;
-			isReverse = true;
-		}
+		const ds = this.driveState.compute(wantsForward, wantsBackward, localVelX);
+		const { isBraking, isReverse, effectiveNeutral: dsNeutral } = ds;
 
 		engine.throttle = wantsForward && !input.handbrake ? 1 : isReverse ? 0.5 : 0;
 		// Handbrake forces gearbox to neutral — no engine drive, no engine braking
-		const effectiveNeutral = wantsNeutral || !!input.handbrake;
+		const effectiveNeutral = dsNeutral || !!input.handbrake;
 		if (effectiveNeutral) {
 			gearbox.effectiveRatio = 0; // neutral = no gear ratio = no engine braking
 		} else if (isReverse) {
@@ -302,149 +281,55 @@ export class RapierVehicleController {
 		}
 		engine.update(localVelX, gearbox.effectiveRatio, chassis.wheelRadius, dt);
 
-		// ── Brake force calculation ──
-		// WHY: Rapier's brake model applies a simple torque to each wheel.
-		// Front-biased braking mirrors real cars — weight transfers forward under
-		// deceleration, so front tires have more grip to convert brake torque into stopping force.
-		let rapierBrakeForce = 0;
-		let coastBodyBrakeN = 0; // body impulse for neutral coast deceleration
-		let brakeBodyN = 0; // body impulse for active braking
-		if (isBraking) {
-			rapierBrakeForce = 5.0;
-
-			// Speed-dependent braking model (Pacejka-lite)
-			// Peak tire grip occurs at moderate slip ratios. At very low speed,
-			// tires approach lock-up — ABS-like modulation reduces peak slightly.
-			// Weight transfer: front axle gains load under braking (front-biased).
-			const absKmh = 5; // below this, ABS-like taper to prevent jerk
-			const baseMu = this._config.brakes.maxBrakeG;
-
-			// Weight transfer factor: at high decel, ~60/40 front/rear split
-			// Effective mu is slightly less than baseMu due to load sensitivity
-			// mu_eff ~ mu * (Fz / Fz0)^0.85 — since total Fz doesn't change,
-			// but distribution does. We use an average: front gets more, rear less.
-			// Net effect: ~5% reduction from ideal for the average axle.
-			const loadSensitivityFactor = 0.95;
-
-			// Speed-dependent grip: tires have slightly less grip at very low speed
-			// due to reduced aero downforce and thermal effects (minor for street cars)
-			// But more importantly: at very low speed, the ratio of brake torque
-			// to vehicle KE is high, so small changes feel large.
-			const speedKmh = Math.abs(localVelX) * 3.6;
-			const lowSpeedFactor =
-				speedKmh < absKmh
-					? 0.6 + 0.4 * (speedKmh / absKmh) // taper from 0.6g to 1.0g
-					: 1.0;
-
-			// High-speed aero effect: slight downforce increase at speed helps braking
-			const highSpeedFactor =
-				speedKmh > 100
-					? 1.0 + 0.1 * Math.min(1.0, (speedKmh - 100) / 100) // up to +10% at 200 km/h
-					: 1.0;
-
-			brakeBodyN = baseMu * loadSensitivityFactor * lowSpeedFactor * highSpeedFactor * chassis.mass * 9.81;
-		} else if (wantsNeutral && Math.abs(localVelX) > 0.1) {
-			// Neutral coast (both directions): moderate body impulse for auto creep-stop
-			const speedFactor = Math.min(1.0, Math.abs(localVelX) / 5.0);
-			coastBodyBrakeN = 0.03 * chassis.mass * 9.81 * speedFactor;
-		}
-
-		// Brake lights: active braking (S) or handbrake
+		// ── Brake lights ──
 		this.brakes.isBraking = isBraking;
 		this.brakes.isHandbrake = !!input.handbrake;
 		this.brakes.brakePressure = isBraking || input.handbrake ? 1 : 0;
 
-		// ── Engine force to rear wheels ──
-		// WHY: RPM is derived from wheel speed (not engine revs) because Rapier
-		// drives the wheels directly — engine torque is just a force multiplier.
-		// This avoids full clutch/drivetrain simulation while preserving realistic feel.
-		// Handbrake cuts engine drive (already handled by effectiveNeutral above)
+		// ── Force computation ──
 		const tractionPerWheel = (chassis.mass * tires.tractionPct * 9.82) / 2;
-		let engF = 0;
-		if (!input.handbrake && wantsForward) {
-			engF = engine.getWheelForce(gearbox.effectiveRatio, chassis.wheelRadius, tractionPerWheel);
-			if (gearbox.isShifting) engF *= 0.3;
-		} else if (isReverse) {
-			// Reverse: 1st gear ratio * final drive, reduced for realistic feel
-			const firstGearRatio = this._config.gearbox.gearRatios[0] || 3.5;
-			const reverseRatio = engineSpec.finalDrive * firstGearRatio;
-			engF = -(engineSpec.torqueNm * 0.45 * reverseRatio * engine.getTorqueMultiplier()) / chassis.wheelRadius;
-			engF = Math.max(engF, -tractionPerWheel * 1.5);
-		}
-		// else: neutral — engF stays 0
+		const absSpeedMs = Math.abs(localVelX);
+		const fc = computeForces(
+			{
+				dsIsBraking: isBraking,
+				dsIsReverse: isReverse,
+				dsNeutral,
+				absSpeedMs,
+				localVelX,
+				heading,
+				handbrake: !!input.handbrake,
+				wantsForward,
+				tractionPerWheel,
+			},
+			engine as any,
+			gearbox as any,
+			{ ...engineSpec, gearRatios: this._config.gearbox.gearRatios, maxBrakeG: this._config.brakes.maxBrakeG },
+			chassis,
+			this.drag.config,
+			dt,
+		);
 
 		// Negate because Rapier's rolling direction = -Z, our car faces +Z
-		this.vehicle.setWheelEngineForce(this.wheelRL, -engF);
-		this.vehicle.setWheelEngineForce(this.wheelRR, -engF);
+		this.vehicle.setWheelEngineForce(this.wheelRL, -fc.engF);
+		this.vehicle.setWheelEngineForce(this.wheelRR, -fc.engF);
 
 		// ── Apply wheel brakes (front-biased for normal braking) ──
-		// Rear wheel brakes are handled by TireDynamics (handbrake = lock, else proportional)
-		this.vehicle.setWheelBrake(this.wheelFL, rapierBrakeForce * 1.2);
-		this.vehicle.setWheelBrake(this.wheelFR, rapierBrakeForce * 1.2);
+		this.vehicle.setWheelBrake(this.wheelFL, fc.rapierBrakeForce * 1.2);
+		this.vehicle.setWheelBrake(this.wheelFR, fc.rapierBrakeForce * 1.2);
 
-		// ── Drag forces as body impulse ──
-		// WHY: Rapier's built-in wheel damping is too weak for realistic coast-down.
-		// Body-level impulses apply uniformly regardless of wheel contact state,
-		// and work identically in forward and reverse (critical for the reverse limiter).
-		let totalRetard = 0;
-		let debugRolling = 0;
-		let debugAero = 0;
-		let debugEngineBrake = 0;
-		const absSpeedMs = Math.abs(localVelX);
-
-		if (isReverse) {
-			// Reverse: apply rolling + aero drag (no engine braking — no gear load)
-			debugRolling = CRR * chassis.mass * 9.81 * 0.5;
-			debugAero = this.drag.config.aeroDrag * absSpeedMs * absSpeedMs;
-
-			// Hard reverse speed limiter — strong braking force near the cap
-			if (absSpeedMs > MAX_REVERSE_SPEED_MS) {
-				const overshoot = absSpeedMs - MAX_REVERSE_SPEED_MS;
-				// Aggressive clamp: 5× tire grip per m/s over the limit
-				totalRetard = TIRE_MU * chassis.mass * 9.81 * 5 * overshoot;
-			} else {
-				totalRetard = debugRolling + debugAero;
-			}
-		} else {
-			debugRolling = CRR * chassis.mass * 9.81 * 0.5;
-			debugAero = this.drag.config.aeroDrag * localVelX * localVelX;
-			debugEngineBrake =
-				localVelX > 0.1
-					? (engine.config.engineBraking *
-							engineSpec.torqueNm *
-							gearbox.effectiveRatio *
-							(engine.rpm / engine.config.maxRPM)) /
-						chassis.wheelRadius
-					: 0;
-			totalRetard = debugEngineBrake + debugRolling + debugAero + coastBodyBrakeN + brakeBodyN;
-			totalRetard = Math.min(totalRetard, TIRE_MU * chassis.mass * 9.81);
-			// Handbrake: add strong body-impulse drag for deceleration.
-			// This supplements the Rapier wheel brake — body impulse is much more effective.
-			if (input.handbrake && !isBraking) {
-				const hSpeedKmh = absSpeedMs * 3.6;
-				// Handbrake g-force: ramps from 0.5g at low speed to 0.9g
-				const hBrakeG = hSpeedKmh < 5 ? 0.5 + 0.4 * (hSpeedKmh / 5) : 0.9;
-				totalRetard += hBrakeG * chassis.mass * 9.81;
-				totalRetard = Math.min(totalRetard, TIRE_MU * chassis.mass * 9.81 * 1.2);
-			}
-		}
-		if (totalRetard > 0 && absSpeedMs > 0.01) {
-			const fx = -totalRetard * Math.sin(heading) * Math.sign(localVelX);
-			const fz = -totalRetard * Math.cos(heading) * Math.sign(localVelX);
-			this.carBody.applyImpulse({ x: fx * dt, y: 0, z: fz * dt }, true);
+		// ── Apply body retard impulse ──
+		if (fc.retardFx !== 0 || fc.retardFz !== 0) {
+			this.carBody.applyImpulse({ x: fc.retardFx, y: 0, z: fc.retardFz }, true);
 		}
 
-		// Record forces for debug visualization (positive = forward, negative = backward)
-		// engF is already signed: positive = forward drive, negative = reverse drive
-		this.forces.engine = engF;
-		// Retard forces are magnitudes; they oppose motion direction
-		const retardSign = localVelX >= 0 ? -1 : 1; // opposite of velocity
-		this.forces.brake = brakeBodyN * retardSign;
-		this.forces.wheelBrake = rapierBrakeForce > 0 ? rapierBrakeForce * 500 * retardSign : 0;
-		this.forces.rolling = debugRolling * retardSign;
-		this.forces.aero = debugAero * retardSign;
-		this.forces.engineBrake = debugEngineBrake * retardSign;
-		this.forces.coast = coastBodyBrakeN * retardSign;
+		// Record forces for debug visualization
+		this.forces.engine = fc.engF;
+		this.forces.brake = fc.forcesDebug.brake;
+		this.forces.wheelBrake = fc.forcesDebug.wheelBrake;
+		this.forces.rolling = fc.forcesDebug.rolling;
+		this.forces.aero = fc.forcesDebug.aero;
+		this.forces.engineBrake = fc.forcesDebug.engineBrake;
+		this.forces.coast = fc.forcesDebug.coast;
 		this.forces.total =
 			this.forces.engine +
 			this.forces.brake +
@@ -459,14 +344,14 @@ export class RapierVehicleController {
 		this._diagTimer += dt * 1000;
 		if (this._diagTimer >= 200) {
 			this._diagTimer = 0;
-			if (wantsBackward || this._prevReverse) {
+			if (wantsBackward || isReverse) {
 				console.log(
 					`[DRIVE] vel=${localVelX.toFixed(3)} state=${isReverse ? "REV" : isBraking ? "BRK" : wantsForward ? "FWD" : "---"} ` +
-						`engF=${engF.toFixed(0)}N wheelBrk=${rapierBrakeForce.toFixed(1)} bodyRetard=${totalRetard.toFixed(0)}N trac=${tractionPerWheel.toFixed(0)} contacts=${this.countContacts()}`,
+						`engF=${fc.engF.toFixed(0)}N wheelBrk=${fc.rapierBrakeForce.toFixed(1)} bodyRetard=${fc.totalRetard.toFixed(0)}N trac=${tractionPerWheel.toFixed(0)} contacts=${this.countContacts()}`,
 				);
 			}
 		}
-		this._prevReverse = isReverse;
+		// prevReverse is tracked inside DriveState
 
 		// ── Steering → front wheels ──
 		this.vehicle.setWheelSteering(this.wheelFL, this.steerAngle);
@@ -492,8 +377,8 @@ export class RapierVehicleController {
 			this.vehicle.setWheelBrake(this.wheelRL, 50.0);
 			this.vehicle.setWheelBrake(this.wheelRR, 50.0);
 		} else {
-			this.vehicle.setWheelBrake(this.wheelRL, rapierBrakeForce * 0.8);
-			this.vehicle.setWheelBrake(this.wheelRR, rapierBrakeForce * 0.8);
+			this.vehicle.setWheelBrake(this.wheelRL, fc.rapierBrakeForce * 0.8);
+			this.vehicle.setWheelBrake(this.wheelRR, fc.rapierBrakeForce * 0.8);
 		}
 
 		// ── Step physics (substeps for stability) ──
@@ -556,7 +441,7 @@ export class RapierVehicleController {
 		this.state.onGround = this.countContacts() > 0;
 
 		const maxF = (engineSpec.torqueNm * gearbox.effectiveRatio * engineSpec.finalDrive) / chassis.wheelRadius;
-		engine.load = maxF > 0 ? Math.min(1, Math.abs(engF) / maxF) : 0;
+		engine.load = maxF > 0 ? Math.min(1, Math.abs(fc.engF) / maxF) : 0;
 
 		this.telemetry = {
 			rpm: engine.rpm,
@@ -631,58 +516,36 @@ export class RapierVehicleController {
 		const pos = this.carBody.translation();
 		const vel = this.carBody.linvel();
 		const av = this.carBody.angvel();
-		const contacts = this.countContacts();
-		const wheelData: string[] = [];
-		const suspData: string[] = [];
-		const wheelBotYs: string[] = [];
-		for (let i = 0; i < 4; i++) {
-			wheelData.push(this.vehicle.wheelIsInContact(i) ? "●" : "○");
-			const currentLen = this.vehicle.wheelSuspensionLength(i);
-			const restLen = this.vehicle.wheelSuspensionRestLength(i);
-			const suspForce = this.vehicle.wheelSuspensionForce(i);
-			if (currentLen !== null && restLen !== null) {
-				// Compression: positive = compressed (shorter than rest), negative = extended
-				const compression = restLen - currentLen;
-				const forceStr = suspForce !== null ? `${(suspForce / 1000).toFixed(0)}kN` : "?";
-				suspData.push(`${compression.toFixed(3)}m/${forceStr}`);
-				// Physics wheel bottom world-Y
-				const anchorY = -this._config.chassis.halfExtents[1];
-				const wbY = pos.y + anchorY - currentLen - this._config.chassis.wheelRadius;
-				wheelBotYs.push(wbY.toFixed(3));
-			} else {
-				suspData.push("-");
-				wheelBotYs.push("?");
-			}
-		}
-		return {
-			pos: `${pos.x.toFixed(1)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(1)}`,
-			vel: `${vel.x.toFixed(2)}, ${vel.y.toFixed(2)}, ${vel.z.toFixed(2)}`,
-			angvel: `${av.x.toFixed(3)}, ${av.y.toFixed(3)}, ${av.z.toFixed(3)}`,
-			heading: `${((this.getHeading() * 180) / Math.PI).toFixed(1)}°`,
-			pitch: `${((Math.atan2(2 * (this.carBody.rotation().w * this.carBody.rotation().x + this.carBody.rotation().y * this.carBody.rotation().z), 1 - 2 * (this.carBody.rotation().x ** 2 + this.carBody.rotation().y ** 2)) * 180) / Math.PI).toFixed(2)}°`,
-			roll: `${((Math.atan2(2 * (this.carBody.rotation().w * this.carBody.rotation().z + this.carBody.rotation().x * this.carBody.rotation().y), 1 - 2 * (this.carBody.rotation().y ** 2 + this.carBody.rotation().z ** 2)) * 180) / Math.PI).toFixed(2)}°`,
-			speed: this.state.speed.toFixed(1),
-			speedKmh: `${(Math.abs(this.state.speed) * 3.6).toFixed(0)}`,
-			rpm: this.state.rpm.toFixed(0),
+		const rot = this.carBody.rotation();
+		const pitch = Math.atan2(2 * (rot.w * rot.x + rot.y * rot.z), 1 - 2 * (rot.x ** 2 + rot.y ** 2));
+		const roll = Math.atan2(2 * (rot.w * rot.z + rot.x * rot.y), 1 - 2 * (rot.y ** 2 + rot.z ** 2));
+		return buildDebugInfo({
+			pos,
+			vel,
+			angvel: av,
+			heading: this.getHeading(),
+			pitch,
+			roll,
+			speed: this.state.speed,
+			rpm: this.state.rpm,
 			gear: this.state.gear,
-			steer: `${((this.steerAngle * 180) / Math.PI).toFixed(1)}°`,
-			contacts: `${contacts}/4 [${wheelData.join(" ")}]`,
-			susp: `[${suspData.join(" | ")}]`,
-			suspRest: this._config.chassis.suspensionRestLength,
-			wheelBotY: `[${wheelBotYs.join(" ")}]`,
+			steerAngle: this.steerAngle,
+			contacts: this.countContacts(),
+			suspRestLength: this._config.chassis.suspensionRestLength,
 			wheelRadius: this._config.chassis.wheelRadius,
 			wheelY: -this._config.chassis.halfExtents[1] * 0.5,
-			patchCenter: `${this.terrainCollider?.patchCenterX.toFixed(0) ?? "?"}, ${this.terrainCollider?.patchCenterZ.toFixed(0) ?? "?"}`,
-			guardrails: this.guardrails?.bodyCount ?? 0,
-			...(this.tireDynState
-				? {
-						rearGrip: this.tireDynState.rearGripMultiplier.toFixed(2),
-						drifting: this.tireDynState.isDrifting ? "YES" : "no",
-						driftTorque: this.tireDynState.driftYawTorque.toFixed(1),
-						comLocal: `${this.tireDynState.localCOM.x.toFixed(2)}, ${this.tireDynState.localCOM.y.toFixed(2)}, ${this.tireDynState.localCOM.z.toFixed(2)}`,
-					}
-				: {}),
-		};
+			halfExtentsY: this._config.chassis.halfExtents[1],
+			patchCenterX: this.terrainCollider?.patchCenterX,
+			patchCenterZ: this.terrainCollider?.patchCenterZ,
+			guardrailCount: this.guardrails?.bodyCount ?? 0,
+			tireDynState: this.tireDynState,
+			wheel: {
+				wheelIsInContact: (i: number) => this.vehicle.wheelIsInContact(i),
+				wheelSuspensionLength: (i: number) => this.vehicle.wheelSuspensionLength(i),
+				wheelSuspensionRestLength: (i: number) => this.vehicle.wheelSuspensionRestLength(i),
+				wheelSuspensionForce: (i: number) => this.vehicle.wheelSuspensionForce(i),
+			},
+		});
 	}
 
 	reset(x: number, y: number, z: number, rotation = 0): void {
