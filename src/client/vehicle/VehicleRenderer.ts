@@ -734,40 +734,19 @@ export class VehicleRenderer {
 			this.wheelSpinAngles[i] += (speed / wheelRadius) * dt;
 
 			// ── Wheel vertical positioning ──
-			// Three factors determine each wheel's local Y:
-			//   1. Base position (set at load time when body is level)
-			//   2. Rapier suspension compression (bumps, load changes)
-			//   3. Body pitch/roll compensation (keeps wheels at ground level)
-			//
-			// WHY compensation: Wheels are children of the car model. When the body
-			// pitches forward, the front pivot's world-Y drops. But Rapier reports
-			// the same suspension length for all wheels (no differential loading),
-			// so without compensation the front wheel goes underground.
-			// We compute how much the body rotation shifts each wheel's world-Y
-			// and subtract that shift from the pivot's local Y.
+			// The GLB wheel markers sit at the Rapier suspension anchor level in
+			// model space (verified: anchorModelY = wheelCenterY). Physics places
+			// the wheel center at anchor - susLen. So the pivot needs a -susLen
+			// offset to match. Body rotation on slopes is handled automatically by
+			// the Three.js transform hierarchy (pivot is a child of the model).
 
 			const basePos = this._wheelBasePos[i];
 			let suspOffset = 0;
 			if (suspLengths && suspLengths[i] !== null && this._suspRestLength > 0) {
-				// Offset wheel DOWN by the full current suspension length so it tracks
-				// the physics wheel position. The GLB wheel positions assume wheels
-				// at ride height (anchor level); physics has them at anchor - susLen.
 				suspOffset = -(suspLengths[i] as number);
 			}
 
-			// Compute body rotation's effect on this wheel's world-Y.
-			// The model quaternion is already set above, so we can use it directly.
-			// Rotated Y = Q × basePos, Y component. Original Y = basePos.y.
-			// Shift = rotated.y - original.y (positive = wheel moved up from rotation).
-			// We negate the shift to compensate (if wheel moved up, reduce local Y).
-			const modelQ = this.model.quaternion;
-			const rotY =
-				2 * (modelQ.x * modelQ.y + modelQ.w * modelQ.z) * basePos.x +
-				(1 - 2 * (modelQ.x * modelQ.x + modelQ.z * modelQ.z)) * basePos.y +
-				2 * (modelQ.y * modelQ.z - modelQ.w * modelQ.x) * basePos.z;
-			const yShift = rotY - basePos.y;
-
-			pivot.position.y = basePos.y + suspOffset - yShift;
+			pivot.position.y = basePos.y + suspOffset;
 
 			// Inner wheel clone rotation is baked at load time (Y rotation for axle alignment).
 			// Pivot: spin around X (axle), steer around Y.
