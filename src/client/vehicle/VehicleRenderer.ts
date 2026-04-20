@@ -274,12 +274,13 @@ export class VehicleRenderer {
 	// ── Brake disc extraction ──────────────────────────────────────────────
 
 	/**
-	 * Split brake disc primitives out of wheel meshes and parent them to the car body.
+	 * Extract brake disc meshes from wheel hierarchy and reparent to car body.
 	 *
-	 * WHY: The wheel GLB bakes brake discs into the same multi-material mesh as the rim.
-	 * If we spin the wheel, the brake disc spins too — physically wrong (discs are fixed to
-	 * the caliper/hub, not the wheel). By extracting the disc primitive and parenting it
-	 * to the car model (not the wheel pivot), it tracks position but doesn't spin.
+	 * WHY: The wheel GLB stores brake discs as separate Mesh children of the wheel
+	 * group (Three.js GLTFLoader splits multi-primitive GLTF meshes into individual
+	 * Mesh objects, each with a single material). If we spin the wheel pivot, the
+	 * disc spins too — physically wrong (discs are fixed to the hub, not the wheel).
+	 * By reparenting the disc mesh to the car body, it tracks position but doesn't spin.
 	 */
 	private extractBrakeDiscs(): void {
 		if (!this.model) return;
@@ -289,97 +290,48 @@ export class VehicleRenderer {
 			const wheelClone = pivot.children[0];
 			if (!wheelClone) continue;
 
-			for (const child of wheelClone.children) {
-				if (!(child instanceof THREE.Mesh)) continue;
-				const mats = child.material;
-				if (!Array.isArray(mats)) continue;
-
-				// Find the brake material group in this multi-material mesh
-				let brakeGroupIdx = -1;
-				let brakeMat: THREE.Material | null = null;
-				for (let mi = 0; mi < mats.length; mi++) {
-					if (mats[mi].name && this.schema.brakeDiscMaterials.includes(mats[mi].name)) {
-						brakeGroupIdx = mi;
-						brakeMat = mats[mi];
-						break;
-					}
+			// Traverse the full wheel hierarchy to find brake disc meshes.
+			// Three.js GLTFLoader creates individual Mesh children per primitive,
+			// so brake discs are standalone Mesh objects (not multi-material).
+			const brakeMeshes: THREE.Mesh[] = [];
+			wheelClone.traverse((child) => {
+				if (!(child instanceof THREE.Mesh)) return;
+				const mat = child.material;
+				if (mat?.name && this.schema.brakeDiscMaterials.includes(mat.name)) {
+					brakeMeshes.push(child);
 				}
-				if (brakeGroupIdx < 0 || !brakeMat) continue;
+			});
 
-				const geo = child.geometry;
-				if (!geo.groups || geo.groups.length <= brakeGroupIdx) continue;
+			for (const brakeMesh of brakeMeshes) {
+				// Compute world position/rotation, then convert to model-local space.
+				// After reparenting, the disc sits at the wheel location but doesn't
+				// rotate with the wheel pivot.
+				brakeMesh.updateMatrixWorld(true);
+				const worldPos = new THREE.Vector3();
+				brakeMesh.getWorldPosition(worldPos);
+				const worldQuat = new THREE.Quaternion();
+				brakeMesh.getWorldQuaternion(worldQuat);
+				const worldScale = new THREE.Vector3();
+				brakeMesh.getWorldScale(worldScale);
 
-				const group = geo.groups[brakeGroupIdx];
-				const posAttr = geo.getAttribute("position");
-				const normAttr = geo.getAttribute("normal");
-				const idxAttr = geo.getIndex();
-				if (!idxAttr) continue;
-
-				// Collect unique vertex indices used by this group, then remap to 0-based.
-				// Three.js merges GLTF multi-primitive meshes into a single BufferGeometry
-				// where each primitive becomes a group (index buffer range). The indices
-				// point into a shared vertex buffer, so we must deduplicate.
-				const vertSet = new Set<number>();
-				const groupIndices: number[] = [];
-				for (let j = group.start; j < group.start + group.count; j++) {
-					const vertIdx = idxAttr.getX(j);
-					vertSet.add(vertIdx);
-					groupIndices.push(vertIdx);
-				}
-
-				// Map original vertex indices → 0-based for the new geometry
-				const sortedVerts = [...vertSet].sort((a, b) => a - b);
-				const remap = new Map<number, number>();
-				for (let vi = 0; vi < sortedVerts.length; vi++) {
-					remap.set(sortedVerts[vi], vi);
-				}
-
-				// Extract vertex data (positions + normals) for referenced vertices only
-				const positions: number[] = [];
-				const normals: number[] = [];
-				for (const origIdx of sortedVerts) {
-					positions.push(posAttr.getX(origIdx), posAttr.getY(origIdx), posAttr.getZ(origIdx));
-					if (normAttr) {
-						normals.push(normAttr.getX(origIdx), normAttr.getY(origIdx), normAttr.getZ(origIdx));
-					}
-				}
-
-				const newIndices = groupIndices.map((v) => remap.get(v)!);
-
-				const discGeo = new THREE.BufferGeometry();
-				discGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-				if (normals.length > 0) {
-					discGeo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-				}
-				discGeo.setIndex(newIndices);
-
-				// Position the disc at the child mesh's world position, reparented to car model root.
-				// The disc stays at the wheel location but doesn't spin with the wheel.
-				child.updateMatrixWorld(true);
-				const discWorldPos = new THREE.Vector3();
-				child.getWorldPosition(discWorldPos);
-				const discWorldQuat = new THREE.Quaternion();
-				child.getWorldQuaternion(discWorldQuat);
-
-				// Convert from world space to model-local space
-				this.model.worldToLocal(discWorldPos);
+				// Convert to model-local coordinates
+				this.model.worldToLocal(worldPos);
 				const modelInvQuat = this.model.quaternion.clone().invert();
-				discWorldQuat.premultiply(modelInvQuat);
+				worldQuat.premultiply(modelInvQuat);
 
-				const discMesh = new THREE.Mesh(discGeo, brakeMat);
-				discMesh.name = `brake_disc_${i}`;
-				discMesh.position.copy(discWorldPos);
-				discMesh.quaternion.copy(discWorldQuat);
-				this.model.add(discMesh);
-				this.brakeDiscMeshes.push(discMesh);
+				// Remove from wheel hierarchy, add to car body
+				brakeMesh.removeFromParent();
+				brakeMesh.position.copy(worldPos);
+				brakeMesh.quaternion.copy(worldQuat);
+				brakeMesh.scale.copy(worldScale);
+				brakeMesh.name = `brake_disc_${i}`;
+				this.model.add(brakeMesh);
+				this.brakeDiscMeshes.push(brakeMesh);
 
-				// Remove the brake group from the original mesh to prevent double-rendering
-				geo.groups = geo.groups.filter(
-					(_g: { start: number; count: number; materialIndex: number }, gi: number) => gi !== brakeGroupIdx,
+				console.log(
+					`[VehicleRenderer] Extracted brake disc ${i}: "${brakeMesh.name}", ` +
+						`${brakeMesh.geometry.getAttribute("position").count} verts`,
 				);
-				child.material = mats.filter((_m: THREE.Material, mi: number) => mi !== brakeGroupIdx);
-
-				console.log(`[VehicleRenderer] Extracted brake disc ${i}: ${sortedVerts.length} verts, ${group.count} indices`);
 			}
 		}
 	}
