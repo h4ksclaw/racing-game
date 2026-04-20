@@ -339,7 +339,7 @@ export class RapierVehicleController {
 		let debugRolling = 0;
 		let debugAero = 0;
 		let debugEngineBrake = 0;
-		if (!isReverse && !wantsBackward) {
+		if (!isReverse) {
 			debugRolling = CRR * chassis.mass * 9.81 * 0.5;
 			debugAero = this.drag.config.aeroDrag * localVelX * localVelX;
 			debugEngineBrake =
