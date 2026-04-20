@@ -77,7 +77,7 @@ export class TerrainSampler {
 		shoulderWidth: number;
 		/** How much the kerb raises above the road surface (m) */
 		kerbRaise: number;
-		/** How much the entire road surface is raised above surrounding terrain (m) */
+		/** How much the road collision is raised above surrounding terrain (m) */
 		roadRaise: number;
 		/** Shoulder height relative to road surface (m, negative = below road) */
 		shoulderDrop: number;
@@ -125,11 +125,11 @@ export class TerrainSampler {
 			roadHalfWidth,
 			kerbWidth: opts.kerbWidth ?? 0.8,
 			shoulderWidth: opts.shoulderWidth ?? 2,
-			kerbRaise: opts.kerbRaise ?? 0.01,
-			roadRaise: opts.roadRaise ?? 0.08,
-			shoulderDrop: opts.shoulderDrop ?? -0.02,
-			slabExtent: opts.slabExtent ?? 0.75,
-			edgeDropMax: opts.edgeDropMax ?? 0.15,
+			kerbRaise: opts.kerbRaise ?? 0.05,
+			roadRaise: opts.roadRaise ?? 0.04,
+			shoulderDrop: opts.shoulderDrop ?? -0.08,
+			slabExtent: opts.slabExtent ?? 2.0,
+			edgeDropMax: opts.edgeDropMax ?? 2.0,
 		};
 
 		let sumY = 0;
@@ -168,29 +168,30 @@ export class TerrainSampler {
 	 * Returns how much higher/lower than the road surface this lateral position should be.
 	 * Kerbs are slightly raised, shoulders slightly lower, edge drops off.
 	 */
-	private crossSectionDelta(distFromCenter: number): number {
-		const { roadHalfWidth, kerbWidth, shoulderWidth, kerbRaise, roadRaise, shoulderDrop, slabExtent, edgeDropMax } =
+	private crossSectionDelta(distFromCenter: number, x: number, z: number): number {
+		const { roadHalfWidth, kerbWidth, shoulderWidth, roadRaise, shoulderDrop, slabExtent, edgeDropMax } =
 			this.crossSection;
-		const kerbEdge = roadHalfWidth + kerbWidth;
-		const guardrailDist = kerbEdge + shoulderWidth;
+		const guardrailDist = roadHalfWidth + kerbWidth + shoulderWidth;
 
 		if (distFromCenter <= roadHalfWidth) {
-			// Road surface: raised above surrounding terrain
 			return roadRaise;
 		}
-		if (distFromCenter <= kerbEdge) {
-			// Kerb: road level + kerb raise
-			const t = (distFromCenter - roadHalfWidth) / kerbWidth;
-			return roadRaise + kerbRaise * t;
-		}
+		// Off-road: step down + bumpy surface
+		let delta = roadRaise + shoulderDrop;
 		if (distFromCenter <= guardrailDist) {
-			// Shoulder: transitions from kerb level down to below road
-			const t = (distFromCenter - kerbEdge) / shoulderWidth;
-			return roadRaise + kerbRaise * (1 - t) + shoulderDrop * t;
+			// Side area: add noise for bumpy off-road feel
+			delta += this.offRoadNoise(x, z, 0.3);
+		} else {
+			// Past guardrail: drop into terrain with noise
+			const t = Math.min(1, (distFromCenter - guardrailDist) / slabExtent);
+			delta = roadRaise + shoulderDrop - edgeDropMax * t * t + this.offRoadNoise(x, z, 0.15);
 		}
-		// Past guardrail: quadratic drop into terrain
-		const t = Math.min(1, (distFromCenter - guardrailDist) / slabExtent);
-		return roadRaise + shoulderDrop - edgeDropMax * t * t;
+		return delta;
+	}
+
+	/** High-frequency noise for bumpy off-road surface. Uses two octaves of the terrain noise. */
+	private offRoadNoise(x: number, z: number, amplitude: number): number {
+		return (this.noise2D(x * 0.5, z * 0.5) * 0.6 + this.noise2D(x * 1.2, z * 1.2) * 0.4) * amplitude;
 	}
 	nearestRoad(x: number, z: number): { dist: number; sample: TrackSample; sampleIndex: number } {
 		const cx = Math.floor(x / this.CELL_SIZE);
@@ -275,7 +276,7 @@ export class TerrainSampler {
 		// 1.0 when on road, fades to 0 beyond ROAD_INFLUENCE
 		const crossSectionFade = 1 - smoothstep(this.BLEND_START, this.ROAD_INFLUENCE, dist);
 		const crossSection =
-			inCrossSection && crossSectionFade > 0.01 ? this.crossSectionDelta(distFromCenter) * crossSectionFade : 0;
+			inCrossSection && crossSectionFade > 0.01 ? this.crossSectionDelta(distFromCenter, x, z) * crossSectionFade : 0;
 		const result = baseY + crossSection;
 
 		// Apply flatten zones

@@ -341,6 +341,37 @@ export class RapierVehicleController {
 			this.carBody.applyImpulse({ x: fc.retardFx, y: 0, z: fc.retardFz }, true);
 		}
 
+		// ── Off-road drag ──
+		// Check each wheel's world position against road boundary.
+		// Wheels off the road surface create extra drag (grass/gravel resistance).
+		let wheelsOffRoad = 0;
+		const OFF_ROAD_DRAG_BASE = 3.0;
+		const rb = this.terrain?.getRoadBoundary?.(pos.x, pos.z);
+		if (rb && speedMs > 0.5) {
+			// Compute wheel world positions from body transform + local offsets
+			const cosH = Math.cos(heading);
+			const sinH = Math.sin(heading);
+			for (let i = 0; i < 4; i++) {
+				const lp = chassis.wheelPositions[i];
+				const wx = pos.x + lp.x * cosH - lp.z * sinH;
+				const wz = pos.z + lp.x * sinH + lp.z * cosH;
+				const wRb = this.terrain?.getRoadBoundary?.(wx, wz);
+				if (wRb && !wRb.onRoad) wheelsOffRoad++;
+			}
+		}
+		const offRoadDragCoeff = wheelsOffRoad > 0 ? OFF_ROAD_DRAG_BASE * (wheelsOffRoad / 4) : 0;
+		if (offRoadDragCoeff > 0) {
+			// Drag proportional to speed², scaled by how many wheels are off-road
+			// Typical: 1 wheel off = mild, 2+ = significant. Capped so it slows but doesn't stop instantly.
+			const dragForce = offRoadDragCoeff * speedMs * speedMs * chassis.mass;
+			// Apply opposing velocity direction
+			if (speedMs > 0.1) {
+				const dragImpulseX = -(vx / speedMs) * dragForce * dt;
+				const dragImpulseZ = -(vz / speedMs) * dragForce * dt;
+				this.carBody.applyImpulse({ x: dragImpulseX, y: 0, z: dragImpulseZ }, true);
+			}
+		}
+
 		// Record forces for debug visualization
 		this.forces.engine = fc.engF;
 		this.forces.brake = fc.forcesDebug.brake;
@@ -356,7 +387,8 @@ export class RapierVehicleController {
 			this.forces.rolling +
 			this.forces.aero +
 			this.forces.engineBrake +
-			this.forces.coast;
+			this.forces.coast +
+			(wheelsOffRoad > 0 ? offRoadDragCoeff * speedMs * speedMs * chassis.mass : 0);
 
 		// DIAG
 		if (!this._diagTimer) this._diagTimer = 0;
