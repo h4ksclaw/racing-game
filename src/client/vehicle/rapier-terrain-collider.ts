@@ -3,7 +3,11 @@
  *
  * Builds a grid of triangles sampled from TerrainProvider.getHeight(),
  * centered on the car and rebuilt when the car moves far enough.
- * At 2m resolution over 200m: 101×101 = ~10K vertices, ~20K triangles.
+ * At 1m resolution over 200m: 201×201 = ~40K vertices, ~80K triangles.
+ *
+ * FIX_INTERNAL_EDGES flag merges duplicate vertices and cleans degenerate
+ * triangles so the solver produces smooth contact normals at cell boundaries
+ * instead of abrupt normal changes that cause bumpy riding on slopes.
  */
 
 import RAPIER from "@dimforge/rapier3d-compat";
@@ -13,8 +17,8 @@ import type { TerrainProvider } from "./types.ts";
 export const TERRAIN_PATCH = {
 	/** Patch size in meters (square). 200m = 100m in each direction. */
 	SIZE: 200,
-	/** Grid resolution in meters per cell. 2m = smooth enough for road driving. */
-	RESOLUTION: 2,
+	/** Grid resolution in meters per cell. 1m = smooth contacts on slopes. */
+	RESOLUTION: 1,
 	/** Rebuild when car moves this far from patch center. */
 	REBUILD_DIST: 60,
 	/** Extra margin beyond patch edge before forcing rebuild. */
@@ -128,7 +132,9 @@ export class TerrainCollider {
 
 		this.groundBody = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
 		this.world.createCollider(
-			RAPIER.ColliderDesc.trimesh(vertices, indices).setFriction(0.8).setRestitution(0.0),
+			RAPIER.ColliderDesc.trimesh(vertices, indices, RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES)
+				.setFriction(0.8)
+				.setRestitution(0.0),
 			this.groundBody,
 		);
 

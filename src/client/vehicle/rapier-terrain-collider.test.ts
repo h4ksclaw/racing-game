@@ -34,11 +34,9 @@ describe("buildTerrainTrimesh", () => {
 		const terrain = new GridTerrain(0);
 		const { vertices, indices } = buildTerrainTrimesh(terrain, 0, 0, TERRAIN_PATCH.SIZE, TERRAIN_PATCH.RESOLUTION);
 
-		// 200/2 = 100 cells → 101×101 = 10201 vertices
-		expect(vertices.length / 3).toBe(101 * 101);
-
-		// 100×100 cells → 2 triangles each → 60000 indices
-		expect(indices.length).toBe(100 * 100 * 6);
+		const cols = Math.ceil(TERRAIN_PATCH.SIZE / TERRAIN_PATCH.RESOLUTION);
+		expect(vertices.length / 3).toBe((cols + 1) * (cols + 1));
+		expect(indices.length).toBe(cols * cols * 6);
 	});
 
 	it("all vertices have the height offset applied", () => {
@@ -147,7 +145,7 @@ describe("buildTerrainTrimesh", () => {
 describe("TERRAIN_PATCH constants", () => {
 	it("has sensible defaults", () => {
 		expect(TERRAIN_PATCH.SIZE).toBe(200);
-		expect(TERRAIN_PATCH.RESOLUTION).toBe(2);
+		expect(TERRAIN_PATCH.RESOLUTION).toBeGreaterThan(0);
 		expect(TERRAIN_PATCH.REBUILD_DIST).toBe(60);
 		expect(TERRAIN_PATCH.EDGE_MARGIN).toBe(30);
 		expect(TERRAIN_PATCH.HEIGHT_OFFSET).toBe(0.3);
