@@ -3,7 +3,7 @@
  *
  * Builds a grid of triangles sampled from TerrainProvider.getHeight(),
  * centered on the car and rebuilt when the car moves far enough.
- * At 1m resolution over 200m: 201×201 = ~40K vertices, ~80K triangles.
+ * At 2m resolution over 200m: 101×101 = ~10K vertices, ~20K triangles.
  *
  * FIX_INTERNAL_EDGES flag merges duplicate vertices and cleans degenerate
  * triangles so the solver produces smooth contact normals at cell boundaries
@@ -17,8 +17,8 @@ import type { TerrainProvider } from "./types.ts";
 export const TERRAIN_PATCH = {
 	/** Patch size in meters (square). 200m = 100m in each direction. */
 	SIZE: 200,
-	/** Grid resolution in meters per cell. 1m = smooth contacts on slopes. */
-	RESOLUTION: 1,
+	/** Grid resolution in meters per cell. 2m avoids sampling high-freq noise that causes bumpiness. */
+	RESOLUTION: 2,
 	/** Rebuild when car moves this far from patch center. */
 	REBUILD_DIST: 60,
 	/** Extra margin beyond patch edge before forcing rebuild. */
