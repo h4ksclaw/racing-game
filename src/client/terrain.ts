@@ -69,22 +69,31 @@ export class TerrainSampler {
 	 * matches the visual road/kerb/shoulder/edge structure.
 	 */
 	private crossSection: {
-		/** Half-width of the driving surface (m) — must match track.ts width/2 */
+		/** Half-width of the driving surface (m) — derived from track sample geometry */
 		roadHalfWidth: number;
-		/** Width of the kerb/rumble strip zone (m) */
+		/** Width of the kerb/rumble strip zone (m) — derived from track sample geometry */
 		kerbWidth: number;
-		/** Width of the grass/gravel shoulder (m) */
+		/** Width of the grass/gravel shoulder (m) — derived from track sample geometry */
 		shoulderWidth: number;
 		/** How much the kerb raises above the road surface (m) */
 		kerbRaise: number;
 		/** How much the road collision is raised above surrounding terrain (m) */
 		roadRaise: number;
-		/** Shoulder height relative to road surface (m, negative = below road) */
+		/** Instant step-down at road edge (m, negative = below road) */
 		shoulderDrop: number;
-		/** How far past the guardrail the concrete slab extends before dropping into terrain (m) */
+		/** How far past the guardrail the edge drop extends (m) */
 		slabExtent: number;
-		/** Maximum edge drop-off at the outer end of the slab (m) */
+		/** Maximum additional drop past the guardrail (m) */
 		edgeDropMax: number;
+	};
+	/** Off-road bump parameters — passed through from CarConfig.offRoad */
+	offRoad: {
+		/** Bump amplitude on the side area (kerb + shoulder), in meters */
+		bumpAmplitude: number;
+		/** Bump amplitude past the guardrail, in meters */
+		bumpAmplitudeOuter: number;
+		/** Noise frequency scale (lower = wider bumps) */
+		bumpFrequency: number;
 	};
 
 	/** Maximum height rise per meter of lateral distance from road (prevents cliffs) */
@@ -111,6 +120,11 @@ export class TerrainSampler {
 			shoulderDrop?: number;
 			slabExtent?: number;
 			edgeDropMax?: number;
+			offRoad?: {
+				bumpAmplitude?: number;
+				bumpAmplitudeOuter?: number;
+				bumpFrequency?: number;
+			};
 		} = {},
 	) {
 		const rng = mulberry32(seed + 99999);
@@ -130,6 +144,11 @@ export class TerrainSampler {
 			shoulderDrop: opts.shoulderDrop ?? -0.08,
 			slabExtent: opts.slabExtent ?? 2.0,
 			edgeDropMax: opts.edgeDropMax ?? 2.0,
+		};
+		this.offRoad = {
+			bumpAmplitude: opts.offRoad?.bumpAmplitude ?? 0.3,
+			bumpAmplitudeOuter: opts.offRoad?.bumpAmplitudeOuter ?? 0.15,
+			bumpFrequency: opts.offRoad?.bumpFrequency ?? 0.5,
 		};
 
 		let sumY = 0;
@@ -179,19 +198,18 @@ export class TerrainSampler {
 		// Off-road: step down + bumpy surface
 		let delta = roadRaise + shoulderDrop;
 		if (distFromCenter <= guardrailDist) {
-			// Side area: add noise for bumpy off-road feel
-			delta += this.offRoadNoise(x, z, 0.3);
+			delta += this.offRoadNoise(x, z, this.offRoad.bumpAmplitude);
 		} else {
-			// Past guardrail: drop into terrain with noise
 			const t = Math.min(1, (distFromCenter - guardrailDist) / slabExtent);
-			delta = roadRaise + shoulderDrop - edgeDropMax * t * t + this.offRoadNoise(x, z, 0.15);
+			delta = roadRaise + shoulderDrop - edgeDropMax * t * t + this.offRoadNoise(x, z, this.offRoad.bumpAmplitudeOuter);
 		}
 		return delta;
 	}
 
-	/** High-frequency noise for bumpy off-road surface. Uses two octaves of the terrain noise. */
+	/** High-frequency noise for bumpy off-road surface. Two octaves for variation. */
 	private offRoadNoise(x: number, z: number, amplitude: number): number {
-		return (this.noise2D(x * 0.5, z * 0.5) * 0.6 + this.noise2D(x * 1.2, z * 1.2) * 0.4) * amplitude;
+		const f = this.offRoad.bumpFrequency;
+		return (this.noise2D(x * f, z * f) * 0.6 + this.noise2D(x * f * 2.4, z * f * 2.4) * 0.4) * amplitude;
 	}
 	nearestRoad(x: number, z: number): { dist: number; sample: TrackSample; sampleIndex: number } {
 		const cx = Math.floor(x / this.CELL_SIZE);

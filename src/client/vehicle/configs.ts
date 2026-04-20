@@ -81,6 +81,20 @@ export interface DragSpec {
 	readonly aeroDrag: number;
 }
 
+/** Off-road surface resistance. Applied per-wheel proportional to speed². */
+export interface OffRoadSpec {
+	/** Base drag coefficient per wheel (N per m²/s² per wheel). Higher = more resistance. */
+	readonly dragPerWheel: number;
+	/** Minimum speed (m/s) before off-road drag kicks in. */
+	readonly minSpeed: number;
+	/** Off-road bump amplitude on the side area (kerb + shoulder), in meters. */
+	readonly bumpAmplitude: number;
+	/** Off-road bump amplitude past the guardrail, in meters. */
+	readonly bumpAmplitudeOuter: number;
+	/** Noise frequency scale for bumps (lower = wider bumps). */
+	readonly bumpFrequency: number;
+}
+
 // ─── Chassis ───────────────────────────────────────────────────────────
 
 export interface ChassisSpec {
@@ -137,6 +151,15 @@ export interface CarModelSchema {
 	readonly brakeDiscMaterials: readonly string[];
 }
 
+/** Default off-road behavior when CarConfig.offRoad is omitted. */
+export const DEFAULT_OFF_ROAD: OffRoadSpec = {
+	dragPerWheel: 0.75,
+	minSpeed: 0.5,
+	bumpAmplitude: 0.3,
+	bumpAmplitudeOuter: 0.15,
+	bumpFrequency: 0.5,
+};
+
 /** Default schema matching the current car.glb naming convention. */
 export const DEFAULT_CAR_MODEL_SCHEMA: CarModelSchema = {
 	wheelModelPath: "/assets/new-car/car.glb",
@@ -165,6 +188,8 @@ export interface CarConfig {
 	readonly brakes: BrakeSpec;
 	readonly tires: TireSpec;
 	readonly drag: DragSpec;
+	/** Off-road surface drag and bump config. If omitted, uses DEFAULT_OFF_ROAD. */
+	readonly offRoad?: OffRoadSpec;
 	readonly chassis: ChassisSpec;
 	/** Optional sound profile. If omitted, derived from engine specs. */
 	readonly sound?: EngineSoundConfig;
