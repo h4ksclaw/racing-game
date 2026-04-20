@@ -277,7 +277,7 @@ export class VehicleRenderer {
 			// the entire model up by the radius delta (applied as ground offset).
 			const maxRadiusDelta = Math.max(...this._visualWheelRadii.map((v) => this.config.chassis.wheelRadius - v));
 			if (maxRadiusDelta > 0.005) {
-				this._modelGroundOffset += maxRadiusDelta;
+				this._modelGroundOffset += maxRadiusDelta + 0.02;
 				console.log(
 					`[VehicleRenderer] Raising model by ${maxRadiusDelta.toFixed(3)}m to compensate wheel radius mismatch`,
 				);
