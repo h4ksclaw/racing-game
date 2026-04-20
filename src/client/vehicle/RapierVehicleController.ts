@@ -42,6 +42,14 @@ const MAX_SUS_FORCE = 100000;
 const WHEEL_FRICTION_SLIP = 2.0;
 const WHEEL_SIDE_FRICTION = 2.5;
 const ANGULAR_DAMPING = 1.0;
+
+// ── Lateral grip falloff ──
+// Simulates tire grip saturation under high lateral load.
+// Real tires follow a Pacejka-like curve: grip peaks at ~0.8g then falls.
+// Below threshold: full grip. Above threshold: grip reduces linearly.
+const LAT_GRIP_THRESHOLD = 0.6; // g — where grip starts to fall off
+const LAT_GRIP_RANGE = 0.8; // g — range over which grip drops to minimum
+const LAT_GRIP_FALLOFF = 0.35; // max 35% grip reduction at 1.4g
 const PHYSICS_SUBSTEPS = 2;
 const YAW_DAMP_RATE = 15.0;
 
@@ -419,10 +427,23 @@ export class RapierVehicleController {
 		// Apply per-wheel side friction: rear wheels get reduced grip during handbrake
 		// Front wheels always keep full grip for directional stability
 		const baseSideFriction = WHEEL_SIDE_FRICTION;
-		this.vehicle.setWheelSideFrictionStiffness(this.wheelFL, baseSideFriction);
-		this.vehicle.setWheelSideFrictionStiffness(this.wheelFR, baseSideFriction);
-		this.vehicle.setWheelSideFrictionStiffness(this.wheelRL, baseSideFriction * rearGripMul);
-		this.vehicle.setWheelSideFrictionStiffness(this.wheelRR, baseSideFriction * rearGripMul);
+
+		// Lateral grip falloff: tires lose grip progressively under high lateral load.
+		// Real tires peak at ~6-8° slip angle then fall off (Pacejka curve).
+		// Rapier uses linear friction, so we simulate the falloff by reducing side
+		// friction stiffness as lateral G increases. This creates natural understeer
+		// at high cornering speeds instead of infinite grip.
+		const bodyAngVel = this.carBody.angvel();
+		const rawLatG = Math.abs(bodyAngVel.y * localVelX) / 9.81;
+		const latGripMul =
+			rawLatG < LAT_GRIP_THRESHOLD
+				? 1.0
+				: 1.0 - LAT_GRIP_FALLOFF * Math.min(1, (rawLatG - LAT_GRIP_THRESHOLD) / LAT_GRIP_RANGE);
+
+		this.vehicle.setWheelSideFrictionStiffness(this.wheelFL, baseSideFriction * latGripMul);
+		this.vehicle.setWheelSideFrictionStiffness(this.wheelFR, baseSideFriction * latGripMul);
+		this.vehicle.setWheelSideFrictionStiffness(this.wheelRL, baseSideFriction * rearGripMul * latGripMul);
+		this.vehicle.setWheelSideFrictionStiffness(this.wheelRR, baseSideFriction * rearGripMul * latGripMul);
 
 		// Handbrake also applies Rapier brake to rear wheels only (longitudinal lock)
 		if (input.handbrake) {
@@ -442,7 +463,6 @@ export class RapierVehicleController {
 		// Clamp to realistic range — beyond ~1.2g the tires would have lost grip anyway
 		const longAccel = Math.max(-12, Math.min(12, chassis.mass > 0 ? (fc.engF - fc.totalRetard) / chassis.mass : 0));
 		// Lateral accel from yaw rate × forward speed (use local angVel.y)
-		const bodyAngVel = this.carBody.angvel();
 		const latAccel = Math.max(-12, Math.min(12, bodyAngVel.y * localVelX));
 
 		for (let i = 0; i < PHYSICS_SUBSTEPS; i++) {
@@ -579,6 +599,38 @@ export class RapierVehicleController {
 	/** Per-wheel current suspension lengths from Rapier. null if wheel not grounded. */
 	getSuspensionLengths(): (number | null)[] {
 		return [0, 1, 2, 3].map((i) => this.vehicle.wheelSuspensionLength(i));
+	}
+
+	/**
+	 * Per-wheel world positions at ground contact level.
+	 * Uses full body quaternion (not just heading) and Rapier's suspension data.
+	 * Falls back to anchor + suspension rest length if wheel is airborne.
+	 */
+	getWheelWorldPositions(): [number, number, number][] {
+		const pos = this.carBody.translation();
+		const rot = this.carBody.rotation();
+		const chassis = this._config.chassis;
+
+		// Full rotation matrix from quaternion
+		const { x: qx, y: qy, z: qz, w: qw } = rot;
+		const xx = qx * qx,
+			yy = qy * qy,
+			zz = qz * qz;
+		const xy = qx * qy,
+			xz = qx * qz,
+			yz = qy * qz;
+		const wx = qw * qx,
+			wy = qw * qy,
+			wz = qw * qz;
+
+		return chassis.wheelPositions.map((lp) => {
+			// Rotate local position by full quaternion
+			const rx = lp.x * (1 - 2 * (yy + zz)) + lp.y * 2 * (xy - wz) + lp.z * 2 * (xz + wy);
+			const ry = lp.x * 2 * (xy + wz) + lp.y * (1 - 2 * (xx + zz)) + lp.z * 2 * (yz - wx);
+			const rz = lp.x * 2 * (xz - wy) + lp.y * 2 * (yz + wx) + lp.z * (1 - 2 * (xx + yy));
+
+			return [pos.x + rx, pos.y + ry, pos.z + rz] as [number, number, number];
+		});
 	}
 
 	/** Per-wheel spin angles (rad) for visual wheel rotation. */

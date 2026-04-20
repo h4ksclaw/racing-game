@@ -2,16 +2,13 @@
  * SkidMarks — dark tire marks painted on the road surface.
  *
  * Records wheel positions when tires slide and builds a mesh of thin
- * ribbon quads that sit slightly above the surface. Marks are visible
- * dark rubber streaks that contrast against the road.
+ * ribbon quads that sit slightly above the surface.
  *
  * Key design:
- * - Color is dark gray (0.15, 0.15, 0.15) — visible against asphalt
- *   which is typically 0.35-0.45 gray
- * - Full opacity (0.85) for strong contrast
- * - Marks persist for 12 seconds, fade over 6 seconds
+ * - Separate slides produce independent marks (gap breaks prevent connecting lines)
+ * - Each mark fades independently based on its own age (per-point opacity)
+ * - Color is dark rubber gray at low opacity — subtle, not overpowering
  * - Polygon offset prevents z-fighting with road surface
- * - Per-ribbon material for independent opacity control during fade
  */
 
 import * as THREE from "three";
@@ -28,15 +25,19 @@ const MAX_POINTS = 3000;
 const MARK_FADE_AGE = 12.0;
 /** Seconds to fully fade out */
 const MARK_FADE_DURATION = 6.0;
-/** Surface offset to prevent z-fighting (meters) */
-const SURFACE_OFFSET = 0.003;
+/** Surface offset — must clear the road mesh which sits +0.02m above terrain */
+const SURFACE_OFFSET = 0.035;
+/** Max distance between consecutive points before treating as a gap (meters).
+ *  When sliding stops and resumes, the first new point will be far from the
+ *  last old point — this threshold breaks the ribbon there. */
+const GAP_THRESHOLD = 1.0;
 /**
  * Skid mark color — dark rubber gray.
- * Road asphalt is ~0.35-0.45 gray, so 0.08 gives strong contrast.
+ * Road asphalt is ~0.35-0.45 gray, so 0.08 gives contrast without being harsh.
  */
 const MARK_COLOR = new THREE.Color(0.08, 0.08, 0.08);
-/** Base opacity — high for strong visible marks */
-const MARK_OPACITY = 0.9;
+/** Base opacity — subtle marks, not harsh black lines */
+const MARK_OPACITY = 0.18;
 
 interface MarkPoint {
 	x: number;
@@ -58,7 +59,10 @@ interface Ribbon {
 
 export class SkidMarks {
 	private scene: THREE.Scene;
-	private terrain: { getHeight(x: number, z: number): number } | null = null;
+	private terrain: {
+		getHeight(x: number, z: number): number;
+		getRoadSurfaceY?(x: number, z: number): number;
+	} | null = null;
 	private baseMaterial: THREE.MeshBasicMaterial;
 	private ribbons: Ribbon[];
 
@@ -87,7 +91,10 @@ export class SkidMarks {
 		);
 	}
 
-	setTerrain(terrain: { getHeight(x: number, z: number): number }): void {
+	setTerrain(terrain: {
+		getHeight(x: number, z: number): number;
+		getRoadSurfaceY?(x: number, z: number): number;
+	}): void {
 		this.terrain = terrain;
 	}
 
@@ -111,13 +118,16 @@ export class SkidMarks {
 			if (sliding) {
 				ribbon.active = true;
 
+				// Skip if too close to last emitted point
 				if (ribbon.lastEmitPos) {
 					const dx = wx - ribbon.lastEmitPos[0];
 					const dz = wz - ribbon.lastEmitPos[2];
 					if (Math.sqrt(dx * dx + dz * dz) < MARK_SPACING) continue;
 				}
 
-				const surfaceY = this.terrain ? this.terrain.getHeight(wx, wz) + SURFACE_OFFSET : wy;
+				const surfaceY = this.terrain
+					? (this.terrain.getRoadSurfaceY?.(wx, wz) ?? this.terrain.getHeight(wx, wz)) + SURFACE_OFFSET
+					: wy;
 
 				let nx = 0;
 				let nz = 1;
@@ -126,15 +136,18 @@ export class SkidMarks {
 					const last = pts[pts.length - 1];
 					const dx = wx - last.x;
 					const dz = wz - last.z;
-					const len = Math.sqrt(dx * dx + dz * dz);
-					if (len > 0.001) {
-						nx = -dz / len;
-						nz = dx / len;
+					const dist = Math.sqrt(dx * dx + dz * dz);
+					// Large gap = separate slide event, don't connect
+					if (dist > GAP_THRESHOLD) {
+						nx = 0;
+						nz = 1;
+					} else if (dist > 0.001) {
+						nx = -dz / dist;
+						nz = dx / dist;
 					}
 				}
 
 				pts.push({ x: wx, y: surfaceY, z: wz, nx, nz, birthTime: now });
-				ribbon.lastEmitPos = [wx, wy, wz];
 
 				while (pts.length > MAX_POINTS) {
 					pts.shift();
@@ -188,7 +201,13 @@ export class SkidMarks {
 			positions[j6 + 4] = p.y;
 			positions[j6 + 5] = p.z - p.nz * halfW;
 
+			// Don't connect quads across gaps (separate slide events)
 			if (j < points.length - 1) {
+				const next = points[j + 1];
+				const dx = next.x - p.x;
+				const dz = next.z - p.z;
+				if (Math.sqrt(dx * dx + dz * dz) > GAP_THRESHOLD) continue;
+
 				const a = j2;
 				const b = j2 + 1;
 				const c = j2 + 2;

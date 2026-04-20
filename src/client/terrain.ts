@@ -268,6 +268,10 @@ export class TerrainSampler {
 		return { sample, sampleIndex, dist, distFromCenter: Math.abs(lateralDist) };
 	}
 
+	/** Road surface Y (visual road mesh sits at this + 0.02m). Use for skid marks etc. */
+	getRoadSurfaceY(x: number, z: number): number {
+		return this.roadHeight(x, z) + 0.02;
+	}
 	getHeight(x: number, z: number): number {
 		// Quantize to 0.25m grid for caching (smooth enough for driving)
 		const qx = Math.round(x * 4) / 4;

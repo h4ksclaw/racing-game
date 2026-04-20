@@ -6,40 +6,58 @@
  *   and looks like PS2 regardless of texture quality. Instanced quads
  *   are the standard approach in modern game engines.
  *
- * How it works:
- *   - InstancedMesh with a single PlaneGeometry quad
- *   - Each instance is a billboard: vertex shader rotates quad to face camera
- *   - Per-instance data via InstancedBufferAttribute
- *   - Procedural smoke texture on a 64x64 canvas (no external assets)
- *   - Additive blending for smoke (NormalBlending available for opaque particles)
+ * Why previous versions looked like circles:
+ *   A single flat textured quad is a disc. The eye reads it as flat because
+ *   the silhouette is perfectly round. Real smoke has fractal, irregular edges.
  *
- * Particles grow → hold → shrink, with configurable per-particle opacity.
- * CPU updates emit queue + position/velocity simulation, GPU handles
- * billboard orientation and size/opacity animation.
+ * How this version fixes it:
+ *   - Fragment shader distorts UV coords with FBM noise BEFORE sampling the
+ *     texture. This warps each particle's shape into organic, non-circular
+ *     forms — every particle has a unique silhouette.
+ *   - Additional noise-based alpha modulation softens edges further.
+ *   - Warm color grading (slight amber tint) instead of pure white.
+ *   - Higher-res procedural texture (128x128) with 12 layered blobs.
+ *
+ * Future improvement (soft depth fade):
+ *   Particles currently have hard edges where they intersect geometry.
+ *   Adding a depth render target pass would let particles fade when near
+ *   surfaces (ground, car body). Requires post-processing pipeline setup.
+ *
+ * Architecture:
+ *   - InstancedMesh with a single PlaneGeometry quad
+ *   - Vertex shader: billboard rotation + size/opacity lifecycle
+ *   - Fragment shader: FBM noise distortion + color grading
+ *   - CPU: emit queue + position/velocity simulation
+ *   - Per-instance data via InstancedBufferAttribute
  */
 
 import * as THREE from "three";
 
 // ─── Procedural smoke texture ──────────────────────────────────────────
-// Soft, organic puff shape — layered offset radial gradients avoid
-// the "perfect circle" look that screams "game engine particle".
+// 128x128 canvas with 12 layered soft blobs at varied positions.
+// This creates a base shape that's already somewhat organic, which the
+// shader then further distorts with noise.
 
 function generateSmokeTexture(): THREE.CanvasTexture {
-	const size = 64;
+	const size = 128;
 	const canvas = document.createElement("canvas");
 	canvas.width = size;
 	canvas.height = size;
 	const ctx = canvas.getContext("2d")!;
-	ctx.clearRect(0, 0, size, size);
 
-	// Layer soft blobs at slightly offset centers
 	const blobs = [
-		{ x: 0.5, y: 0.5, r: 0.42, a: 0.7 },
-		{ x: 0.44, y: 0.47, r: 0.3, a: 0.45 },
-		{ x: 0.56, y: 0.53, r: 0.35, a: 0.4 },
-		{ x: 0.48, y: 0.43, r: 0.25, a: 0.35 },
-		{ x: 0.53, y: 0.56, r: 0.28, a: 0.3 },
-		{ x: 0.51, y: 0.49, r: 0.18, a: 0.4 },
+		{ x: 0.5, y: 0.5, r: 0.45, a: 0.55 },
+		{ x: 0.42, y: 0.44, r: 0.32, a: 0.4 },
+		{ x: 0.58, y: 0.54, r: 0.35, a: 0.35 },
+		{ x: 0.46, y: 0.56, r: 0.28, a: 0.3 },
+		{ x: 0.55, y: 0.42, r: 0.3, a: 0.28 },
+		{ x: 0.5, y: 0.5, r: 0.2, a: 0.35 },
+		{ x: 0.38, y: 0.52, r: 0.22, a: 0.2 },
+		{ x: 0.62, y: 0.48, r: 0.24, a: 0.22 },
+		{ x: 0.48, y: 0.38, r: 0.18, a: 0.18 },
+		{ x: 0.52, y: 0.62, r: 0.2, a: 0.15 },
+		{ x: 0.43, y: 0.58, r: 0.15, a: 0.2 },
+		{ x: 0.57, y: 0.38, r: 0.17, a: 0.18 },
 	];
 
 	for (const blob of blobs) {
@@ -48,8 +66,8 @@ function generateSmokeTexture(): THREE.CanvasTexture {
 		const cr = blob.r * size;
 		const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, cr);
 		grad.addColorStop(0, `rgba(255, 255, 255, ${blob.a})`);
-		grad.addColorStop(0.35, `rgba(255, 255, 255, ${blob.a * 0.5})`);
-		grad.addColorStop(0.65, `rgba(255, 255, 255, ${blob.a * 0.12})`);
+		grad.addColorStop(0.3, `rgba(255, 255, 255, ${blob.a * 0.5})`);
+		grad.addColorStop(0.6, `rgba(255, 255, 255, ${blob.a * 0.15})`);
 		grad.addColorStop(1, "rgba(255, 255, 255, 0)");
 		ctx.fillStyle = grad;
 		ctx.fillRect(0, 0, size, size);
@@ -63,7 +81,6 @@ function generateSmokeTexture(): THREE.CanvasTexture {
 // ─── Shaders ────────────────────────────────────────────────────────────
 
 const VERT = /* glsl */ `
-	// Per-instance attributes
 	attribute vec3 instancePosition;
 	attribute vec3 instanceVelocity;
 	attribute vec2 instanceLife;    // x=current, y=max
@@ -95,7 +112,7 @@ const VERT = /* glsl */ `
 		float alphaFade = progress > 0.4 ? 1.0 - (progress - 0.4) / 0.6 : 1.0;
 		vOpacity = instanceOpacity * alphaFade;
 
-		// Billboard: build rotation matrix from camera right + up
+		// Billboard from camera right + up vectors
 		vec3 camRight = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
 		vec3 camUp = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
 
@@ -104,10 +121,18 @@ const VERT = /* glsl */ `
 			+ camRight * position.x * s
 			+ camUp * position.y * s;
 
-		gl_Position = projectionMatrix * viewMatrix * vec4(worldPos, 1.0);
+		gl_Position = projectionMatrix * modelViewMatrix * vec4(worldPos, 1.0);
 	}
 `;
 
+/**
+ * Fragment shader — the key to making smoke NOT look like circles.
+ *
+ * Instead of sampling the texture at the raw UV, we warp UVs with FBM noise.
+ * This turns each particle's circular silhouette into an organic, irregular
+ * cloud shape. Combined with noise-based alpha modulation and warm color
+ * grading, the result reads as smoke rather than "game particle".
+ */
 const FRAG = /* glsl */ `
 	uniform sampler2D uSmokeTex;
 
@@ -115,14 +140,75 @@ const FRAG = /* glsl */ `
 	varying vec3 vColor;
 	varying vec2 vUv;
 
+	// Hash for value noise
+	float hash(vec2 p) {
+		p = fract(p * vec2(123.34, 456.21));
+		p += dot(p, p + 45.32);
+		return fract(p.x * p.y);
+	}
+
+	// Value noise with smoothstep interpolation
+	float noise2D(vec2 p) {
+		vec2 i = floor(p);
+		vec2 f = fract(p);
+		f = f * f * (3.0 - 2.0 * f);
+
+		float a = hash(i);
+		float b = hash(i + vec2(1.0, 0.0));
+		float c = hash(i + vec2(0.0, 1.0));
+		float d = hash(i + vec2(1.0, 1.0));
+
+		return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+	}
+
+	// FBM — 3 octaves of value noise
+	float fbm(vec2 p) {
+		float val = 0.0;
+		float amp = 0.5;
+		for (int i = 0; i < 3; i++) {
+			val += amp * noise2D(p);
+			p *= 2.0;
+			amp *= 0.5;
+		}
+		return val;
+	}
+
 	void main() {
-		vec4 texSample = texture2D(uSmokeTex, vUv);
+		vec2 centered = vUv * 2.0 - 1.0; // remap to [-1, 1]
+
+		// ── UV distortion with FBM ──
+		// This is THE fix. Instead of sampling texture at the quad's natural
+		// UV (which traces a perfect circle), we push UVs around with noise.
+		// The result: each particle has a unique, irregular silhouette.
+		float distortScale = 2.5;
+		vec2 distortedUv = centered + (fbm(centered * distortScale) - 0.5) * 0.6;
+		distortedUv = distortedUv * 0.5 + 0.5; // back to [0, 1]
+
+		// Noise can push UVs outside the quad — discard those fragments
+		if (distortedUv.x < 0.0 || distortedUv.x > 1.0 ||
+			distortedUv.y < 0.0 || distortedUv.y > 1.0) {
+			discard;
+		}
+
+		vec4 texSample = texture2D(uSmokeTex, distortedUv);
 		float alpha = texSample.r * vOpacity;
+
+		// ── Noise-based alpha modulation ──
+		// Varies opacity across the particle surface — breaks up the
+		// uniform soft-circle look into patchy, cloud-like density.
+		float edgeNoise = fbm(centered * 3.0 + 0.5);
+		alpha *= 0.7 + edgeNoise * 0.6;
 
 		if (alpha < 0.005) discard;
 
-		// For additive: output premultiplied color
-		gl_FragColor = vec4(vColor * alpha, alpha);
+		// ── Warm color grading ──
+		// Real tire smoke is slightly warm/amber, not pure white.
+		vec3 graded = vColor;
+		graded.r *= 1.05;
+		graded.g *= 0.98;
+		graded.b *= 0.93;
+
+		gl_FragColor = vec4(graded * alpha, alpha);
 	}
 `;
 
@@ -155,7 +241,6 @@ export class ParticleSystem {
 	private instancedMesh: THREE.InstancedMesh;
 	private material: THREE.ShaderMaterial;
 
-	// CPU-side buffers (mirrors GPU instanced attributes)
 	private positions: Float32Array;
 	private velocities: Float32Array;
 	private lives: Float32Array;
@@ -173,7 +258,6 @@ export class ParticleSystem {
 		this.capacity = opts.capacity;
 		const cap = opts.capacity;
 
-		// Single quad geometry — the billboard base
 		const quadGeo = new THREE.PlaneGeometry(1, 1);
 
 		this.positions = new Float32Array(cap * 3);
@@ -186,7 +270,6 @@ export class ParticleSystem {
 
 		this.smokeTex = generateSmokeTexture();
 
-		// Attach instanced attributes
 		quadGeo.setAttribute(
 			"instancePosition",
 			new THREE.InstancedBufferAttribute(this.positions, 3).setUsage(THREE.DynamicDrawUsage),
@@ -226,8 +309,6 @@ export class ParticleSystem {
 
 		this.instancedMesh = new THREE.InstancedMesh(quadGeo, this.material, cap);
 		this.instancedMesh.frustumCulled = false;
-		// Hide all instances initially (count=0 means nothing drawn,
-		// but we need instancedMesh for attribute upload)
 		this.instancedMesh.count = cap;
 		scene.add(this.instancedMesh);
 	}
@@ -313,7 +394,7 @@ export class ParticleSystem {
 		}
 		this.queue.length = 0;
 
-		// Simulate
+		// Simulate active particles
 		const cap = this.capacity;
 		for (let i = 0; i < cap; i++) {
 			const i3 = i * 3;
@@ -324,20 +405,20 @@ export class ParticleSystem {
 			this.positions[i3 + 1] += this.velocities[i3 + 1] * dt;
 			this.positions[i3 + 2] += this.velocities[i3 + 2] * dt;
 
-			// Smoke: buoyancy + drag
+			// Buoyancy + drag (smoke rises and slows)
 			this.velocities[i3 + 1] += 0.3 * dt;
 			this.velocities[i3] *= 1 - 1.5 * dt;
 			this.velocities[i3 + 1] *= 1 - 1.0 * dt;
 			this.velocities[i3 + 2] *= 1 - 1.5 * dt;
 
-			// Turbulence
+			// Turbulence — random velocity perturbation for organic drift
 			this.velocities[i3] += (Math.random() - 0.5) * 0.4 * dt;
 			this.velocities[i3 + 2] += (Math.random() - 0.5) * 0.4 * dt;
 
 			this.lives[i2] -= dt;
 		}
 
-		// Upload instanced attributes
+		// Upload to GPU
 		const geo = this.instancedMesh.geometry;
 		for (const attr of Object.values(geo.attributes)) {
 			attr.needsUpdate = true;

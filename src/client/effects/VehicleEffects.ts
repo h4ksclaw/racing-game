@@ -48,45 +48,15 @@ export class VehicleEffects {
 	 * @param now Current time in seconds (for skid mark aging)
 	 */
 	update(dt: number, vehicle: RapierVehicleController, now: number): void {
-		const wheelWorldPos = this.getWheelWorldPositions(vehicle);
-		const wheelSlide = this.computeWheelSlide(vehicle);
-		const wheelOffRoad = this.computeWheelOffRoad(vehicle);
+		const wheelWorldPos = vehicle.getWheelWorldPositions();
 		const speed = Math.abs(vehicle.state.speed);
+		const wheelSlide = this.computeWheelSlide(vehicle);
+		const wheelSlideScaled = this.scaleBySpeed(wheelSlide, speed);
+		const wheelOffRoad = this.computeWheelOffRoad(vehicle);
 
-		this.tireSmoke.update(dt, wheelWorldPos, wheelSlide);
+		this.tireSmoke.update(dt, wheelWorldPos, wheelSlideScaled);
 		this.dirtThrow.update(dt, wheelWorldPos, wheelOffRoad, speed);
-		this.skidMarks.update(now, wheelWorldPos, wheelSlide, wheelOffRoad);
-	}
-
-	/**
-	 * Compute world positions for all 4 wheels using body transform + local offsets.
-	 * Matches the transform used in RapierVehicleController for off-road checks.
-	 */
-	private getWheelWorldPositions(vehicle: RapierVehicleController): [number, number, number][] {
-		const body = vehicle.physicsBody;
-		if (!body)
-			return [
-				[0, 0, 0],
-				[0, 0, 0],
-				[0, 0, 0],
-				[0, 0, 0],
-			];
-
-		const pos = body.translation();
-		const rot = body.rotation();
-		const heading = Math.atan2(2 * (rot.w * rot.y + rot.z * rot.x), 1 - 2 * (rot.y * rot.y + rot.x * rot.x));
-		const cosH = Math.cos(heading);
-		const sinH = Math.sin(heading);
-		const chassis = vehicle.config.chassis;
-
-		return chassis.wheelPositions.map(
-			(lp) =>
-				[pos.x + lp.x * cosH - lp.z * sinH, pos.y + lp.y, pos.z + lp.x * sinH + lp.z * cosH] as [
-					number,
-					number,
-					number,
-				],
-		);
+		this.skidMarks.update(now, wheelWorldPos, wheelSlideScaled, wheelOffRoad);
 	}
 
 	/**
@@ -104,19 +74,14 @@ export class VehicleEffects {
 
 		if (!td || speed < 0.5) return intensities;
 
-		// Handbrake / drift: rear wheels (index 2, 3) slide
+		// Handbrake / drift: rear wheels (index 2, 3) slide only
 		if (td.isDrifting) {
 			const driftIntensity = Math.min(1, td.driftFactor);
 			intensities[2] = driftIntensity;
 			intensities[3] = driftIntensity;
-			// Front wheels slide slightly less during handbrake
-			if (vehicle.handbrakeActive) {
-				intensities[0] = driftIntensity * 0.2;
-				intensities[1] = driftIntensity * 0.2;
-			}
 		}
 
-		// Hard cornering: outside wheels slide proportional to lateral G
+		// Hard cornering: outside rear slides (fronts keep grip)
 		const angVel = vehicle.physicsBody?.angvel();
 		if (angVel) {
 			const yawRate = angVel.y;
@@ -125,16 +90,20 @@ export class VehicleEffects {
 				const cornerIntensity = Math.min(0.6, (latG - 0.3) * 0.5);
 				const turningRight = yawRate > 0;
 				if (turningRight) {
-					intensities[1] = Math.max(intensities[1], cornerIntensity); // FR
 					intensities[3] = Math.max(intensities[3], cornerIntensity); // RR
 				} else {
-					intensities[0] = Math.max(intensities[0], cornerIntensity); // FL
 					intensities[2] = Math.max(intensities[2], cornerIntensity); // RL
 				}
 			}
 		}
 
 		return intensities;
+	}
+
+	/** Scale slide intensities by speed — linear ramp. Full at 20 m/s (~72 km/h). */
+	private scaleBySpeed(intensities: number[], speed: number): number[] {
+		const factor = Math.min(1, (speed - 0.5) / 19.5);
+		return intensities.map((v) => v * factor);
 	}
 
 	/**
