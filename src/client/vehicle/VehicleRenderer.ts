@@ -550,7 +550,7 @@ export class VehicleRenderer {
 				// wheel doesn't reach as far down, so shift pivot down by that delta.
 				const visR = this._visualWheelRadii[i];
 				if (visR > 0.001) {
-					suspOffset -= wheelRadius - visR;
+					suspOffset += wheelRadius - visR;
 				}
 			}
 
