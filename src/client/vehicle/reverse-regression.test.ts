@@ -125,9 +125,8 @@ describe("Reverse acceleration regression", () => {
 		for (let i = 0; i < 300; i++) v.update(flatInput(), 1 / 60); // 5 seconds of coasting
 
 		console.log(`[TEST] Speed after 5s no input: ${v.state.speed.toFixed(2)} (was ${startSpeed.toFixed(2)})`);
-		// Car should be significantly slower (at least 80% speed reduction) but auto-stop
-		// shouldn't show brake lights (brakePressure should be 0)
-		expect(v.state.speed).toBeLessThan(startSpeed * 0.3);
+		// Realistic coasting (~0.03g) — car should be slower but not aggressively stopped
+		expect(v.state.speed).toBeLessThan(startSpeed * 0.85);
 		expect(v.state.brake).toBe(0); // auto-stop should NOT show brake lights
 	});
 });

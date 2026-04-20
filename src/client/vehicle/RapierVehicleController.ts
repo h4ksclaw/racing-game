@@ -301,7 +301,7 @@ export class RapierVehicleController {
 		} else if (!wantsForward && !wantsBackward && localVelX > 0.1) {
 			// Neutral coast (forward only): moderate body impulse for auto creep-stop
 			const speedFactor = Math.min(1.0, localVelX / 5.0);
-			coastBodyBrakeN = 0.3 * chassis.mass * 9.81 * speedFactor;
+			coastBodyBrakeN = 0.03 * chassis.mass * 9.81 * speedFactor;
 		}
 
 		// Brake lights: ONLY active braking (S while moving forward, handbrake)
