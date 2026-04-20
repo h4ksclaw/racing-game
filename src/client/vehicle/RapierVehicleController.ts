@@ -25,6 +25,8 @@ import { EngineUnit } from "./engine/EngineUnit.ts";
 import { Guardrails } from "./rapier-guardrails.ts";
 import { TerrainCollider } from "./rapier-terrain-collider.ts";
 import { Brakes } from "./suspension/Brakes.ts";
+import type { TireDynamicsState } from "./tires/TireDynamics.ts";
+import { TireDynamics } from "./tires/TireDynamics.ts";
 import type { EngineTelemetry, TerrainProvider, VehicleInput, VehicleState } from "./types.ts";
 
 export type { TerrainProvider, VehicleInput } from "./types.ts";
@@ -60,6 +62,7 @@ export class RapierVehicleController {
 	private readonly engineUnit: EngineUnit;
 	private readonly brakes: Brakes;
 	private readonly drag: DragModel;
+	private readonly tireDynamics: TireDynamics;
 	private readonly _config: CarConfig;
 
 	private terrain: TerrainProvider | null = null;
@@ -80,6 +83,8 @@ export class RapierVehicleController {
 	private initialized = false;
 	private _diagTimer = 0; // throttle diagnostic log output
 	private _prevReverse = false;
+	/** Tire dynamics state snapshot (updated each frame after physics step) */
+	tireDynState: TireDynamicsState | null = null;
 	/** Current frame force breakdown for debug visualization (world-space) */
 	forces: {
 		engine: number;
@@ -106,6 +111,11 @@ export class RapierVehicleController {
 		this.engineUnit = new EngineUnit(config.engine, config.gearbox, config.chassis.wheelRadius);
 		this.brakes = new Brakes(config.brakes);
 		this.drag = new DragModel(config.drag);
+		this.tireDynamics = new TireDynamics({
+			chassis: config.chassis,
+			tires: config.tires,
+			wheelIndices: { fl: 0, fr: 1, rl: 2, rr: 3 },
+		});
 		this.state = {
 			speed: 0,
 			rpm: config.engine.idleRPM,
@@ -141,6 +151,13 @@ export class RapierVehicleController {
 				.setRestitution(0.1),
 			this.carBody,
 		);
+
+		// NOTE: Center-of-mass offset (from weightFront/cgHeight config) is computed
+		// by TireDynamics but NOT applied via setAdditionalMassProperties here.
+		// Reason: Rapier's vehicle suspension solver is calibrated for COM at geometric center.
+		// Moving COM changes suspension force distribution and breaks existing tuning.
+		// COM effects (weight transfer) are simulated through the tire dynamics force model instead.
+		// The computed COM position is available via tireDynamics.state.localCOM for debug visualization.
 
 		// Vehicle controller with 4 wheels
 		this.vehicle = this.world.createVehicleController(this.carBody);
@@ -277,16 +294,15 @@ export class RapierVehicleController {
 		let rapierBrakeForce = 0;
 		let coastBodyBrakeN = 0; // body impulse for neutral coast deceleration
 		let brakeBodyN = 0; // body impulse for active braking
-		if (isBraking || input.handbrake) {
-			rapierBrakeForce = input.handbrake ? 8.0 : 5.0;
+		if (isBraking) {
+			rapierBrakeForce = 5.0;
 
 			// Speed-dependent braking model (Pacejka-lite)
 			// Peak tire grip occurs at moderate slip ratios. At very low speed,
 			// tires approach lock-up — ABS-like modulation reduces peak slightly.
 			// Weight transfer: front axle gains load under braking (front-biased).
 			const absKmh = 5; // below this, ABS-like taper to prevent jerk
-			const isHandbrake = !!input.handbrake;
-			const baseMu = isHandbrake ? this._config.brakes.handbrakeG : this._config.brakes.maxBrakeG;
+			const baseMu = this._config.brakes.maxBrakeG;
 
 			// Weight transfer factor: at high decel, ~60/40 front/rear split
 			// Effective mu is slightly less than baseMu due to load sensitivity
@@ -317,8 +333,10 @@ export class RapierVehicleController {
 			const speedFactor = Math.min(1.0, Math.abs(localVelX) / 5.0);
 			coastBodyBrakeN = 0.03 * chassis.mass * 9.81 * speedFactor;
 		}
+		// NOTE: handbrake is handled by TireDynamics (rear wheel grip reduction),
+		// NOT by the body-impulse brake model above. See post-step section below.
 
-		// Brake lights: ONLY active braking (S while moving forward, handbrake)
+		// Brake lights: active braking (S) or handbrake
 		this.brakes.isBraking = isBraking;
 		this.brakes.isHandbrake = !!input.handbrake;
 		this.brakes.brakePressure = isBraking || input.handbrake ? 1 : 0;
@@ -342,11 +360,10 @@ export class RapierVehicleController {
 		this.vehicle.setWheelEngineForce(this.wheelRL, -engF);
 		this.vehicle.setWheelEngineForce(this.wheelRR, -engF);
 
-		// ── Apply wheel brakes (all 4, front-biased) ──
+		// ── Apply wheel brakes (front-biased for normal braking) ──
+		// Rear wheel brakes are handled by TireDynamics (handbrake = lock, else proportional)
 		this.vehicle.setWheelBrake(this.wheelFL, rapierBrakeForce * 1.2);
 		this.vehicle.setWheelBrake(this.wheelFR, rapierBrakeForce * 1.2);
-		this.vehicle.setWheelBrake(this.wheelRL, rapierBrakeForce * 0.8);
-		this.vehicle.setWheelBrake(this.wheelRR, rapierBrakeForce * 0.8);
 
 		// ── Rolling + aero drag as body impulse (opposes motion in both directions) ──
 		let totalRetard = 0;
@@ -426,12 +443,51 @@ export class RapierVehicleController {
 		this.vehicle.setWheelSteering(this.wheelFL, this.steerAngle);
 		this.vehicle.setWheelSteering(this.wheelFR, this.steerAngle);
 
+		// ── Tire dynamics: handbrake → rear wheel grip reduction ──
+		// Update handbrake state (ramps grip up/down smoothly)
+		const rearGripMul = this.tireDynamics.updateHandbrake(!!input.handbrake, absSpeedMs, dt);
+
+		// Apply per-wheel side friction: rear wheels get reduced grip during handbrake
+		// Front wheels always keep full grip for directional stability
+		const baseSideFriction = WHEEL_SIDE_FRICTION;
+		this.vehicle.setWheelSideFrictionStiffness(this.wheelFL, baseSideFriction);
+		this.vehicle.setWheelSideFrictionStiffness(this.wheelFR, baseSideFriction);
+		this.vehicle.setWheelSideFrictionStiffness(this.wheelRL, baseSideFriction * rearGripMul);
+		this.vehicle.setWheelSideFrictionStiffness(this.wheelRR, baseSideFriction * rearGripMul);
+
+		// Handbrake also applies Rapier brake to rear wheels only (longitudinal lock)
+		if (input.handbrake) {
+			this.vehicle.setWheelBrake(this.wheelRL, 8.0);
+			this.vehicle.setWheelBrake(this.wheelRR, 8.0);
+		} else {
+			this.vehicle.setWheelBrake(this.wheelRL, rapierBrakeForce * 0.8);
+			this.vehicle.setWheelBrake(this.wheelRR, rapierBrakeForce * 0.8);
+		}
+
 		// ── Step physics (substeps for stability) ──
 		const substepDt = dt / PHYSICS_SUBSTEPS;
 		for (let i = 0; i < PHYSICS_SUBSTEPS; i++) {
 			this.vehicle.updateVehicle(substepDt);
 			this.world.step();
 		}
+
+		// ── Post-step: tire dynamics forces ──
+		this.tireDynamics.readWheelStates(this.vehicle);
+
+		// Read current yaw rate from body angular velocity
+		const angVel = this.carBody.angvel();
+		const yawRate = angVel.y;
+
+		// Compute drift yaw torque: when rear grip is reduced, front lateral
+		// forces create a net yaw moment → the car rotates (oversteer)
+		const driftTorque = this.tireDynamics.computeDriftYawTorque(absSpeedMs, yawRate, this.steerAngle);
+		if (Math.abs(driftTorque) > 0.01) {
+			// Apply as torque impulse: τ = I * α, applied over dt
+			this.carBody.applyTorqueImpulse({ x: 0, y: driftTorque * dt, z: 0 }, true);
+		}
+
+		// Store tire dynamics state for debug/telemetry
+		this.tireDynState = this.tireDynamics.state;
 
 		// ── Post-step rebuilds (safe after step) ──
 		if (this.pendingGroundRebuild) {
@@ -502,6 +558,18 @@ export class RapierVehicleController {
 		return { x: Math.sin(h), y: 0, z: Math.cos(h) };
 	}
 
+	/** Center of mass in world space (offset from body position) */
+	getWorldCOM(): { x: number; y: number; z: number } {
+		const com = this.carBody.localCom();
+		const pos = this.carBody.translation();
+		const r = this.carBody.rotation();
+		// Rotate local COM offset by body quaternion
+		const qx = 2 * (r.w * com.x + r.y * com.z - r.z * com.y);
+		const qy = 2 * (r.w * com.y + r.z * com.x - r.x * com.z);
+		const qz = 2 * (r.w * com.z + r.x * com.y - r.y * com.x);
+		return { x: pos.x + qx, y: pos.y + qy, z: pos.z + qz };
+	}
+
 	getPitch(): number {
 		return 0;
 	}
@@ -538,6 +606,14 @@ export class RapierVehicleController {
 			wheelY: -this._config.chassis.halfExtents[1] * 0.5,
 			patchCenter: `${this.terrainCollider?.patchCenterX.toFixed(0) ?? "?"}, ${this.terrainCollider?.patchCenterZ.toFixed(0) ?? "?"}`,
 			guardrails: this.guardrails?.bodyCount ?? 0,
+			...(this.tireDynState
+				? {
+						rearGrip: this.tireDynState.rearGripMultiplier.toFixed(2),
+						drifting: this.tireDynState.isDrifting ? "YES" : "no",
+						driftTorque: this.tireDynState.driftYawTorque.toFixed(1),
+						comLocal: `${this.tireDynState.localCOM.x.toFixed(2)}, ${this.tireDynState.localCOM.y.toFixed(2)}, ${this.tireDynState.localCOM.z.toFixed(2)}`,
+					}
+				: {}),
 		};
 	}
 

@@ -390,6 +390,28 @@ function updateForceArrows(v: RapierVehicleController): void {
 	}
 }
 
+// ── COM Debug Sphere ───────────────────────────────────────────────────
+let comSphere: THREE.Mesh | null = null;
+let comSphereAdded = false;
+
+function updateCOMSphere(v: RapierVehicleController): void {
+	if (!state.scene) return;
+
+	if (!comSphereAdded) {
+		const geom = new THREE.SphereGeometry(0.08, 16, 16);
+		const mat = new THREE.MeshBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.85 });
+		comSphere = new THREE.Mesh(geom, mat);
+		state.scene.add(comSphere);
+		comSphereAdded = true;
+	}
+
+	if (comSphere && v.tireDynState) {
+		const comWorld = v.getWorldCOM();
+		comSphere.position.set(comWorld.x, comWorld.y, comWorld.z);
+		comSphere.visible = showForceVectors; // tied to debug overlay toggle
+	}
+}
+
 // ── Main loop ───────────────────────────────────────────────────────────
 
 let lastTime = performance.now();
@@ -505,6 +527,7 @@ function animate(): void {
 		updateDebugOverlay(vehicle);
 		initForceVecPanel();
 		updateForceArrows(vehicle);
+		updateCOMSphere(vehicle);
 		if (physicsDebug) {
 			physicsDebug.update(vehicle.rapierWorld, vehicle.physicsBody, vehicle.guardrailBodies);
 		}
