@@ -325,11 +325,9 @@ export class VehicleRenderer {
 				brakeMesh.quaternion.copy(worldQuat);
 				brakeMesh.scale.copy(worldScale);
 
-				// Rotate 90° around local Y to align with the wheel's visual orientation.
-				// The wheel clone gets an additional Y rotation (±90°) to align the axle,
-				// which the brake disc inherits. This corrects it back to the natural pose.
-				const yRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
-				brakeMesh.quaternion.multiply(yRot);
+				// Rotate around the axle (model-local X) so the disc face
+				// points toward the back of the wheel well, like a real caliper.
+				brakeMesh.rotateX(Math.PI / 2);
 				brakeMesh.name = `brake_disc_${i}`;
 				this.model.add(brakeMesh);
 				this.brakeDiscMeshes.push(brakeMesh);
