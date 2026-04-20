@@ -31,6 +31,8 @@ export class VehicleRenderer {
 	private _modelGroundOffset = 0;
 	private _suspRestLength = 0;
 	private _diagCount = 0;
+	/** Per-wheel visual radius measured from world-space AABB at load time. */
+	private _visualWheelRadii = [0, 0, 0, 0];
 	/** Full local positions of wheel pivots (set at load time). Used for pitch/roll visual compensation. */
 	private _wheelBasePos: [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3] = [
 		new THREE.Vector3(),
@@ -253,26 +255,15 @@ export class VehicleRenderer {
 					`[VehicleRenderer] wheel ${i}: marker=${wheelNames[i]}, ` +
 						`local=(${markerWorld.x.toFixed(3)}, ${markerWorld.y.toFixed(3)}, ${markerWorld.z.toFixed(3)})`,
 				);
-				// Compute visual wheel radius from world-space AABB.
-				// After rotation, axle is along X — Y and Z extents are radial.
-				// Use max(Y,Z)/2 as the visual radius, then scale to match physics.
 				const bb = new THREE.Box3().setFromObject(wheelClone);
 				const bsize = new THREE.Vector3();
 				bb.getSize(bsize);
-				const visualRadius = Math.max(bsize.y, bsize.z) / 2;
-				const physicsRadius = this.config.chassis.wheelRadius;
-				if (visualRadius > 0.001 && Math.abs(visualRadius - physicsRadius) > 0.005) {
-					const scaleRatio = physicsRadius / visualRadius;
-					wheelClone.scale.multiplyScalar(scaleRatio);
-					console.log(
-						`[VehicleRenderer] wheel ${i}: scaling by ${scaleRatio.toFixed(3)} ` +
-							`(visualRadius=${visualRadius.toFixed(3)} → physicsRadius=${physicsRadius.toFixed(3)})`,
-					);
-				} else {
-					console.log(
-						`[VehicleRenderer] wheel ${i} bbox: (${bsize.x.toFixed(3)}, ${bsize.y.toFixed(3)}, ${bsize.z.toFixed(3)})`,
-					);
-				}
+				// After rotation, axle is along X — Y and Z extents are radial.
+				this._visualWheelRadii[i] = Math.max(bsize.y, bsize.z) / 2;
+				console.log(
+					`[VehicleRenderer] wheel ${i} bbox: (${bsize.x.toFixed(3)}, ${bsize.y.toFixed(3)}, ${bsize.z.toFixed(3)}) ` +
+						`visualRadius=${this._visualWheelRadii[i].toFixed(3)}`,
+				);
 			}
 
 			// Store full base positions for suspension visual + pitch/roll compensation.
@@ -552,6 +543,15 @@ export class VehicleRenderer {
 			let suspOffset = 0;
 			if (suspLengths && suspLengths[i] !== null && this._suspRestLength > 0) {
 				suspOffset = -(suspLengths[i] as number);
+				// Compensate for visual wheel being smaller than physics wheel.
+				// Physics places ground contact at anchor - susLen - physicsRadius.
+				// Visual bottom is at pivot.y - visualRadius.
+				// The difference (physicsRadius - visualRadius) means the visual
+				// wheel doesn't reach as far down, so shift pivot down by that delta.
+				const visR = this._visualWheelRadii[i];
+				if (visR > 0.001) {
+					suspOffset -= wheelRadius - visR;
+				}
 			}
 
 			pivot.position.y = basePos.y + suspOffset;
