@@ -32,8 +32,8 @@ export class VehicleRenderer {
 	private _wheelBaseY: [number, number, number, number] = [0, 0, 0, 0];
 	private config: CarConfig;
 	private readonly schema: CarModelSchema;
-	/** Per-wheel brake disc pivot groups — children of wheel pivot, steer-only (no spin). */
-	private brakeDiscPivots: THREE.Group[] = [];
+	/** Per-wheel brake disc lookup — indexed by wheel index, each entry is the disc Mesh array. */
+	private _brakeDiscsByWheel: Record<number, THREE.Mesh[]> = {};
 
 	// Light effect refs
 	private headlightMeshes: THREE.Mesh[] = [];
@@ -144,7 +144,7 @@ export class VehicleRenderer {
 
 		// ── Load wheels from external GLB, falling back to procedural ──
 		while (this.wheelMeshes.length > 0) this.wheelMeshes.pop();
-		while (this.brakeDiscPivots.length > 0) this.brakeDiscPivots.pop();
+		this._brakeDiscsByWheel = {};
 		const wheelsLoaded = await this.loadWheelsFromGLB();
 
 		if (!wheelsLoaded) {
@@ -274,64 +274,38 @@ export class VehicleRenderer {
 	// ── Brake disc extraction ──────────────────────────────────────────────
 
 	/**
-	 * Extract brake disc meshes from wheel hierarchy into per-wheel steer-only pivots.
+	 * Find and track brake disc meshes inside each wheel clone.
 	 *
-	 * WHY: Brake discs are fixed to the hub (not the wheel), so they must follow
-	 * position, suspension, and steering, but NOT spin. We create a sibling Group
-	 * inside the wheel pivot that gets steer-only rotation in sync(), while the
-	 * wheel clone gets steer+spin. The disc meshes move into this Group.
+	 * WHY: Brake discs must follow the wheel's position, suspension, steering, and
+	 * baked rotation — but NOT spin. Rather than reparenting (which breaks local
+	 * transforms), we leave them in the wheelClone hierarchy and counter-rotate
+	 * against spin each frame in sync().
 	 */
 	private extractBrakeDiscs(): void {
 		if (!this.model) return;
+		this._brakeDiscsByWheel = {};
 
 		for (let i = 0; i < this.wheelMeshes.length; i++) {
 			const pivot = this.wheelMeshes[i];
 			const wheelClone = pivot.children[0];
 			if (!wheelClone) continue;
 
-			// Traverse the full wheel hierarchy to find brake disc meshes.
 			// Three.js GLTFLoader creates individual Mesh children per primitive,
 			// so brake discs are standalone Mesh objects (not multi-material).
-			const brakeMeshes: THREE.Mesh[] = [];
+			const discs: THREE.Mesh[] = [];
 			wheelClone.traverse((child) => {
 				if (!(child instanceof THREE.Mesh)) return;
 				const mat = child.material;
 				if (mat?.name && this.schema.brakeDiscMaterials.includes(mat.name)) {
-					brakeMeshes.push(child);
+					discs.push(child);
+					console.log(
+						`[VehicleRenderer] Found brake disc ${i}: "${child.name}", ` +
+							`${child.geometry.getAttribute("position").count} verts, ` +
+							`parent="${child.parent?.name}"`,
+					);
 				}
 			});
-
-			if (brakeMeshes.length === 0) continue;
-
-			// Create a steer-only pivot as sibling to the wheel clone.
-			// sync() will set its quaternion to steer-only (no spin).
-			const discPivot = new THREE.Group();
-			discPivot.name = `brake_disc_pivot_${i}`;
-			pivot.add(discPivot);
-			this.brakeDiscPivots.push(discPivot);
-
-			for (const brakeMesh of brakeMeshes) {
-				// The mesh is deep inside wheelClone's hierarchy. Its local transform is
-				// relative to its immediate parent (e.g. a Group), not the pivot.
-				// We need to compute its transform relative to the pivot before reparenting.
-				brakeMesh.updateMatrixWorld(true);
-
-				// Get mesh's world matrix, then convert to pivot-local
-				const meshWorldMatrix = brakeMesh.matrixWorld.clone();
-				const pivotInverse = pivot.matrixWorld.clone().invert();
-				const localMatrix = new THREE.Matrix4().multiplyMatrices(pivotInverse, meshWorldMatrix);
-				localMatrix.decompose(brakeMesh.position, brakeMesh.quaternion, brakeMesh.scale);
-
-				brakeMesh.removeFromParent();
-				discPivot.add(brakeMesh);
-
-				console.log(
-					`[VehicleRenderer] Extracted brake disc ${i}: "${brakeMesh.name}", ` +
-						`${brakeMesh.geometry.getAttribute("position").count} verts, ` +
-						`localPos=(${brakeMesh.position.x.toFixed(3)}, ${brakeMesh.position.y.toFixed(3)}, ${brakeMesh.position.z.toFixed(3)}), ` +
-						`localQuat=(${brakeMesh.quaternion.x.toFixed(3)}, ${brakeMesh.quaternion.y.toFixed(3)}, ${brakeMesh.quaternion.z.toFixed(3)}, ${brakeMesh.quaternion.w.toFixed(3)})`,
-				);
-			}
+			if (discs.length > 0) this._brakeDiscsByWheel[i] = discs;
 		}
 	}
 
@@ -747,9 +721,14 @@ export class VehicleRenderer {
 			// Pivot: spin around X (axle), steer around Y.
 			pivot.quaternion.setFromEuler(new THREE.Euler(this.wheelSpinAngles[i], steer, 0, "YXZ"));
 
-			// Brake disc pivot: steer only, no spin.
-			if (i < this.brakeDiscPivots.length) {
-				this.brakeDiscPivots[i].quaternion.setFromEuler(new THREE.Euler(0, steer, 0, "YXZ"));
+			// Counter-rotate brake discs against spin so they stay fixed in the wheel.
+			// Spin is around X (axle). The wheel clone already applies spin via the
+			// pivot quaternion, so we undo it on the disc mesh itself.
+			const discs = this._brakeDiscsByWheel[i];
+			if (discs) {
+				for (const disc of discs) {
+					disc.rotation.x = -this.wheelSpinAngles[i];
+				}
 			}
 		}
 	}
