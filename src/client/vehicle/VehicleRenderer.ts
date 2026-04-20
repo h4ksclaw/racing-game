@@ -326,7 +326,7 @@ export class VehicleRenderer {
 				discs.push({
 					mesh: child,
 					axleDir,
-					baseQuat: child.quaternion.clone(),
+					baseQuat: child.quaternion.clone().premultiply(new THREE.Quaternion().setFromAxisAngle(axleDir, Math.PI / 2)),
 				});
 
 				console.log(
