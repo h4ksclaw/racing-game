@@ -67,7 +67,7 @@ export class RapierVehicleController {
 	private readonly customSuspension: CustomSuspension;
 	private readonly _config: CarConfig;
 
-	private terrain: TerrainProvider | null = null;
+	private _terrain: TerrainProvider | null = null;
 	private terrainCollider: TerrainCollider | null = null;
 	private guardrails: Guardrails | null = null;
 	get guardrailBodies(): readonly RAPIER.RigidBody[] {
@@ -82,6 +82,8 @@ export class RapierVehicleController {
 	telemetry: EngineTelemetry;
 	private simBoostNorm = 0;
 	private steerAngle = 0;
+	/** Whether handbrake is currently active */
+	handbrakeActive = false;
 	private initialized = false;
 	private _diagTimer = 0; // throttle diagnostic log output
 	private readonly driveState = new DriveState();
@@ -205,7 +207,7 @@ export class RapierVehicleController {
 	}
 
 	setTerrain(terrain: TerrainProvider): void {
-		this.terrain = terrain;
+		this._terrain = terrain;
 		if (this.initialized) {
 			this.terrainCollider = new TerrainCollider(this.world, terrain);
 			this.guardrails = new Guardrails(this.world, terrain);
@@ -288,6 +290,7 @@ export class RapierVehicleController {
 		// ── Brake lights ──
 		this.brakes.isBraking = isBraking;
 		this.brakes.isHandbrake = !!input.handbrake;
+		this.handbrakeActive = !!input.handbrake;
 		this.brakes.brakePressure = isBraking || input.handbrake ? 1 : 0;
 
 		// ── Force computation ──
@@ -355,7 +358,7 @@ export class RapierVehicleController {
 				const lp = chassis.wheelPositions[i];
 				const wx = pos.x + lp.x * cosH - lp.z * sinH;
 				const wz = pos.z + lp.x * sinH + lp.z * cosH;
-				const wRb = this.terrain?.getRoadBoundary?.(wx, wz);
+				const wRb = this._terrain?.getRoadBoundary?.(wx, wz);
 				if (wRb && !wRb.onRoad) wheelsOffRoad++;
 			}
 		}
@@ -685,7 +688,7 @@ export class RapierVehicleController {
 		this.customSuspension.reset();
 
 		// Force immediate ground + guardrail rebuild at reset position
-		if (this.terrain) {
+		if (this._terrain) {
 			this.rebuildGroundPatch(x, z);
 			this.updateGuardrails(x, z);
 		}
@@ -728,6 +731,10 @@ export class RapierVehicleController {
 	}
 	get rapierWorld(): RAPIER.World {
 		return this.world;
+	}
+	/** Terrain provider for height/boundary queries (null until setTerrain called) */
+	get terrain(): TerrainProvider | null {
+		return this._terrain;
 	}
 
 	initAudio(): void {}

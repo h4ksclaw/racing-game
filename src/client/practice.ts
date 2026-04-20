@@ -157,6 +157,7 @@ let physicsDebug: RapierDebugRenderer | null = null;
 let cameraCtrl: CameraController;
 let world: WorldResult | null = null;
 let vehicleAudio: import("./audio/VehicleAudio.ts").VehicleAudio | null = null;
+let vehicleEffects: import("./effects/VehicleEffects.ts").VehicleEffects | null = null;
 
 function resetCar(): void {
 	if (!world || !vehicle) return;
@@ -213,6 +214,13 @@ async function buildPractice(): Promise<void> {
 	vehicle = new RapierVehicleController(renderer.derivedConfig);
 	await vehicle.init();
 	vehicle.setTerrain(world.terrain);
+	import("./effects/VehicleEffects.ts")
+		.then(({ VehicleEffects }) => {
+			if (!world) return;
+			vehicleEffects = new VehicleEffects(world.scene);
+			vehicleEffects.setTerrain(world.terrain);
+		})
+		.catch((e) => console.error("[effects] Failed to load VehicleEffects:", e));
 	carModel.castShadow = true;
 	carModel.traverse((child) => {
 		if (child instanceof THREE.Mesh) {
@@ -489,6 +497,11 @@ function animate(): void {
 			const td = vehicle.tireDynState;
 			const driftFactor = td?.isDrifting && Math.abs(vehicle.state.speed) > 2.0 ? td.driftFactor : 0;
 			vehicleAudio.update(vehicle.telemetry, vehicle.getPosition(), vehicle.getForward(), driftFactor);
+		}
+
+		// Visual effects (tire smoke, dirt, skid marks)
+		if (vehicleEffects) {
+			vehicleEffects.update(delta, vehicle, performance.now() / 1000);
 		}
 
 		// HUD
