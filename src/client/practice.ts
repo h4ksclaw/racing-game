@@ -295,6 +295,21 @@ window.addEventListener("resize", () => {
 
 // ── Debug overlay (?debug=true) ─────────────────────────────────────────
 let debugEl: HTMLDivElement | null = null;
+let forceVecPanel: HTMLDivElement | null = null;
+let showForceVectors = true;
+
+// Force vector arrows (created once, updated each frame)
+const FORCE_COLORS: Record<string, number> = {
+	engine: 0x00ff00, // green
+	brake: 0xff0000, // red
+	rolling: 0xff8800, // orange
+	aero: 0x00ccff, // cyan
+	engineBrake: 0xff00ff, // magenta
+	coast: 0xffff00, // yellow
+	total: 0xffffff, // white
+};
+const forceArrows: Map<string, THREE.ArrowHelper> = new Map();
+let forceArrowsAdded = false;
 
 function updateDebugOverlay(v: RapierVehicleController): void {
 	if (!debugEl) {
@@ -308,6 +323,70 @@ function updateDebugOverlay(v: RapierVehicleController): void {
 	debugEl.textContent = Object.entries(info)
 		.map(([k, val]) => `${k}: ${val}`)
 		.join("\n");
+}
+
+function initForceVecPanel(): void {
+	if (forceVecPanel) return;
+	forceVecPanel = document.createElement("div");
+	forceVecPanel.style.cssText =
+		"position:fixed;top:8px;right:8px;background:rgba(0,0,0,0.85);color:#fff;font:12px/1.6 monospace;padding:10px;z-index:9999;";
+	forceVecPanel.innerHTML =
+		`<div style="margin-bottom:6px;font-weight:bold">Force Vectors</div>` +
+		`<label><input type="checkbox" id="fv-toggle" checked> Show arrows</label>`;
+	document.body.appendChild(forceVecPanel);
+	const toggle = document.getElementById("fv-toggle");
+	if (toggle)
+		toggle.addEventListener("change", (e) => {
+			showForceVectors = (e.target as HTMLInputElement).checked;
+		});
+}
+
+function updateForceArrows(v: RapierVehicleController): void {
+	if (!state.scene || !v.physicsBody) return;
+	const pos = v.physicsBody.translation();
+	const rot = v.physicsBody.rotation();
+	const heading = Math.atan2(2 * (rot.w * rot.y + rot.z * rot.x), 1 - 2 * (rot.y * rot.y + rot.x * rot.x));
+	const fwd = new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading));
+	const origin = new THREE.Vector3(pos.x, pos.y + 1.0, pos.z);
+	const scale = 0.002; // N to world units (1kN = 2m arrow)
+
+	if (!forceArrowsAdded) {
+		for (const [name, color] of Object.entries(FORCE_COLORS)) {
+			const arrow = new THREE.ArrowHelper(fwd.clone(), origin.clone(), 0.1, color, 0.2, 0.15);
+			arrow.visible = showForceVectors;
+			state.scene.add(arrow);
+			forceArrows.set(name, arrow);
+		}
+		forceArrowsAdded = true;
+	}
+
+	// Update text panel with force values
+	if (forceVecPanel) {
+		let html = `<div style="margin-bottom:6px;font-weight:bold">Force Vectors</div>`;
+		html += `<label><input type="checkbox" id="fv-toggle" ${showForceVectors ? "checked" : ""}> Show arrows</label><br>`;
+		for (const [name, val] of Object.entries(v.forces)) {
+			const c = FORCE_COLORS[name] ?? 0xffffff;
+			html += `<span style="color:#${c.toString(16).padStart(6, "0")}">${name}</span>: ${val.toFixed(0)}N<br>`;
+		}
+		forceVecPanel.innerHTML = html;
+		const toggle = document.getElementById("fv-toggle");
+		if (toggle)
+			toggle.addEventListener("change", (e) => {
+				showForceVectors = (e.target as HTMLInputElement).checked;
+			});
+	}
+
+	for (const [name, arrow] of forceArrows) {
+		const val = (v.forces as Record<string, number>)[name] ?? 0;
+		const len = Math.abs(val) * scale;
+		arrow.visible = showForceVectors && len > 0.01;
+		if (arrow.visible) {
+			arrow.position.copy(origin);
+			const dir = val >= 0 ? fwd.clone() : fwd.clone().negate();
+			arrow.setDirection(dir);
+			arrow.setLength(Math.max(0.1, len), Math.max(0.05, len * 0.2), Math.max(0.03, len * 0.15));
+		}
+	}
 }
 
 // ── Main loop ───────────────────────────────────────────────────────────
@@ -423,6 +502,8 @@ function animate(): void {
 	// Debug overlay
 	if (debugMode && vehicle) {
 		updateDebugOverlay(vehicle);
+		initForceVecPanel();
+		updateForceArrows(vehicle);
 		if (physicsDebug) {
 			physicsDebug.update(vehicle.rapierWorld, vehicle.physicsBody, vehicle.guardrailBodies);
 		}

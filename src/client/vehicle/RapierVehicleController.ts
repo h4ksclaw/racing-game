@@ -78,6 +78,24 @@ export class RapierVehicleController {
 	private initialized = false;
 	private _diagTimer = 0; // throttle diagnostic log output
 	private _prevReverse = false;
+	/** Current frame force breakdown for debug visualization (world-space) */
+	forces: {
+		engine: number;
+		brake: number;
+		rolling: number;
+		aero: number;
+		engineBrake: number;
+		coast: number;
+		total: number;
+	} = {
+		engine: 0,
+		brake: 0,
+		rolling: 0,
+		aero: 0,
+		engineBrake: 0,
+		coast: 0,
+		total: 0,
+	};
 
 	constructor(config: CarConfig) {
 		this._config = config;
@@ -238,9 +256,9 @@ export class RapierVehicleController {
 		let coastBodyBrakeN = 0; // body impulse for neutral coast deceleration
 		if (isBraking || input.handbrake) {
 			rapierBrakeForce = input.handbrake ? 8.0 : 5.0;
-		} else if (!wantsForward && !wantsBackward && Math.abs(localVelX) > 0.1) {
-			// Neutral coast: moderate body impulse for auto creep-stop
-			const speedFactor = Math.min(1.0, Math.abs(localVelX) / 5.0);
+		} else if (!wantsForward && !wantsBackward && localVelX > 0.1) {
+			// Neutral coast (forward only): moderate body impulse for auto creep-stop
+			const speedFactor = Math.min(1.0, localVelX / 5.0);
 			coastBodyBrakeN = 0.3 * chassis.mass * 9.81 * speedFactor;
 		}
 
@@ -276,10 +294,13 @@ export class RapierVehicleController {
 
 		// ── Rolling + aero drag as light body impulse (NEVER during reverse) ──
 		let totalRetard = 0;
+		let debugRolling = 0;
+		let debugAero = 0;
+		let debugEngineBrake = 0;
 		if (!isReverse && !wantsBackward) {
-			const rollingF = CRR * chassis.mass * 9.81;
-			const aeroF = this.drag.config.aeroDrag * localVelX * localVelX;
-			const engineBrakeF =
+			debugRolling = CRR * chassis.mass * 9.81 * 0.5;
+			debugAero = this.drag.config.aeroDrag * localVelX * localVelX;
+			debugEngineBrake =
 				localVelX > 0.1
 					? (engine.config.engineBraking *
 							engineSpec.torqueNm *
@@ -287,7 +308,7 @@ export class RapierVehicleController {
 							(engine.rpm / engine.config.maxRPM)) /
 						chassis.wheelRadius
 					: 0;
-			totalRetard = engineBrakeF + rollingF * 0.5 + aeroF + coastBodyBrakeN;
+			totalRetard = debugEngineBrake + debugRolling + debugAero + coastBodyBrakeN;
 			totalRetard = Math.min(totalRetard, TIRE_MU * chassis.mass * 9.81);
 		}
 		if (totalRetard > 0 && Math.abs(localVelX) > 0.01) {
@@ -295,6 +316,22 @@ export class RapierVehicleController {
 			const fz = -totalRetard * Math.cos(heading) * Math.sign(localVelX);
 			this.carBody.applyImpulse({ x: fx * dt, y: 0, z: fz * dt }, true);
 		}
+
+		// Record forces for debug visualization (positive = forward, negative = backward)
+		const fsign = localVelX >= 0 ? 1 : -1;
+		this.forces.engine = engF * fsign;
+		this.forces.brake = rapierBrakeForce > 0 ? -rapierBrakeForce * 500 * fsign : 0;
+		this.forces.rolling = -debugRolling * fsign;
+		this.forces.aero = -debugAero * fsign;
+		this.forces.engineBrake = -debugEngineBrake * fsign;
+		this.forces.coast = -coastBodyBrakeN * fsign;
+		this.forces.total =
+			this.forces.engine +
+			this.forces.brake +
+			this.forces.rolling +
+			this.forces.aero +
+			this.forces.engineBrake +
+			this.forces.coast;
 
 		// DIAG
 		if (!this._diagTimer) this._diagTimer = 0;
