@@ -575,16 +575,13 @@ export class VehicleRenderer {
 			// offset to match. Body rotation on slopes is handled automatically by
 			// the Three.js transform hierarchy (pivot is a child of the model).
 
-			// Use the Rapier anchor Y (-halfH) instead of GLB marker Y.
-			// GLB markers can be ~5cm off from the physics anchor, causing wheels
-			// to clip through the ground. The anchor is the authoritative position.
-			const anchorY = -this.config.chassis.halfExtents[1];
+			const basePos = this._wheelBasePos[i];
 			let suspOffset = 0;
 			if (suspLengths && suspLengths[i] !== null && this._suspRestLength > 0) {
 				suspOffset = -(suspLengths[i] as number);
 			}
 
-			pivot.position.y = anchorY + suspOffset;
+			pivot.position.y = basePos.y + suspOffset;
 
 			// Inner wheel clone rotation is baked at load time (Y rotation for axle alignment).
 			// Pivot: spin around X (axle), steer around Y.
