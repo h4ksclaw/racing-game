@@ -272,6 +272,17 @@ export class VehicleRenderer {
 				this._wheelBasePos[wi].copy(this.wheelMeshes[wi].position);
 			}
 
+			// Raise the whole model so wheels don't poke through the body.
+			// The visual wheel is smaller than physics expects, so we shift
+			// the entire model up by the radius delta (applied as ground offset).
+			const maxRadiusDelta = Math.max(...this._visualWheelRadii.map((v) => this.config.chassis.wheelRadius - v));
+			if (maxRadiusDelta > 0.005) {
+				this._modelGroundOffset += maxRadiusDelta;
+				console.log(
+					`[VehicleRenderer] Raising model by ${maxRadiusDelta.toFixed(3)}m to compensate wheel radius mismatch`,
+				);
+			}
+
 			this.extractBrakeDiscs();
 			console.log("[VehicleRenderer] Loaded 4 wheels from external GLB");
 			return true;
@@ -543,15 +554,6 @@ export class VehicleRenderer {
 			let suspOffset = 0;
 			if (suspLengths && suspLengths[i] !== null && this._suspRestLength > 0) {
 				suspOffset = -(suspLengths[i] as number);
-				// Compensate for visual wheel being smaller than physics wheel.
-				// Physics places ground contact at anchor - susLen - physicsRadius.
-				// Visual bottom is at pivot.y - visualRadius.
-				// The difference (physicsRadius - visualRadius) means the visual
-				// wheel doesn't reach as far down, so shift pivot down by that delta.
-				const visR = this._visualWheelRadii[i];
-				if (visR > 0.001) {
-					suspOffset += wheelRadius - visR;
-				}
 			}
 
 			pivot.position.y = basePos.y + suspOffset;
