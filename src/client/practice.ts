@@ -431,32 +431,20 @@ function animate(): void {
 	if (vehicle) {
 		vehicle.update(input, delta);
 
-		// Sync Three.js visuals directly from Rapier physics body
+		// Sync Three.js visuals from Rapier physics body
 		if (renderer?.model && vehicle.physicsBody) {
 			const body = vehicle.physicsBody;
 			const p = body.translation();
 			const r = body.rotation();
 
-			renderer.model.position.set(p.x, p.y + renderer.getModelGroundOffset(), p.z);
-			renderer.model.quaternion.set(r.x, r.y, r.z, r.w);
-
-			// Wheel steering + spin using pivot structure
-			// Each wheelMeshes[i] is a pivot Group containing the wheel clone
-			// Inner clone has baked rotation from GLB + our axle alignment
-			for (let i = 0; i < 4; i++) {
-				const pivot = renderer.wheelMeshes[i];
-				if (!pivot) continue;
-
-				const steer = i < 2 ? vehicle.getSteerAngle() : 0;
-				const spinDelta = (vehicle.state.speed / vehicle.config.chassis.wheelRadius) * delta;
-
-				// Accumulate spin angle per wheel
-				if (!pivot.userData.spinAngle) pivot.userData.spinAngle = 0;
-				pivot.userData.spinAngle += spinDelta;
-
-				// Pivot: spin around X (axle), steer around Y
-				pivot.quaternion.setFromEuler(new THREE.Euler(pivot.userData.spinAngle, steer, 0, "YXZ"));
-			}
+			renderer.sync(
+				{ x: p.x, y: p.y, z: p.z },
+				{ x: r.x, y: r.y, z: r.z, w: r.w },
+				vehicle.getSteerAngle(),
+				vehicle.state.speed,
+				vehicle.config.chassis.wheelRadius,
+				delta,
+			);
 		}
 
 		// Camera

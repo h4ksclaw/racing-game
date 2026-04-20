@@ -106,11 +106,60 @@ export interface ChassisSpec {
 
 import type { EngineSoundConfig } from "../audio/audio-types.ts";
 
+/**
+ * Expected node and material names in a car body GLB.
+ * VehicleRenderer validates these at load time and fails with a clear error
+ * if any required marker is missing.
+ *
+ * To support a new car model, create a new CarModelSchema that maps your
+ * GLB's naming convention to these semantic roles.
+ */
+export interface CarModelSchema {
+	/** Path to the wheel GLB file (separate from car body). */
+	readonly wheelModelPath: string;
+	/** Required marker nodes on the car body GLB. */
+	readonly markers: {
+		/** Physics reference point — defines CG height and wheel radius. */
+		readonly physicsMarker: string;
+		/** Wheel position markers, order: [FL, FR, RL, RR]. */
+		readonly wheels: readonly [string, string, string, string];
+		/** Exhaust pipe positions (optional, for audio spatialization). */
+		readonly escapePipes?: { readonly left?: string; readonly right?: string };
+	};
+	/** Material names that identify light-emitting surfaces. */
+	readonly materials: {
+		readonly headlight: string;
+		readonly taillight: string;
+	};
+	/** Expected node name in wheel GLB to use as the template. */
+	readonly wheelTemplateNode: string;
+	/** Material names in wheel GLB that identify brake discs (non-spinning). */
+	readonly brakeDiscMaterials: readonly string[];
+}
+
+/** Default schema matching the current car.glb naming convention. */
+export const DEFAULT_CAR_MODEL_SCHEMA: CarModelSchema = {
+	wheelModelPath: "/assets/new-car/car.glb",
+	markers: {
+		physicsMarker: "PhysicsMarker",
+		wheels: ["WheelRig_FrontLeft", "WheelRig_FrontRight", "WheelRig_RearLeft", "WheelRig_RearRight"],
+		escapePipes: { left: "escape_l", right: "escape_r" },
+	},
+	materials: {
+		headlight: "front_light_1",
+		taillight: "back_light",
+	},
+	wheelTemplateNode: "wheel_1",
+	brakeDiscMaterials: ["Break"],
+};
+
 export interface CarConfig {
 	readonly name: string;
 	readonly modelPath: string;
 	/** Scale factor applied to the GLB model before marker auto-derivation. Default 1. */
 	readonly modelScale: number;
+	/** GLB node/material naming schema. Uses DEFAULT_CAR_MODEL_SCHEMA if omitted. */
+	readonly modelSchema?: CarModelSchema;
 	readonly engine: EngineSpec;
 	readonly gearbox: GearboxSpec;
 	readonly brakes: BrakeSpec;

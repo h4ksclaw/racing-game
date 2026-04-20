@@ -1,23 +1,27 @@
 /**
- * VehicleRenderer — Three.js model loading, visual sync, headlights.
+ * VehicleRenderer — all Three.js rendering for the vehicle.
  *
- * Handles all Three.js-dependent code:
- * - GLTF model loading and scaling
- * - Marker-based chassis auto-derivation
+ * WHY a dedicated renderer: Three.js is the only dependency. Physics and audio
+ * systems call sync() each frame with computed state — the renderer owns all
+ * visual representation. This keeps RapierVehicleController free of any
+ * THREE.js imports and makes the renderer testable in isolation (swap GLTF
+ * loader for a mock).
+ *
+ * Responsibilities:
+ * - GLTF model loading with CarModelSchema validation
+ * - Marker-based chassis auto-derivation (wheel positions, CG height)
  * - Wheel loading from external GLB or procedural generation
+ * - Brake disc extraction (non-spinning, tracks car body)
  * - Headlight/taillight emissive effects with bloom
- * - Reverse light (back spotlight)
  * - Visual sync (position, rotation, wheel spin/steer)
  *
- * VehicleController creates this and calls sync() each frame.
  * NO physics, NO audio — pure rendering.
  */
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import type { CarConfig } from "./configs.ts";
-
-const WHEEL_MODEL_PATH = "/assets/new-car/car.glb";
+import type { CarConfig, CarModelSchema } from "./configs.ts";
+import { DEFAULT_CAR_MODEL_SCHEMA } from "./configs.ts";
 
 export class VehicleRenderer {
 	model: THREE.Group | null = null;
@@ -25,6 +29,9 @@ export class VehicleRenderer {
 	headlights: THREE.SpotLight[] = [];
 	private _modelGroundOffset = 0;
 	private config: CarConfig;
+	private readonly schema: CarModelSchema;
+	/** Brake disc meshes — parented to car body, not wheel pivots, so they don't spin. */
+	private brakeDiscMeshes: THREE.Mesh[] = [];
 
 	// Light effect refs
 	private headlightMeshes: THREE.Mesh[] = [];
@@ -84,6 +91,7 @@ export class VehicleRenderer {
 
 	constructor(config: CarConfig) {
 		this.config = config;
+		this.schema = config.modelSchema ?? DEFAULT_CAR_MODEL_SCHEMA;
 	}
 
 	/** Expose auto-derived config so physics can use it. */
@@ -134,6 +142,7 @@ export class VehicleRenderer {
 
 		// ── Load wheels from external GLB, falling back to procedural ──
 		while (this.wheelMeshes.length > 0) this.wheelMeshes.pop();
+		while (this.brakeDiscMeshes.length > 0) this.brakeDiscMeshes.pop();
 		const wheelsLoaded = await this.loadWheelsFromGLB();
 
 		if (!wheelsLoaded) {
@@ -174,23 +183,23 @@ export class VehicleRenderer {
 	private async loadWheelsFromGLB(): Promise<boolean> {
 		if (!this.model) return false;
 
-		const wheelNames = ["WheelRig_FrontLeft", "WheelRig_FrontRight", "WheelRig_RearLeft", "WheelRig_RearRight"];
+		const wheelNames = this.schema.markers.wheels;
 		const root = this.model;
 		const markers: (THREE.Object3D | null)[] = wheelNames.map((n) => this.findMarkerRecursive(root, n));
 		if (markers.some((m) => !m)) {
-			console.warn("[VehicleRenderer] WheelRig markers not found on car model");
+			console.warn(`[VehicleRenderer] Wheel markers not found: ${wheelNames.filter((_, i) => !markers[i]).join(", ")}`);
 			return false;
 		}
 
 		try {
 			const loader = new GLTFLoader();
-			const wheelGltf = await loader.loadAsync(WHEEL_MODEL_PATH);
+			const wheelGltf = await loader.loadAsync(this.schema.wheelModelPath);
 			const wheelScene = wheelGltf.scene;
 
-			// Find wheel_1 node
-			const wheelTemplate = wheelScene.getObjectByName("wheel_1");
+			// Find wheel template node in wheel GLB
+			const wheelTemplate = wheelScene.getObjectByName(this.schema.wheelTemplateNode);
 			if (!wheelTemplate) {
-				console.warn("[VehicleRenderer] wheel_1 not found in wheel GLB");
+				console.warn(`[VehicleRenderer] ${this.schema.wheelTemplateNode} not found in wheel GLB`);
 				return false;
 			}
 
@@ -245,11 +254,132 @@ export class VehicleRenderer {
 				);
 			}
 
+			this.extractBrakeDiscs();
 			console.log("[VehicleRenderer] Loaded 4 wheels from external GLB");
 			return true;
 		} catch (e) {
 			console.warn("[VehicleRenderer] Failed to load wheel GLB:", e);
 			return false;
+		}
+	}
+
+	// ── Brake disc extraction ──────────────────────────────────────────────
+
+	/**
+	 * Split brake disc primitives out of wheel meshes and parent them to the car body.
+	 *
+	 * WHY: The wheel GLB bakes brake discs into the same multi-material mesh as the rim.
+	 * If we spin the wheel, the brake disc spins too — physically wrong (discs are fixed to
+	 * the caliper/hub, not the wheel). By extracting the disc primitive and parenting it
+	 * to the car model (not the wheel pivot), it tracks position but doesn't spin.
+	 */
+	private extractBrakeDiscs(): void {
+		if (!this.model) return;
+
+		for (let i = 0; i < this.wheelMeshes.length; i++) {
+			const pivot = this.wheelMeshes[i];
+			const wheelClone = pivot.children[0];
+			if (!wheelClone) continue;
+
+			// Walk wheel clone children looking for a multi-material mesh with a "Break" material
+			for (const child of wheelClone.children) {
+				if (!(child instanceof THREE.Mesh)) continue;
+				const mats = child.material;
+				if (!Array.isArray(mats)) continue;
+
+				// Find the brake material index and its geometry group
+				let brakeGroupIdx = -1;
+				let brakeMat: THREE.Material | null = null;
+				for (let mi = 0; mi < mats.length; mi++) {
+					if (mats[mi].name && this.schema.brakeDiscMaterials.includes(mats[mi].name)) {
+						brakeGroupIdx = mi;
+						brakeMat = mats[mi];
+						break;
+					}
+				}
+				if (brakeGroupIdx < 0 || !brakeMat) continue;
+
+				const geo = child.geometry;
+				if (!geo.groups || geo.groups.length <= brakeGroupIdx) continue;
+
+				const group = geo.groups[brakeGroupIdx];
+
+				// Extract the brake disc's vertices into a new BufferGeometry
+				const discGeo = new THREE.BufferGeometry();
+				const posAttr = geo.getAttribute("position");
+				const normAttr = geo.getAttribute("normal");
+				const idxAttr = geo.getIndex();
+
+				// Build index buffer for just this group's range
+				const start = group.start;
+				const count = group.count;
+				const indices: number[] = [];
+				if (idxAttr) {
+					for (let j = start; j < start + count; j++) {
+						const idx = idxAttr.getX(j) - group.start;
+						indices.push(idx);
+					}
+				}
+
+				// Extract position and normal buffers for this group's vertex range
+				const positions: number[] = [];
+				const normals: number[] = [];
+				for (let j = group.start; j < group.start + count; j++) {
+					const idx = idxAttr ? idxAttr.getX(j) : j;
+					positions.push(posAttr.getX(idx), posAttr.getY(idx), posAttr.getZ(idx));
+					if (normAttr) {
+						normals.push(normAttr.getX(idx), normAttr.getY(idx), normAttr.getZ(idx));
+					}
+				}
+
+				discGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+				if (normals.length > 0) {
+					discGeo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+				}
+				if (indices.length > 0) {
+					discGeo.setIndex(indices);
+				}
+
+				// Create the brake disc mesh positioned at the wheel's local space
+				const discMesh = new THREE.Mesh(discGeo, brakeMat);
+				discMesh.name = `brake_disc_${i}`;
+
+				// Get the disc's world position within the wheel clone, then convert to model space
+				discMesh.position.copy(child.position);
+				discMesh.rotation.copy(child.rotation);
+				discMesh.scale.copy(child.scale);
+
+				// Parent to car model (not wheel pivot) — disc moves with car but doesn't spin
+				// We need to compute its world position relative to the car model root
+				child.updateMatrixWorld(true);
+				const discWorldPos = new THREE.Vector3();
+				child.getWorldPosition(discWorldPos);
+				const discWorldQuat = new THREE.Quaternion();
+				child.getWorldQuaternion(discWorldQuat);
+
+				// Convert to model-local space
+				this.model.worldToLocal(discWorldPos);
+				const modelQuat = this.model.quaternion.clone().invert();
+				discWorldQuat.premultiply(modelQuat);
+
+				discMesh.position.copy(discWorldPos);
+				discMesh.quaternion.copy(discWorldQuat);
+				discMesh.scale.set(1, 1, 1); // scale already applied by wheel clone
+
+				this.model?.add(discMesh);
+				this.brakeDiscMeshes.push(discMesh);
+
+				// Remove the brake group from the original mesh so it doesn't render twice
+				const remaining = geo.groups.filter(
+					(_g: { start: number; count: number; materialIndex: number }, gi: number) => gi !== brakeGroupIdx,
+				);
+				// Renumber group material indices since we're removing one
+				const newMats = mats.filter((_m: THREE.Material, mi: number) => mi !== brakeGroupIdx);
+				geo.groups = remaining;
+				child.material = newMats;
+
+				console.log(`[VehicleRenderer] Extracted brake disc ${i}: group=${brakeGroupIdx}, ${group.count} indices`);
+			}
 		}
 	}
 
@@ -267,16 +397,16 @@ export class VehicleRenderer {
 
 			if (Array.isArray(mat)) {
 				for (const m of mat) {
-					if (m.name === "front_light_1" && !this.headlightMeshes.includes(child)) {
+					if (m.name === this.schema.materials.headlight && !this.headlightMeshes.includes(child)) {
 						this.headlightMeshes.push(child);
 					}
-					if (m.name === "back_light" && !this.taillightMeshes.includes(child)) {
+					if (m.name === this.schema.materials.taillight && !this.taillightMeshes.includes(child)) {
 						this.taillightMeshes.push(child);
 					}
 				}
 			} else {
-				if (mat.name === "front_light_1") this.headlightMeshes.push(child);
-				if (mat.name === "back_light") this.taillightMeshes.push(child);
+				if (mat.name === this.schema.materials.headlight) this.headlightMeshes.push(child);
+				if (mat.name === this.schema.materials.taillight) this.taillightMeshes.push(child);
 			}
 		});
 
@@ -287,10 +417,15 @@ export class VehicleRenderer {
 
 	private findEscapePipes(): void {
 		if (!this.model) return;
-		this._escapeL = this.findMarkerRecursive(this.model, "escape_l");
-		this._escapeR = this.findMarkerRecursive(this.model, "escape_r");
-		if (this._escapeL) console.log("[VehicleRenderer] Found escape_l exhaust pipe");
-		if (this._escapeR) console.log("[VehicleRenderer] Found escape_r exhaust pipe");
+		const pipes = this.schema.markers.escapePipes;
+		if (pipes?.left) {
+			this._escapeL = this.findMarkerRecursive(this.model, pipes.left);
+			if (this._escapeL) console.log(`[VehicleRenderer] Found ${pipes.left} exhaust pipe`);
+		}
+		if (pipes?.right) {
+			this._escapeR = this.findMarkerRecursive(this.model, pipes.right);
+			if (this._escapeR) console.log(`[VehicleRenderer] Found ${pipes.right} exhaust pipe`);
+		}
 	}
 
 	private applyHeadlightEmissive(intensity: number): void {
@@ -399,14 +534,20 @@ export class VehicleRenderer {
 	private autoDeriveChassis(): void {
 		if (!this.model) return;
 
-		const physicsMarker = this.findMarkerRecursive(this.model, "PhysicsMarker");
+		const physicsMarker = this.findMarkerRecursive(this.model, this.schema.markers.physicsMarker);
 		const wheelRigs: THREE.Object3D[] = [];
-		for (const name of ["WheelRig_FrontLeft", "WheelRig_FrontRight", "WheelRig_RearLeft", "WheelRig_RearRight"]) {
+		for (const name of this.schema.markers.wheels) {
 			const obj = this.findMarkerRecursive(this.model, name);
 			if (obj) wheelRigs.push(obj);
 		}
 
-		if (wheelRigs.length < 4 || !physicsMarker) return;
+		if (wheelRigs.length < 4 || !physicsMarker) {
+			console.warn(
+				`[VehicleRenderer] autoDerive: missing markers — physicsMarker=${!!physicsMarker}, ` +
+					`wheels=${wheelRigs.length}/4 (expected: ${this.schema.markers.wheels.join(", ")})`,
+			);
+			return;
+		}
 
 		const markerPos = new THREE.Vector3();
 		physicsMarker.getWorldPosition(markerPos);
@@ -499,7 +640,7 @@ export class VehicleRenderer {
 	private generateWheelsFromMarkers(): void {
 		if (!this.model) return;
 
-		const wheelNames = ["WheelRig_FrontLeft", "WheelRig_FrontRight", "WheelRig_RearLeft", "WheelRig_RearRight"];
+		const wheelNames = this.schema.markers.wheels;
 
 		const radius = this.config.chassis.wheelRadius;
 		const width = radius * 0.8;
@@ -588,35 +729,43 @@ export class VehicleRenderer {
 		return { positions, directions, intensity: this.headlights[0].intensity };
 	}
 
-	private wheelSpinAngle = 0;
+	private wheelSpinAngles = [0, 0, 0, 0];
 
-	/** Sync visual position, rotation, and wheel animation from physics state. */
+	/**
+	 * Sync visual position, rotation, and wheel animation from physics state.
+	 *
+	 * Accepts either Euler angles (legacy) or a quaternion (preferred, from Rapier body).
+	 * Handles body transform + wheel spin/steer — all rendering work lives here, not in game loop.
+	 */
 	sync(
 		pos: { x: number; y: number; z: number },
-		heading: number,
-		pitch: number,
-		roll: number,
+		orientation: { x: number; y: number; z: number; w: number } | { heading: number; pitch: number; roll: number },
 		steerAngle: number,
 		speed: number,
-		modelGroundOffset: number,
 		wheelRadius: number,
 		dt = 1 / 60,
 	): void {
 		if (!this.model) return;
 
-		this.model.position.set(pos.x, pos.y + modelGroundOffset, pos.z);
-		this.model.rotation.set(pitch, heading, roll);
+		// Body transform
+		this.model.position.set(pos.x, pos.y + this._modelGroundOffset, pos.z);
+		if ("w" in orientation) {
+			this.model.quaternion.set(orientation.x, orientation.y, orientation.z, orientation.w);
+		} else {
+			this.model.rotation.set(orientation.pitch, orientation.heading, orientation.roll);
+		}
 
+		// Wheel spin + steer on pivot groups
 		for (let i = 0; i < 4; i++) {
-			const mesh = this.wheelMeshes[i];
-			if (!mesh) continue;
+			const pivot = this.wheelMeshes[i];
+			if (!pivot) continue;
 
 			const steer = i < 2 ? steerAngle : 0;
-			this.wheelSpinAngle += (speed / wheelRadius) * dt;
+			this.wheelSpinAngles[i] += (speed / wheelRadius) * dt;
 
-			// Inner wheel clone rotation is baked at load time (Y rotation for axle alignment)
-			// Pivot: spin around X (axle), steer around Y
-			mesh.quaternion.setFromEuler(new THREE.Euler(this.wheelSpinAngle, steer, 0, "YXZ"));
+			// Inner wheel clone rotation is baked at load time (Y rotation for axle alignment).
+			// Pivot: spin around X (axle), steer around Y.
+			pivot.quaternion.setFromEuler(new THREE.Euler(this.wheelSpinAngles[i], steer, 0, "YXZ"));
 		}
 	}
 }

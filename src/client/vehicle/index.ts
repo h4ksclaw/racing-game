@@ -8,7 +8,9 @@ export { Chassis } from "./chassis/Chassis.ts";
 export {
 	type BrakeSpec,
 	type CarConfig,
+	type CarModelSchema,
 	type ChassisSpec,
+	DEFAULT_CAR_MODEL_SCHEMA,
 	type DragSpec,
 	type EngineSpec,
 	type GearboxSpec,
@@ -34,7 +36,5 @@ export {
 	type VehicleState,
 	type WheelVisual,
 } from "./types.ts";
-export { VehicleController } from "./VehicleController.ts";
-export { VehiclePhysics } from "./VehiclePhysics.ts";
 export { VehicleRenderer } from "./VehicleRenderer.ts";
 export { TerrainHandler, type TerrainSample } from "./world/TerrainHandler.ts";

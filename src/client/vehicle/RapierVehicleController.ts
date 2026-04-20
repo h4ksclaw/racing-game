@@ -251,9 +251,12 @@ export class RapierVehicleController {
 		this.steerAngle = Math.abs(sd) < maxD ? targetSteer : this.steerAngle + Math.sign(sd) * maxD;
 		this.state.steeringAngle = this.steerAngle;
 
-		// ── Drive state: Forward / Neutral / Reverse / Braking ──
-		// W = forward throttle, S = brake (if moving forward) or reverse (if slow/stopped)
-		// Nothing held = neutral coast (auto-stop via wheel brakes)
+		// ── Drive state machine ──
+		// WHY: A single S key must serve double duty — brake when moving forward,
+		// reverse when slow/stopped. Without hysteresis the car would flicker between
+		// braking and reversing at the transition speed.
+		// W = forward throttle, S = brake (if fast) or reverse (if slow/stopped)
+		// Nothing held = neutral coast
 		const wantsForward = !!input.forward && !input.backward;
 		const wantsBackward = !!input.backward && !input.forward;
 		const BRAKE_HYSTERESIS = 0.15; // m/s — above this while holding S = braking
@@ -292,7 +295,10 @@ export class RapierVehicleController {
 		}
 		engine.update(localVelX, gearbox.effectiveRatio, chassis.wheelRadius, dt);
 
-		// ── Wheel brake force (Rapier native) ──
+		// ── Brake force calculation ──
+		// WHY: Rapier's brake model applies a simple torque to each wheel.
+		// Front-biased braking mirrors real cars — weight transfers forward under
+		// deceleration, so front tires have more grip to convert brake torque into stopping force.
 		let rapierBrakeForce = 0;
 		let coastBodyBrakeN = 0; // body impulse for neutral coast deceleration
 		let brakeBodyN = 0; // body impulse for active braking
@@ -341,7 +347,10 @@ export class RapierVehicleController {
 		this.brakes.isHandbrake = !!input.handbrake;
 		this.brakes.brakePressure = isBraking || input.handbrake ? 1 : 0;
 
-		// ── Engine force → rear wheels ──
+		// ── Engine force to rear wheels ──
+		// WHY: RPM is derived from wheel speed (not engine revs) because Rapier
+		// drives the wheels directly — engine torque is just a force multiplier.
+		// This avoids full clutch/drivetrain simulation while preserving realistic feel.
 		// Handbrake cuts engine drive (already handled by effectiveNeutral above)
 		const tractionPerWheel = (chassis.mass * tires.tractionPct * 9.82) / 2;
 		let engF = 0;
@@ -366,7 +375,10 @@ export class RapierVehicleController {
 		this.vehicle.setWheelBrake(this.wheelFL, rapierBrakeForce * 1.2);
 		this.vehicle.setWheelBrake(this.wheelFR, rapierBrakeForce * 1.2);
 
-		// ── Rolling + aero drag as body impulse (opposes motion in both directions) ──
+		// ── Drag forces as body impulse ──
+		// WHY: Rapier's built-in wheel damping is too weak for realistic coast-down.
+		// Body-level impulses apply uniformly regardless of wheel contact state,
+		// and work identically in forward and reverse (critical for the reverse limiter).
 		let totalRetard = 0;
 		let debugRolling = 0;
 		let debugAero = 0;
@@ -453,7 +465,10 @@ export class RapierVehicleController {
 		this.vehicle.setWheelSteering(this.wheelFL, this.steerAngle);
 		this.vehicle.setWheelSteering(this.wheelFR, this.steerAngle);
 
-		// ── Tire dynamics: handbrake → rear wheel grip reduction ──
+		// ── Tire dynamics: handbrake → rear grip reduction ──
+		// WHY: Rapier's native friction model can't distinguish locked vs rolling wheels.
+		// By reducing rear side friction stiffness before the step, locked rear wheels
+		// slide sideways with less resistance — creating the drift effect.
 		// Update handbrake state (ramps grip up/down smoothly)
 		const rearGripMul = this.tireDynamics.updateHandbrake(!!input.handbrake, absSpeedMs, dt);
 
@@ -481,7 +496,9 @@ export class RapierVehicleController {
 			this.world.step();
 		}
 
-		// ── Post-step: tire dynamics forces ──
+		// ── Post-step tire dynamics ──
+		// WHY: Forces that depend on contact state must be applied AFTER step()
+		// because Rapier resolves contacts during step() — pre-step would use stale data.
 		this.tireDynamics.readWheelStates(this.vehicle);
 
 		// Read current yaw rate from body angular velocity
@@ -499,7 +516,10 @@ export class RapierVehicleController {
 		// Store tire dynamics state for debug/telemetry
 		this.tireDynState = this.tireDynamics.state;
 
-		// ── Post-step rebuilds (safe after step) ──
+		// ── Post-step world rebuilds ──
+		// WHY: Rapier forbids modifying the physics world during step().
+		// Terrain trimesh patches and guardrail cuboids are rebuilt here
+		// when the car moves to a new region.
 		if (this.pendingGroundRebuild) {
 			this.rebuildGroundPatch(this.pendingGroundRebuild.x, this.pendingGroundRebuild.z);
 			this.pendingGroundRebuild = null;
