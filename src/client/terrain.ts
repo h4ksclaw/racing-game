@@ -77,6 +77,8 @@ export class TerrainSampler {
 		shoulderWidth: number;
 		/** How much the kerb raises above the road surface (m) */
 		kerbRaise: number;
+		/** How much the entire road surface is raised above surrounding terrain (m) */
+		roadRaise: number;
 		/** Shoulder height relative to road surface (m, negative = below road) */
 		shoulderDrop: number;
 		/** How far past the guardrail the concrete slab extends before dropping into terrain (m) */
@@ -105,6 +107,7 @@ export class TerrainSampler {
 			kerbWidth?: number;
 			shoulderWidth?: number;
 			kerbRaise?: number;
+			roadRaise?: number;
 			shoulderDrop?: number;
 			slabExtent?: number;
 			edgeDropMax?: number;
@@ -123,6 +126,7 @@ export class TerrainSampler {
 			kerbWidth: opts.kerbWidth ?? 0.8,
 			shoulderWidth: opts.shoulderWidth ?? 2,
 			kerbRaise: opts.kerbRaise ?? 0.01,
+			roadRaise: opts.roadRaise ?? 0.08,
 			shoulderDrop: opts.shoulderDrop ?? -0.02,
 			slabExtent: opts.slabExtent ?? 0.75,
 			edgeDropMax: opts.edgeDropMax ?? 0.15,
@@ -165,27 +169,28 @@ export class TerrainSampler {
 	 * Kerbs are slightly raised, shoulders slightly lower, edge drops off.
 	 */
 	private crossSectionDelta(distFromCenter: number): number {
-		const { roadHalfWidth, kerbWidth, shoulderWidth, kerbRaise, shoulderDrop, slabExtent, edgeDropMax } =
+		const { roadHalfWidth, kerbWidth, shoulderWidth, kerbRaise, roadRaise, shoulderDrop, slabExtent, edgeDropMax } =
 			this.crossSection;
 		const kerbEdge = roadHalfWidth + kerbWidth;
 		const guardrailDist = kerbEdge + shoulderWidth;
 
 		if (distFromCenter <= roadHalfWidth) {
-			return 0;
+			// Road surface: raised above surrounding terrain
+			return roadRaise;
 		}
 		if (distFromCenter <= kerbEdge) {
-			// Kerb: linear ramp from road level to kerbRaise
+			// Kerb: road level + kerb raise
 			const t = (distFromCenter - roadHalfWidth) / kerbWidth;
-			return kerbRaise * t;
+			return roadRaise + kerbRaise * t;
 		}
 		if (distFromCenter <= guardrailDist) {
-			// Shoulder: linear blend from kerbRaise down to shoulderDrop
+			// Shoulder: transitions from kerb level down to below road
 			const t = (distFromCenter - kerbEdge) / shoulderWidth;
-			return kerbRaise * (1 - t) + shoulderDrop * t;
+			return roadRaise + kerbRaise * (1 - t) + shoulderDrop * t;
 		}
 		// Past guardrail: quadratic drop into terrain
 		const t = Math.min(1, (distFromCenter - guardrailDist) / slabExtent);
-		return shoulderDrop - edgeDropMax * t * t;
+		return roadRaise + shoulderDrop - edgeDropMax * t * t;
 	}
 	nearestRoad(x: number, z: number): { dist: number; sample: TrackSample; sampleIndex: number } {
 		const cx = Math.floor(x / this.CELL_SIZE);
