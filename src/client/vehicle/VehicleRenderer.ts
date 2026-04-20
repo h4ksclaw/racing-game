@@ -32,8 +32,11 @@ export class VehicleRenderer {
 	private _wheelBaseY: [number, number, number, number] = [0, 0, 0, 0];
 	private config: CarConfig;
 	private readonly schema: CarModelSchema;
-	/** Per-wheel brake disc lookup — indexed by wheel index, each entry is the disc Mesh array. */
-	private _brakeDiscsByWheel: Record<number, THREE.Mesh[]> = {};
+	/** Per-wheel brake disc data — axle direction in disc-local frame + base quaternion. */
+	private _brakeDiscsByWheel: Record<
+		number,
+		{ mesh: THREE.Mesh; axleDir: THREE.Vector3; baseQuat: THREE.Quaternion }[]
+	> = {};
 
 	// Light effect refs
 	private headlightMeshes: THREE.Mesh[] = [];
@@ -290,20 +293,47 @@ export class VehicleRenderer {
 			const wheelClone = pivot.children[0];
 			if (!wheelClone) continue;
 
-			// Three.js GLTFLoader creates individual Mesh children per primitive,
-			// so brake discs are standalone Mesh objects (not multi-material).
-			const discs: THREE.Mesh[] = [];
+			// The pivot applies Euler(spin, steer, 0, "YXZ") in sync(). The spin
+			// rotates around the pivot's local X axis (the axle). To counter this
+			// on the brake disc (which is a deep descendant), we need the axle
+			// direction expressed in the disc's own local frame.
+			//
+			// At load time the pivot has identity rotation, so the transform chain
+			// from disc to pivot is just the baked hierarchy: wheelClone → Group → disc.
+			// We compute: axleDir = inverse(Q_disc_to_pivot) * (1,0,0)
+
+			const discs: { mesh: THREE.Mesh; axleDir: THREE.Vector3; baseQuat: THREE.Quaternion }[] = [];
 			wheelClone.traverse((child) => {
 				if (!(child instanceof THREE.Mesh)) return;
 				const mat = child.material;
-				if (mat?.name && this.schema.brakeDiscMaterials.includes(mat.name)) {
-					discs.push(child);
-					console.log(
-						`[VehicleRenderer] Found brake disc ${i}: "${child.name}", ` +
-							`${child.geometry.getAttribute("position").count} verts, ` +
-							`parent="${child.parent?.name}"`,
-					);
+				if (!mat?.name || !this.schema.brakeDiscMaterials.includes(mat.name)) return;
+
+				// Compute accumulated rotation from disc up to the pivot (not including pivot).
+				// Walk parent chain: disc → ... → wheelClone (stop before pivot).
+				const qToPivot = new THREE.Quaternion();
+				let node: THREE.Object3D | null = child;
+				while (node && node !== wheelClone) {
+					qToPivot.premultiply(node.quaternion);
+					node = node.parent;
 				}
+				// Include wheelClone's own rotation
+				if (node === wheelClone) qToPivot.premultiply(wheelClone.quaternion);
+
+				// Axle in pivot-local space is X=(1,0,0). Transform to disc-local frame.
+				const axleInPivot = new THREE.Vector3(1, 0, 0);
+				const axleDir = axleInPivot.clone().applyQuaternion(qToPivot.clone().invert());
+
+				discs.push({
+					mesh: child,
+					axleDir,
+					baseQuat: child.quaternion.clone(),
+				});
+
+				console.log(
+					`[VehicleRenderer] Brake disc ${i}: "${child.name}", ` +
+						`axleDir=(${axleDir.x.toFixed(3)}, ${axleDir.y.toFixed(3)}, ${axleDir.z.toFixed(3)}), ` +
+						`baseQuat=(${child.quaternion.x.toFixed(3)}, ${child.quaternion.y.toFixed(3)}, ${child.quaternion.z.toFixed(3)}, ${child.quaternion.w.toFixed(3)})`,
+				);
 			});
 			if (discs.length > 0) this._brakeDiscsByWheel[i] = discs;
 		}
@@ -721,13 +751,16 @@ export class VehicleRenderer {
 			// Pivot: spin around X (axle), steer around Y.
 			pivot.quaternion.setFromEuler(new THREE.Euler(this.wheelSpinAngles[i], steer, 0, "YXZ"));
 
-			// Counter-rotate brake discs against spin so they stay fixed in the wheel.
-			// Spin is around X (axle). The wheel clone already applies spin via the
-			// pivot quaternion, so we undo it on the disc mesh itself.
+			// Counter-rotate brake discs against spin so they stay fixed.
+			// Spin rotates around pivot-local X (axle). The disc's axleDir was computed
+			// at load time — it's the axle direction in the disc's local frame.
 			const discs = this._brakeDiscsByWheel[i];
 			if (discs) {
 				for (const disc of discs) {
-					disc.rotation.x = -this.wheelSpinAngles[i];
+					disc.mesh.quaternion.copy(disc.baseQuat);
+					disc.mesh.quaternion.premultiply(
+						new THREE.Quaternion().setFromAxisAngle(disc.axleDir, -this.wheelSpinAngles[i]),
+					);
 				}
 			}
 		}
