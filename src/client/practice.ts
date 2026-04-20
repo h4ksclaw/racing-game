@@ -477,7 +477,7 @@ function animate(): void {
 		const clampedRpm = Math.max(0, Math.min(1, rpmFrac));
 		const steerInput = (input.left ? -1 : 0) + (input.right ? 1 : 0);
 		const throttle = input.forward ? 1 : 0;
-		const brake = input.backward ? 1 : 0;
+		const brake = input.backward && vehicle.state.gear !== -1 ? 1 : 0;
 
 		updateUI(speed, gear, clampedRpm, steerInput, throttle, brake);
 
