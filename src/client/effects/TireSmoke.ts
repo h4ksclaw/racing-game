@@ -13,19 +13,19 @@ import { ParticleSystem } from "./ParticleSystem.ts";
 // Many small particles at low opacity. Density from overlap.
 
 /** Particles emitted per second per wheel at full intensity */
-const EMIT_RATE = 60;
+const EMIT_RATE = 80;
 /** Random velocity spread (m/s) — tight cloud near tire */
-const SPREAD = 0.6;
+const SPREAD = 1.0;
 /** Particle size (world units) — small puffs */
-const SIZE_MIN = 0.15;
-const SIZE_MAX = 0.35;
+const SIZE_MIN = 0.2;
+const SIZE_MAX = 0.5;
 /** Particle lifetime (seconds) */
-const LIFE_MIN = 1.0;
-const LIFE_MAX = 2.5;
-/** Per-particle opacity — LOW, density from overlap */
-const OPACITY = 0.06;
+const LIFE_MIN = 1.2;
+const LIFE_MAX = 2.8;
+/** Per-particle opacity */
+const OPACITY = 0.25;
 /** Max pool for all wheels */
-const POOL_SIZE = 1200;
+const POOL_SIZE = 2000;
 
 export class TireSmoke {
 	private ps: ParticleSystem;

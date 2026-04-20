@@ -11,14 +11,14 @@ import { ParticleSystem } from "./ParticleSystem.ts";
 
 // ─── Tuning ─────────────────────────────────────────────────────────────
 
-const EMIT_RATE = 40;
-const SPREAD = 1.2;
-const SIZE_MIN = 0.08;
-const SIZE_MAX = 0.2;
-const LIFE_MIN = 0.4;
-const LIFE_MAX = 0.8;
-const OPACITY = 0.7;
-const POOL_SIZE = 600;
+const EMIT_RATE = 60;
+const SPREAD = 1.5;
+const SIZE_MIN = 0.12;
+const SIZE_MAX = 0.3;
+const LIFE_MIN = 0.5;
+const LIFE_MAX = 1.0;
+const OPACITY = 0.85;
+const POOL_SIZE = 800;
 
 // Color palette: soil, sand, grass
 const DIRT_COLORS = [

@@ -19,9 +19,9 @@ import * as THREE from "three";
 // ─── Tuning ─────────────────────────────────────────────────────────────
 
 /** Distance between consecutive mark points (meters) */
-const MARK_SPACING = 0.1;
+const MARK_SPACING = 0.08;
 /** Mark width (meters) — realistic tire contact patch */
-const MARK_WIDTH = 0.2;
+const MARK_WIDTH = 0.25;
 /** Maximum points per wheel ribbon before oldest are trimmed */
 const MAX_POINTS = 3000;
 /** Mark age before fading starts (seconds) */
@@ -32,11 +32,11 @@ const MARK_FADE_DURATION = 6.0;
 const SURFACE_OFFSET = 0.003;
 /**
  * Skid mark color — dark rubber gray.
- * Road asphalt is ~0.35-0.45 gray, so 0.15 gives strong contrast.
+ * Road asphalt is ~0.35-0.45 gray, so 0.08 gives strong contrast.
  */
-const MARK_COLOR = new THREE.Color(0.15, 0.15, 0.15);
+const MARK_COLOR = new THREE.Color(0.08, 0.08, 0.08);
 /** Base opacity — high for strong visible marks */
-const MARK_OPACITY = 0.85;
+const MARK_OPACITY = 0.9;
 
 interface MarkPoint {
 	x: number;

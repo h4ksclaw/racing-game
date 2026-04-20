@@ -102,7 +102,7 @@ export class VehicleEffects {
 		const intensities = [0, 0, 0, 0];
 		const speed = Math.abs(vehicle.state.speed);
 
-		if (!td || speed < 1.0) return intensities;
+		if (!td || speed < 0.5) return intensities;
 
 		// Handbrake / drift: rear wheels (index 2, 3) slide
 		if (td.isDrifting) {
