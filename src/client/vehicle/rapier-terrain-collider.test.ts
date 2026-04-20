@@ -144,10 +144,10 @@ describe("buildTerrainTrimesh", () => {
 
 describe("TERRAIN_PATCH constants", () => {
 	it("has sensible defaults", () => {
-		expect(TERRAIN_PATCH.SIZE).toBe(200);
+		expect(TERRAIN_PATCH.SIZE).toBe(80);
 		expect(TERRAIN_PATCH.RESOLUTION).toBeGreaterThan(0);
-		expect(TERRAIN_PATCH.REBUILD_DIST).toBe(60);
-		expect(TERRAIN_PATCH.EDGE_MARGIN).toBe(30);
+		expect(TERRAIN_PATCH.REBUILD_DIST).toBe(20);
+		expect(TERRAIN_PATCH.EDGE_MARGIN).toBe(10);
 		expect(TERRAIN_PATCH.HEIGHT_OFFSET).toBe(0.3);
 	});
 

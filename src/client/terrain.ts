@@ -126,6 +126,28 @@ export class TerrainSampler {
 		return best;
 	}
 
+	/** Smooth road height by interpolating between the nearest sample and its road neighbors. */
+	roadHeight(x: number, z: number): number {
+		const { sampleIndex } = this.nearestRoad(x, z);
+		const sn = this.samples.length;
+		const curr = this.samples[sampleIndex];
+		const prev = this.samples[(sampleIndex - 1 + sn) % sn];
+		const next = this.samples[(sampleIndex + 1) % sn];
+
+		// Project (x,z) onto the prev→next segment to find interpolation weight
+		const dx = next.point.x - prev.point.x;
+		const dz = next.point.z - prev.point.z;
+		const segLenSq = dx * dx + dz * dz;
+		if (segLenSq < 1e-6) return curr.point.y;
+
+		let t = ((x - prev.point.x) * dx + (z - prev.point.z) * dz) / segLenSq;
+		t = Math.max(0, Math.min(1, t));
+
+		// Smoothstep for C1 continuity at sample boundaries
+		const st = t * t * (3 - 2 * t);
+		return prev.point.y * (1 - st) + next.point.y * st;
+	}
+
 	getHeight(x: number, z: number): number {
 		// Quantize to 0.25m grid for caching (smooth enough for driving)
 		const qx = Math.round(x * 4) / 4;
@@ -134,15 +156,16 @@ export class TerrainSampler {
 		const cached = this.heightCache.get(cacheKey);
 		if (cached !== undefined) return cached;
 
-		const { dist, sample } = this.nearestRoad(x, z);
+		const { dist } = this.nearestRoad(x, z);
+		const roadY = this.roadHeight(x, z);
 		const centerDist = Math.sqrt(x * x + z * z);
 		const mountainFactor = 1 + smoothstep(this.worldRadius * 0.75, this.worldRadius, centerDist) * this.mountainAmp;
 		const noiseH = this.fbm(x * this.noiseScale, z * this.noiseScale) * this.noiseAmp * mountainFactor;
 		const blend = smoothstep(this.blendStart, this.roadInfluence, dist);
-		const blendedY = sample.point.y * (1 - blend) + (this.avgRoadY + noiseH) * blend;
+		const blendedY = roadY * (1 - blend) + (this.avgRoadY + noiseH) * blend;
 		// Clamp height difference to prevent cliffs: max 0.4m rise per 1m from road
 		const maxSlope = dist * 0.4;
-		const result = Math.max(sample.point.y - maxSlope, Math.min(sample.point.y + maxSlope, blendedY)) - 0.3;
+		const result = Math.max(roadY - maxSlope, Math.min(roadY + maxSlope, blendedY)) - 0.3;
 
 		// Apply flatten zones
 		let finalY = result;
