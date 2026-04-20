@@ -350,7 +350,7 @@ describe("RapierVehicleController", () => {
 			for (let i = 0; i < 10; i++) {
 				v.update(flatInput(), 1 / 60);
 			}
-			expect(v.state.gear).toBe(1);
+			expect(v.state.gear).toBe(0); // N (neutral) after releasing S
 		});
 
 		it("speed trends downward during braking phase", async () => {

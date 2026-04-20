@@ -241,6 +241,7 @@ export class RapierVehicleController {
 
 		let isBraking = false;
 		let isReverse = false;
+		const wantsNeutral = !wantsForward && !wantsBackward;
 		if (wantsBackward) {
 			if (localVelX > BRAKE_HYSTERESIS) {
 				isBraking = true;
@@ -250,7 +251,11 @@ export class RapierVehicleController {
 		}
 
 		engine.throttle = wantsForward ? 1 : isReverse ? 0.5 : 0;
-		gearbox.update(dt, engine, localVelX, isBraking);
+		if (wantsNeutral) {
+			gearbox.effectiveRatio = 0; // neutral = no gear ratio = no engine braking
+		} else {
+			gearbox.update(dt, engine, localVelX, isBraking);
+		}
 		engine.update(localVelX, gearbox.effectiveRatio, chassis.wheelRadius, dt);
 
 		// ── Wheel brake force (Rapier native) ──
@@ -386,7 +391,7 @@ export class RapierVehicleController {
 		// ── Output state ──
 		this.state.speed = localVelX;
 		this.state.rpm = engine.rpm;
-		this.state.gear = isReverse ? -1 : gearbox.currentGear + 1;
+		this.state.gear = isReverse ? -1 : wantsForward || wantsBackward ? gearbox.currentGear + 1 : 0;
 		this.state.throttle = engine.throttle;
 		this.state.brake = this.brakes.brakePressure;
 		this.state.onGround = this.countContacts() > 0;
