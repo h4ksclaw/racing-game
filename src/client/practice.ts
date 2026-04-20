@@ -329,7 +329,7 @@ function initForceVecPanel(): void {
 	if (forceVecPanel) return;
 	forceVecPanel = document.createElement("div");
 	forceVecPanel.style.cssText =
-		"position:fixed;top:8px;right:8px;background:rgba(0,0,0,0.85);color:#fff;font:12px/1.6 monospace;padding:10px;z-index:9999;";
+		"position:fixed;top:8px;left:240px;background:rgba(0,0,0,0.85);color:#fff;font:12px/1.6 monospace;padding:10px;z-index:9999;";
 	forceVecPanel.innerHTML =
 		`<div style="margin-bottom:6px;font-weight:bold">Force Vectors</div>` +
 		`<label><input type="checkbox" id="fv-toggle" checked> Show arrows</label>`;
