@@ -253,12 +253,26 @@ export class VehicleRenderer {
 					`[VehicleRenderer] wheel ${i}: marker=${wheelNames[i]}, ` +
 						`local=(${markerWorld.x.toFixed(3)}, ${markerWorld.y.toFixed(3)}, ${markerWorld.z.toFixed(3)})`,
 				);
+				// Compute visual wheel radius from world-space AABB.
+				// After rotation, axle is along X — Y and Z extents are radial.
+				// Use max(Y,Z)/2 as the visual radius, then scale to match physics.
 				const bb = new THREE.Box3().setFromObject(wheelClone);
 				const bsize = new THREE.Vector3();
 				bb.getSize(bsize);
-				console.log(
-					`[VehicleRenderer] wheel ${i} bbox: (${bsize.x.toFixed(3)}, ${bsize.y.toFixed(3)}, ${bsize.z.toFixed(3)})`,
-				);
+				const visualRadius = Math.max(bsize.y, bsize.z) / 2;
+				const physicsRadius = this.config.chassis.wheelRadius;
+				if (visualRadius > 0.001 && Math.abs(visualRadius - physicsRadius) > 0.005) {
+					const scaleRatio = physicsRadius / visualRadius;
+					wheelClone.scale.multiplyScalar(scaleRatio);
+					console.log(
+						`[VehicleRenderer] wheel ${i}: scaling by ${scaleRatio.toFixed(3)} ` +
+							`(visualRadius=${visualRadius.toFixed(3)} → physicsRadius=${physicsRadius.toFixed(3)})`,
+					);
+				} else {
+					console.log(
+						`[VehicleRenderer] wheel ${i} bbox: (${bsize.x.toFixed(3)}, ${bsize.y.toFixed(3)}, ${bsize.z.toFixed(3)})`,
+					);
+				}
 			}
 
 			// Store full base positions for suspension visual + pitch/roll compensation.
@@ -546,22 +560,14 @@ export class VehicleRenderer {
 			if (this._diagCount < 3 && i === 0 && suspLengths?.[0]) {
 				const pivotWorld = new THREE.Vector3(0, pivot.position.y, 0);
 				pivotWorld.applyMatrix4(this.model.matrixWorld);
-				// Walk children to find actual mesh bounding box for visual radius
+				// Compute visual radius from world-space AABB of the wheel pivot.
+				// After baked rotation, axle is along X — use max(Y,Z)/2 as radius.
 				let visualWheelRadius = wheelRadius;
-				const findGeo = (obj: THREE.Object3D): THREE.Box3 | null => {
-					if ((obj as THREE.Mesh).geometry) {
-						(obj as THREE.Mesh).geometry.computeBoundingBox();
-						return (obj as THREE.Mesh).geometry.boundingBox!.clone();
-					}
-					let merged: THREE.Box3 | null = null;
-					for (const c of obj.children) {
-						const bb = findGeo(c);
-						if (bb) merged = merged ? merged.union(bb) : bb;
-					}
-					return merged;
-				};
-				const bb = findGeo(pivot);
-				if (bb) visualWheelRadius = (bb.max.y - bb.min.y) / 2;
+				pivot.updateMatrixWorld(true);
+				const visBb = new THREE.Box3().setFromObject(pivot);
+				const visSize = new THREE.Vector3();
+				visBb.getSize(visSize);
+				visualWheelRadius = Math.max(visSize.y, visSize.z) / 2;
 				const visualBotY = pivotWorld.y - visualWheelRadius;
 				const halfH = this.config.chassis.halfExtents[1];
 				const susLen = suspLengths[0] as number;
