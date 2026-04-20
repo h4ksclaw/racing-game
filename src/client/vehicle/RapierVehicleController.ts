@@ -36,7 +36,7 @@ import type { EngineTelemetry, TerrainProvider, VehicleInput, VehicleState } fro
 export type { TerrainProvider, VehicleInput } from "./types.ts";
 
 // ── Vehicle controller tuning constants ──
-const STEER_SPEED = 6.0;
+const STEER_SPEED = 3.5;
 const SUS_TRAVEL = 0.3;
 const MAX_SUS_FORCE = 100000;
 const WHEEL_FRICTION_SLIP = 2.0;
@@ -85,6 +85,8 @@ export class RapierVehicleController {
 	private initialized = false;
 	private _diagTimer = 0; // throttle diagnostic log output
 	private readonly driveState = new DriveState();
+	private _wheelSpinAngles = [0, 0, 0, 0];
+	private _wheelSpinVels = [0, 0, 0, 0]; // current angular velocities (rad/s)
 	/** Tire dynamics state snapshot (updated each frame after physics step) */
 	tireDynState: TireDynamicsState | null = null;
 	/** Current frame force breakdown for debug visualization (world-space) */
@@ -119,8 +121,8 @@ export class RapierVehicleController {
 			wheelIndices: { fl: 0, fr: 1, rl: 2, rr: 3 },
 		});
 		this.customSuspension = new CustomSuspension({
-			stiffness: config.suspension?.customStiffness ?? 5000,
-			damping: config.suspension?.customDamping ?? 300,
+			stiffness: config.suspension?.customStiffness ?? 25000,
+			damping: config.suspension?.customDamping ?? 1500,
 		});
 		this.state = {
 			speed: 0,
@@ -309,9 +311,26 @@ export class RapierVehicleController {
 			dt,
 		);
 
-		// Negate because Rapier's rolling direction = -Z, our car faces +Z
-		this.vehicle.setWheelEngineForce(this.wheelRL, -fc.engF);
-		this.vehicle.setWheelEngineForce(this.wheelRR, -fc.engF);
+		// Apply engine force to driven wheels based on drivetrain config
+		const drivetrain = this._config.drivetrain ?? "RWD";
+		const engForce = -fc.engF;
+		if (drivetrain === "FWD") {
+			this.vehicle.setWheelEngineForce(this.wheelFL, engForce);
+			this.vehicle.setWheelEngineForce(this.wheelFR, engForce);
+			this.vehicle.setWheelEngineForce(this.wheelRL, 0);
+			this.vehicle.setWheelEngineForce(this.wheelRR, 0);
+		} else if (drivetrain === "AWD") {
+			this.vehicle.setWheelEngineForce(this.wheelFL, engForce);
+			this.vehicle.setWheelEngineForce(this.wheelFR, engForce);
+			this.vehicle.setWheelEngineForce(this.wheelRL, engForce);
+			this.vehicle.setWheelEngineForce(this.wheelRR, engForce);
+		} else {
+			// RWD
+			this.vehicle.setWheelEngineForce(this.wheelFL, 0);
+			this.vehicle.setWheelEngineForce(this.wheelFR, 0);
+			this.vehicle.setWheelEngineForce(this.wheelRL, engForce);
+			this.vehicle.setWheelEngineForce(this.wheelRR, engForce);
+		}
 
 		// ── Apply wheel brakes (front-biased for normal braking) ──
 		this.vehicle.setWheelBrake(this.wheelFL, fc.rapierBrakeForce * 1.2);
@@ -383,13 +402,29 @@ export class RapierVehicleController {
 
 		// ── Step physics (substeps for stability) ──
 		const substepDt = dt / PHYSICS_SUBSTEPS;
+
+		// Compute accelerations for weight transfer suspension
+		const trackWidth = Math.abs(chassis.wheelPositions[0].x - chassis.wheelPositions[1].x);
+		// Longitudinal accel: rate of change of forward speed (approximated from forces)
+		// Clamp to realistic range — beyond ~1.2g the tires would have lost grip anyway
+		const longAccel = Math.max(-12, Math.min(12, chassis.mass > 0 ? (fc.engF - fc.totalRetard) / chassis.mass : 0));
+		// Lateral accel from yaw rate × forward speed (use local angVel.y)
+		const bodyAngVel = this.carBody.angvel();
+		const latAccel = Math.max(-12, Math.min(12, bodyAngVel.y * localVelX));
+
 		for (let i = 0; i < PHYSICS_SUBSTEPS; i++) {
 			this.vehicle.updateVehicle(substepDt);
 			this.world.step();
-			// CustomSuspension disabled: Rapier reports uniform compression across all wheels,
-			// so differential forces have zero input. The system was causing body oscillation.
-			// Re-enable when weight transfer data is fed in from braking/acceleration forces.
-			// this.customSuspension.apply(this.vehicle, this.carBody, chassis.suspensionRestLength, substepDt);
+			this.customSuspension.applyWeightTransfer(
+				this.carBody,
+				longAccel,
+				latAccel,
+				chassis.mass,
+				chassis.cgHeight,
+				chassis.wheelBase,
+				trackWidth,
+				substepDt,
+			);
 		}
 
 		// ── Post-step tire dynamics ──
@@ -398,8 +433,7 @@ export class RapierVehicleController {
 		this.tireDynamics.readWheelStates(this.vehicle);
 
 		// Read current yaw rate from body angular velocity
-		const angVel = this.carBody.angvel();
-		const yawRate = angVel.y;
+		const yawRate = bodyAngVel.y;
 
 		// Compute drift yaw torque: when rear grip is reduced, front lateral
 		// forces create a net yaw moment → the car rotates (oversteer)
@@ -431,6 +465,9 @@ export class RapierVehicleController {
 			const yawDamp = Math.exp(-YAW_DAMP_RATE * dt);
 			this.carBody.setAngvel({ x: av.x, y: av.y * yawDamp, z: av.z }, true);
 		}
+
+		// ── Update per-wheel spin angles ──
+		this.updateWheelSpin(fc, dt, !!input.handbrake);
 
 		// ── Output state ──
 		this.state.speed = localVelX;
@@ -509,6 +546,53 @@ export class RapierVehicleController {
 	/** Per-wheel current suspension lengths from Rapier. null if wheel not grounded. */
 	getSuspensionLengths(): (number | null)[] {
 		return [0, 1, 2, 3].map((i) => this.vehicle.wheelSuspensionLength(i));
+	}
+
+	/** Per-wheel spin angles (rad) for visual wheel rotation. */
+	getWheelSpinAngles(): number[] {
+		return this._wheelSpinAngles;
+	}
+
+	/**
+	 * Update per-wheel spin angles based on drivetrain and handbrake state.
+	 * Driven wheels follow engine output; undriven wheels free-roll at ground speed.
+	 * Handbrake locks rear wheels with rapid deceleration.
+	 */
+	private updateWheelSpin(_fc: { engF: number }, dt: number, isHandbrake: boolean): void {
+		const wheelRadius = this._config.chassis.wheelRadius;
+		const speed = this.state.speed;
+
+		// Ground angular velocity (rad/s)
+		const groundOmega = wheelRadius > 0 ? speed / wheelRadius : 0;
+
+		// Deadzone: below this speed, snap to zero to prevent slow creep
+		const deadzone = 0.05;
+
+		for (let i = 0; i < 4; i++) {
+			const isFront = i < 2;
+
+			let targetOmega: number;
+
+			if (isHandbrake && !isFront) {
+				// Handbrake: rear wheels lock — rapid deceleration to zero
+				targetOmega = 0;
+				const lockBlend = 1 - Math.exp(-12.0 * dt); // locks in ~0.25s
+				this._wheelSpinVels[i] *= 1 - lockBlend;
+			} else {
+				// Both driven and undriven: target ground speed
+				targetOmega = Math.abs(groundOmega) < deadzone ? 0 : groundOmega;
+				// Quick blend — wheels respond fast to speed changes
+				const blend = 1 - Math.exp(-15.0 * dt);
+				this._wheelSpinVels[i] += (targetOmega - this._wheelSpinVels[i]) * blend;
+			}
+
+			// Kill residual spin when nearly stopped
+			if (Math.abs(this._wheelSpinVels[i]) < deadzone && Math.abs(targetOmega) < deadzone) {
+				this._wheelSpinVels[i] = 0;
+			}
+
+			this._wheelSpinAngles[i] += this._wheelSpinVels[i] * dt;
+		}
 	}
 
 	/** Debug info for the ?debug overlay. */

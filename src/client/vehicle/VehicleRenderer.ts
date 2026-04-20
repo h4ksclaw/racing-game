@@ -524,6 +524,7 @@ export class VehicleRenderer {
 		wheelRadius: number,
 		dt = 1 / 60,
 		suspLengths?: (number | null)[],
+		wheelSpinAngles?: number[],
 	): void {
 		if (!this.model) return;
 
@@ -541,7 +542,11 @@ export class VehicleRenderer {
 			if (!pivot) continue;
 
 			const steer = i < 2 ? steerAngle : 0;
-			this.wheelSpinAngles[i] += (speed / wheelRadius) * dt;
+			if (wheelSpinAngles) {
+				this.wheelSpinAngles[i] = wheelSpinAngles[i];
+			} else {
+				this.wheelSpinAngles[i] += (speed / wheelRadius) * dt;
+			}
 
 			// ── Wheel vertical positioning ──
 			// The GLB wheel markers sit at the Rapier suspension anchor level in

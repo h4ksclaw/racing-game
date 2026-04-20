@@ -152,6 +152,82 @@ export class CustomSuspension {
 	reset(): void {
 		this.wheels = this.anchors.map(() => ({ prevCompression: 0 }));
 	}
+
+	/**
+	 * Apply weight-transfer-based differential suspension forces.
+	 *
+	 * Instead of reading Rapier's uniform compression, computes virtual compression
+	 * offsets from longitudinal and lateral acceleration, then applies differential
+	 * forces at wheel anchors.
+	 *
+	 * @param body - Rapier rigid body
+	 * @param longitudinalAccel - Forward acceleration (m/s²), positive = accelerating
+	 * @param lateralAccel - Lateral acceleration (m/s²), positive = turning left
+	 * @param mass - Vehicle mass (kg)
+	 * @param cgHeight - Center of gravity height (m)
+	 * @param wheelbase - Distance between front and rear axles (m)
+	 * @param trackWidth - Distance between left and right wheels (m)
+	 * @param dt - Timestep (s)
+	 */
+	applyWeightTransfer(
+		body: RAPIER.RigidBody,
+		longitudinalAccel: number,
+		lateralAccel: number,
+		mass: number,
+		cgHeight: number,
+		wheelbase: number,
+		trackWidth: number,
+		dt: number,
+	): void {
+		if (!this.enabled || this.anchors.length < 4) return;
+
+		const { stiffness, maxForce, damping } = this.config;
+
+		// Scale factor: real cars have stiff anti-roll bars that limit body roll.
+		// 0.4 = 40% of idealized weight transfer makes for visible but not excessive lean.
+		const wtScale = 0.4;
+
+		// Longitudinal weight transfer: ΔFz = (mass × accel × cgHeight) / wheelbase
+		// Under braking (negative accel): front gains, rear loses
+		// Under acceleration (positive accel): rear gains, front loses
+		const longTransfer = (mass * longitudinalAccel * cgHeight * wtScale) / (wheelbase || 1);
+
+		// Lateral weight transfer: ΔFz = (mass × lateralAccel × cgHeight) / trackWidth
+		// Positive lateral accel (turning left): right side gains, left loses
+		const latTransfer = (mass * lateralAccel * cgHeight * wtScale) / (trackWidth || 1);
+
+		// Convert weight transfer to virtual compression offsets (F = k × Δx → Δx = F / k)
+		// [FL, FR, RL, RR]
+		// FL: loses long transfer (front under accel), gains lat transfer (left under left turn)
+		// FR: loses long transfer, loses lat transfer
+		// RL: gains long transfer, gains lat transfer
+		// RR: gains long transfer, loses lat transfer
+		const offsets = [
+			(-longTransfer + latTransfer) / stiffness, // FL
+			(-longTransfer - latTransfer) / stiffness, // FR
+			(longTransfer + latTransfer) / stiffness, // RL
+			(longTransfer - latTransfer) / stiffness, // RR
+		];
+
+		// Compute average offset
+		const avgOffset = (offsets[0] + offsets[1] + offsets[2] + offsets[3]) / 4;
+
+		// Apply differential forces (only the difference from average)
+		for (let i = 0; i < 4; i++) {
+			const diffOffset = offsets[i] - avgOffset;
+			// Apply spring force with damping for stability
+			const vel = (diffOffset - (this.wheels[i]?.prevCompression ?? 0)) / dt;
+			this.wheels[i] = { prevCompression: diffOffset };
+			let force = stiffness * diffOffset + damping * vel;
+
+			// Clamp
+			force = Math.max(-maxForce, Math.min(maxForce, force));
+			if (Math.abs(force) < 0.5) continue;
+
+			const worldAnchor = localToWorld(body, this.anchors[i]);
+			body.applyImpulseAtPoint({ x: 0, y: force * dt, z: 0 }, worldAnchor, true);
+		}
+	}
 }
 
 /**

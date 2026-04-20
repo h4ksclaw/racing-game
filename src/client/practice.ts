@@ -448,6 +448,7 @@ function animate(): void {
 				vehicle.config.chassis.wheelRadius,
 				delta,
 				vehicle.getSuspensionLengths(),
+				vehicle.getWheelSpinAngles(),
 			);
 		}
 

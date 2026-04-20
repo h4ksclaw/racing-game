@@ -168,6 +168,8 @@ export interface CarConfig {
 	readonly chassis: ChassisSpec;
 	/** Optional sound profile. If omitted, derived from engine specs. */
 	readonly sound?: EngineSoundConfig;
+	/** Drivetrain layout: front-wheel, rear-wheel, or all-wheel drive. Default 'RWD'. */
+	readonly drivetrain?: "FWD" | "RWD" | "AWD";
 	/** Custom suspension parameters for differential loading (weight transfer). */
 	readonly suspension?: {
 		/** Spring constant per wheel (N/m). Default 5000. */
@@ -181,6 +183,7 @@ export interface CarConfig {
 
 export const RACE_CAR: CarConfig = {
 	name: "Race Car",
+	drivetrain: "AWD",
 	modelScale: 1,
 	modelPath: "/assets/kenney-car-kit/Models/GLB format/race.glb",
 	engine: {
@@ -302,6 +305,7 @@ export const SEDAN_CAR: CarConfig = {
  */
 export const SPORTS_CAR: CarConfig = {
 	name: "AE86 Trueno",
+	drivetrain: "RWD",
 	modelPath: "/assets/new-car/wheels.glb",
 	modelScale: 2.1,
 	engine: {
