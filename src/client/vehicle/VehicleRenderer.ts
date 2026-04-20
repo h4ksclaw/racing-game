@@ -328,12 +328,6 @@ export class VehicleRenderer {
 					axleDir,
 					baseQuat: child.quaternion.clone().premultiply(new THREE.Quaternion().setFromAxisAngle(axleDir, Math.PI / 2)),
 				});
-
-				console.log(
-					`[VehicleRenderer] Brake disc ${i}: "${child.name}", ` +
-						`axleDir=(${axleDir.x.toFixed(3)}, ${axleDir.y.toFixed(3)}, ${axleDir.z.toFixed(3)}), ` +
-						`baseQuat=(${child.quaternion.x.toFixed(3)}, ${child.quaternion.y.toFixed(3)}, ${child.quaternion.z.toFixed(3)}, ${child.quaternion.w.toFixed(3)})`,
-				);
 			});
 			if (discs.length > 0) this._brakeDiscsByWheel[i] = discs;
 		}
