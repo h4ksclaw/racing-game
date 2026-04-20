@@ -28,6 +28,8 @@ export class VehicleRenderer {
 	readonly wheelMeshes: THREE.Object3D[] = [];
 	headlights: THREE.SpotLight[] = [];
 	private _modelGroundOffset = 0;
+	private _suspRestLength = 0;
+	private _wheelBaseY: [number, number, number, number] = [0, 0, 0, 0];
 	private config: CarConfig;
 	private readonly schema: CarModelSchema;
 	/** Brake disc meshes — parented to car body, not wheel pivots, so they don't spin. */
@@ -55,7 +57,7 @@ export class VehicleRenderer {
 				for (const mesh of child.children) {
 					if (
 						(mesh as THREE.Mesh).geometry &&
-						typeof (mesh as THREE.Mesh).geometry!.computeBoundingBox === "function"
+						typeof (mesh as THREE.Mesh).geometry?.computeBoundingBox === "function"
 					) {
 						(mesh as THREE.Mesh).geometry.computeBoundingBox();
 						const bb = (mesh as THREE.Mesh).geometry.boundingBox!;
@@ -254,6 +256,12 @@ export class VehicleRenderer {
 				);
 			}
 
+			// Store base Y positions for suspension visual offset and rest length
+			this._suspRestLength = this.config.chassis.suspensionRestLength;
+			for (let wi = 0; wi < 4; wi++) {
+				this._wheelBaseY[wi] = this.wheelMeshes[wi].position.y;
+			}
+
 			this.extractBrakeDiscs();
 			console.log("[VehicleRenderer] Loaded 4 wheels from external GLB");
 			return true;
@@ -281,13 +289,12 @@ export class VehicleRenderer {
 			const wheelClone = pivot.children[0];
 			if (!wheelClone) continue;
 
-			// Walk wheel clone children looking for a multi-material mesh with a "Break" material
 			for (const child of wheelClone.children) {
 				if (!(child instanceof THREE.Mesh)) continue;
 				const mats = child.material;
 				if (!Array.isArray(mats)) continue;
 
-				// Find the brake material index and its geometry group
+				// Find the brake material group in this multi-material mesh
 				let brakeGroupIdx = -1;
 				let brakeMat: THREE.Material | null = null;
 				for (let mi = 0; mi < mats.length; mi++) {
@@ -303,82 +310,76 @@ export class VehicleRenderer {
 				if (!geo.groups || geo.groups.length <= brakeGroupIdx) continue;
 
 				const group = geo.groups[brakeGroupIdx];
-
-				// Extract the brake disc's vertices into a new BufferGeometry
-				const discGeo = new THREE.BufferGeometry();
 				const posAttr = geo.getAttribute("position");
 				const normAttr = geo.getAttribute("normal");
 				const idxAttr = geo.getIndex();
+				if (!idxAttr) continue;
 
-				// Build index buffer for just this group's range
-				const start = group.start;
-				const count = group.count;
-				const indices: number[] = [];
-				if (idxAttr) {
-					for (let j = start; j < start + count; j++) {
-						const idx = idxAttr.getX(j) - group.start;
-						indices.push(idx);
-					}
+				// Collect unique vertex indices used by this group, then remap to 0-based.
+				// Three.js merges GLTF multi-primitive meshes into a single BufferGeometry
+				// where each primitive becomes a group (index buffer range). The indices
+				// point into a shared vertex buffer, so we must deduplicate.
+				const vertSet = new Set<number>();
+				const groupIndices: number[] = [];
+				for (let j = group.start; j < group.start + group.count; j++) {
+					const vertIdx = idxAttr.getX(j);
+					vertSet.add(vertIdx);
+					groupIndices.push(vertIdx);
 				}
 
-				// Extract position and normal buffers for this group's vertex range
+				// Map original vertex indices → 0-based for the new geometry
+				const sortedVerts = [...vertSet].sort((a, b) => a - b);
+				const remap = new Map<number, number>();
+				for (let vi = 0; vi < sortedVerts.length; vi++) {
+					remap.set(sortedVerts[vi], vi);
+				}
+
+				// Extract vertex data (positions + normals) for referenced vertices only
 				const positions: number[] = [];
 				const normals: number[] = [];
-				for (let j = group.start; j < group.start + count; j++) {
-					const idx = idxAttr ? idxAttr.getX(j) : j;
-					positions.push(posAttr.getX(idx), posAttr.getY(idx), posAttr.getZ(idx));
+				for (const origIdx of sortedVerts) {
+					positions.push(posAttr.getX(origIdx), posAttr.getY(origIdx), posAttr.getZ(origIdx));
 					if (normAttr) {
-						normals.push(normAttr.getX(idx), normAttr.getY(idx), normAttr.getZ(idx));
+						normals.push(normAttr.getX(origIdx), normAttr.getY(origIdx), normAttr.getZ(origIdx));
 					}
 				}
 
+				const newIndices = groupIndices.map((v) => remap.get(v)!);
+
+				const discGeo = new THREE.BufferGeometry();
 				discGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
 				if (normals.length > 0) {
 					discGeo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
 				}
-				if (indices.length > 0) {
-					discGeo.setIndex(indices);
-				}
+				discGeo.setIndex(newIndices);
 
-				// Create the brake disc mesh positioned at the wheel's local space
-				const discMesh = new THREE.Mesh(discGeo, brakeMat);
-				discMesh.name = `brake_disc_${i}`;
-
-				// Get the disc's world position within the wheel clone, then convert to model space
-				discMesh.position.copy(child.position);
-				discMesh.rotation.copy(child.rotation);
-				discMesh.scale.copy(child.scale);
-
-				// Parent to car model (not wheel pivot) — disc moves with car but doesn't spin
-				// We need to compute its world position relative to the car model root
+				// Position the disc at the child mesh's world position, reparented to car model root.
+				// The disc stays at the wheel location but doesn't spin with the wheel.
 				child.updateMatrixWorld(true);
 				const discWorldPos = new THREE.Vector3();
 				child.getWorldPosition(discWorldPos);
 				const discWorldQuat = new THREE.Quaternion();
 				child.getWorldQuaternion(discWorldQuat);
 
-				// Convert to model-local space
+				// Convert from world space to model-local space
 				this.model.worldToLocal(discWorldPos);
-				const modelQuat = this.model.quaternion.clone().invert();
-				discWorldQuat.premultiply(modelQuat);
+				const modelInvQuat = this.model.quaternion.clone().invert();
+				discWorldQuat.premultiply(modelInvQuat);
 
+				const discMesh = new THREE.Mesh(discGeo, brakeMat);
+				discMesh.name = `brake_disc_${i}`;
 				discMesh.position.copy(discWorldPos);
 				discMesh.quaternion.copy(discWorldQuat);
-				discMesh.scale.set(1, 1, 1); // scale already applied by wheel clone
-
-				this.model?.add(discMesh);
+				this.model.add(discMesh);
 				this.brakeDiscMeshes.push(discMesh);
 
-				// Remove the brake group from the original mesh so it doesn't render twice
-				const remaining = geo.groups.filter(
+				// Remove the brake group from the original mesh to prevent double-rendering
+				geo.groups = geo.groups.filter(
 					(_g: { start: number; count: number; materialIndex: number }, gi: number) => gi !== brakeGroupIdx,
 				);
-				// Renumber group material indices since we're removing one
-				const newMats = mats.filter((_m: THREE.Material, mi: number) => mi !== brakeGroupIdx);
-				geo.groups = remaining;
-				child.material = newMats;
+				child.material = mats.filter((_m: THREE.Material, mi: number) => mi !== brakeGroupIdx);
 
-				console.log(`[VehicleRenderer] Extracted brake disc ${i}: group=${brakeGroupIdx}, ${group.count} indices`);
+				console.log(`[VehicleRenderer] Extracted brake disc ${i}: ${sortedVerts.length} verts, ${group.count} indices`);
 			}
 		}
 	}
@@ -737,6 +738,19 @@ export class VehicleRenderer {
 	 * Accepts either Euler angles (legacy) or a quaternion (preferred, from Rapier body).
 	 * Handles body transform + wheel spin/steer — all rendering work lives here, not in game loop.
 	 */
+	/**
+	 * Sync the visual model to physics state. Called every frame.
+	 *
+	 * @param pos - Physics body position (Rapier world coords)
+	 * @param orientation - Body quaternion or euler angles
+	 * @param steerAngle - Front wheel steer angle (radians)
+	 * @param speed - Forward speed (m/s, positive = forward)
+	 * @param wheelRadius - For computing spin rate
+	 * @param dt - Frame timestep
+	 * @param suspLengths - Optional per-wheel current suspension length from Rapier.
+	 *   When provided, wheels visually offset vertically to simulate suspension travel.
+	 *   Positive compression (rest > current) pushes wheel down relative to body.
+	 */
 	sync(
 		pos: { x: number; y: number; z: number },
 		orientation: { x: number; y: number; z: number; w: number } | { heading: number; pitch: number; roll: number },
@@ -744,6 +758,7 @@ export class VehicleRenderer {
 		speed: number,
 		wheelRadius: number,
 		dt = 1 / 60,
+		suspLengths?: (number | null)[],
 	): void {
 		if (!this.model) return;
 
@@ -762,6 +777,20 @@ export class VehicleRenderer {
 
 			const steer = i < 2 ? steerAngle : 0;
 			this.wheelSpinAngles[i] += (speed / wheelRadius) * dt;
+
+			// Suspension visual: offset wheel vertically based on compression.
+			// Rapier suspension length = distance from chassis mount to contact point.
+			// When compressed (shorter than rest), wheel pushes closer to body —
+			// but visually the wheel should move DOWN (away from body) relative to it.
+			// We store the base Y from load time and offset from there.
+			if (suspLengths && suspLengths[i] !== null && this._suspRestLength > 0) {
+				// Compression = rest - current. Positive means wheel pushed up (shorter travel).
+				// Visually offset wheel pivot DOWN by compression so it appears to absorb the bump.
+				const compression = this._suspRestLength - suspLengths[i]!;
+				pivot.position.y = this._wheelBaseY[i] - compression;
+			} else {
+				pivot.position.y = this._wheelBaseY[i];
+			}
 
 			// Inner wheel clone rotation is baked at load time (Y rotation for axle alignment).
 			// Pivot: spin around X (axle), steer around Y.

@@ -610,6 +610,11 @@ export class RapierVehicleController {
 		return this.steerAngle;
 	}
 
+	/** Per-wheel current suspension lengths from Rapier. null if wheel not grounded. */
+	getSuspensionLengths(): (number | null)[] {
+		return [0, 1, 2, 3].map((i) => this.vehicle.wheelSuspensionLength(i));
+	}
+
 	/** Debug info for the ?debug overlay. */
 	getDebugInfo(): Record<string, unknown> {
 		const pos = this.carBody.translation();

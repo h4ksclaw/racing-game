@@ -21,3 +21,4 @@ export {
 } from "./audio-types.ts";
 export { EngineAudio } from "./EngineAudio.ts";
 export { SkidAudio } from "./SkidAudio.ts";
+export { VehicleAudio } from "./VehicleAudio.ts";

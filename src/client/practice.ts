@@ -156,8 +156,7 @@ let renderer: VehicleRenderer | null = null;
 let physicsDebug: RapierDebugRenderer | null = null;
 let cameraCtrl: CameraController;
 let world: WorldResult | null = null;
-let engineAudio: import("./audio/EngineAudio.ts").EngineAudio | null = null;
-let skidAudio: import("./audio/SkidAudio.ts").SkidAudio | null = null;
+let vehicleAudio: import("./audio/VehicleAudio.ts").VehicleAudio | null = null;
 
 function resetCar(): void {
 	if (!world || !vehicle) return;
@@ -229,7 +228,7 @@ async function buildPractice(): Promise<void> {
 
 	// Audio (starts on first user gesture)
 	const startAudio = () => {
-		if (engineAudio) return;
+		if (vehicleAudio) return;
 		const soundConfig =
 			carConfig.sound ||
 			deriveSoundConfig({
@@ -239,17 +238,12 @@ async function buildPractice(): Promise<void> {
 				turbo: carConfig.engine.turbo,
 			});
 		AudioBus.getInstance().acquire();
-		import("./audio/EngineAudio.ts")
-			.then(({ EngineAudio }) => {
-				engineAudio = new EngineAudio(soundConfig);
-				engineAudio.start();
+		import("./audio/VehicleAudio.ts")
+			.then(({ VehicleAudio }) => {
+				vehicleAudio = new VehicleAudio(soundConfig);
+				vehicleAudio.start();
 			})
-			.catch((e) => console.error("[audio] Failed to load EngineAudio:", e));
-		import("./audio/SkidAudio.ts")
-			.then(({ SkidAudio }) => {
-				skidAudio = new SkidAudio(AudioBus.getInstance());
-			})
-			.catch((e) => console.error("[audio] Failed to load SkidAudio:", e));
+			.catch((e) => console.error("[audio] Failed to load VehicleAudio:", e));
 		window.removeEventListener("keydown", startAudio);
 		window.removeEventListener("click", startAudio);
 	};
@@ -323,13 +317,21 @@ function updateDebugOverlay(v: RapierVehicleController): void {
 		debugEl = document.createElement("div");
 		debugEl.id = "debug-overlay";
 		debugEl.style.cssText =
-			"position:fixed;top:8px;left:8px;background:rgba(0,0,0,0.85);color:#0f0;font:12px/1.6 monospace;padding:10px;z-index:9999;pointer-events:none;white-space:pre;";
+			"position:fixed;top:8px;right:8px;background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.5 monospace;padding:8px 10px;z-index:9999;pointer-events:none;white-space:pre;max-width:320px;";
 		document.body.appendChild(debugEl);
 	}
 	const info = v.getDebugInfo();
-	debugEl.textContent = Object.entries(info)
-		.map(([k, val]) => `${k}: ${val}`)
-		.join("\n");
+	const lines: string[] = [];
+	lines.push(`speed ${info.speedKmh} km/h  gear ${info.gear}  steer ${info.steer}`);
+	lines.push(`rpm ${info.rpm}  heading ${info.heading}`);
+	lines.push(`pos (${info.pos})  vel (${info.vel})`);
+	lines.push(`contacts ${info.contacts}`);
+	lines.push(`susp ${info.susp}`);
+	if (info.rearGrip !== undefined) {
+		lines.push(`drift ${info.drifting}  grip ${info.rearGrip}  torque ${info.driftTorque}`);
+	}
+	lines.push(`patch ${info.patchCenter}  rails ${info.guardrails}`);
+	debugEl.textContent = lines.join("\n");
 }
 
 function initForceVecPanel(): void {
@@ -444,6 +446,7 @@ function animate(): void {
 				vehicle.state.speed,
 				vehicle.config.chassis.wheelRadius,
 				delta,
+				vehicle.getSuspensionLengths(),
 			);
 		}
 
@@ -479,19 +482,10 @@ function animate(): void {
 		}
 
 		// Audio
-		if (engineAudio) {
-			engineAudio.update(vehicle.telemetry, vehicle.getPosition());
-			AudioBus.getInstance().updateListener(vehicle.getPosition(), vehicle.getForward());
-		}
-		// Skid sound: only when drifting at speed (not low-speed braking)
-		if (skidAudio) {
+		if (vehicleAudio) {
 			const td = vehicle.tireDynState;
-			if (td && td.isDrifting && Math.abs(vehicle.state.speed) > 2.0) {
-				// Intensity based on how much rear grip is lost
-				skidAudio.update(td.driftFactor);
-			} else {
-				skidAudio.update(0);
-			}
+			const driftFactor = td?.isDrifting && Math.abs(vehicle.state.speed) > 2.0 ? td.driftFactor : 0;
+			vehicleAudio.update(vehicle.telemetry, vehicle.getPosition(), vehicle.getForward(), driftFactor);
 		}
 
 		// HUD
