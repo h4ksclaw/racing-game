@@ -237,13 +237,14 @@ export class RapierVehicleController {
 		// Nothing held = neutral coast (auto-stop via wheel brakes)
 		const wantsForward = !!input.forward && !input.backward;
 		const wantsBackward = !!input.backward && !input.forward;
-		const BRAKE_HYSTERESIS = 0.3; // m/s — above this while holding S = braking
+		const BRAKE_HYSTERESIS = 0.15; // m/s — above this while holding S = braking
 
 		let isBraking = false;
 		let isReverse = false;
 		const wantsNeutral = !wantsForward && !wantsBackward;
 		if (wantsBackward) {
-			if (localVelX > BRAKE_HYSTERESIS) {
+			if (localVelX > BRAKE_HYSTERESIS && !this._prevReverse) {
+				// Moving forward fast enough — brake (but NOT if we were already in reverse)
 				isBraking = true;
 			} else {
 				isReverse = true;
@@ -359,14 +360,16 @@ export class RapierVehicleController {
 		}
 
 		// Record forces for debug visualization (positive = forward, negative = backward)
-		const fsign = localVelX >= 0 ? 1 : -1;
-		this.forces.engine = engF * fsign;
-		this.forces.brake = brakeBodyN * -fsign;
-		this.forces.wheelBrake = rapierBrakeForce > 0 ? -rapierBrakeForce * 500 * fsign : 0;
-		this.forces.rolling = -debugRolling * fsign;
-		this.forces.aero = -debugAero * fsign;
-		this.forces.engineBrake = -debugEngineBrake * fsign;
-		this.forces.coast = -coastBodyBrakeN * fsign;
+		// engF is already signed: positive = forward drive, negative = reverse drive
+		this.forces.engine = engF;
+		// Retard forces are magnitudes; they oppose motion direction
+		const retardSign = localVelX >= 0 ? -1 : 1; // opposite of velocity
+		this.forces.brake = brakeBodyN * retardSign;
+		this.forces.wheelBrake = rapierBrakeForce > 0 ? rapierBrakeForce * 500 * retardSign : 0;
+		this.forces.rolling = debugRolling * retardSign;
+		this.forces.aero = debugAero * retardSign;
+		this.forces.engineBrake = debugEngineBrake * retardSign;
+		this.forces.coast = coastBodyBrakeN * retardSign;
 		this.forces.total =
 			this.forces.engine +
 			this.forces.brake +
