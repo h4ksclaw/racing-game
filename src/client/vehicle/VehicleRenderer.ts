@@ -311,12 +311,25 @@ export class VehicleRenderer {
 			this.brakeDiscPivots.push(discPivot);
 
 			for (const brakeMesh of brakeMeshes) {
-				// Move from wheel clone to brake disc pivot, preserving local transform.
+				// The mesh is deep inside wheelClone's hierarchy. Its local transform is
+				// relative to its immediate parent (e.g. a Group), not the pivot.
+				// We need to compute its transform relative to the pivot before reparenting.
+				brakeMesh.updateMatrixWorld(true);
+
+				// Get mesh's world matrix, then convert to pivot-local
+				const meshWorldMatrix = brakeMesh.matrixWorld.clone();
+				const pivotInverse = pivot.matrixWorld.clone().invert();
+				const localMatrix = new THREE.Matrix4().multiplyMatrices(pivotInverse, meshWorldMatrix);
+				localMatrix.decompose(brakeMesh.position, brakeMesh.quaternion, brakeMesh.scale);
+
 				brakeMesh.removeFromParent();
 				discPivot.add(brakeMesh);
+
 				console.log(
 					`[VehicleRenderer] Extracted brake disc ${i}: "${brakeMesh.name}", ` +
-						`${brakeMesh.geometry.getAttribute("position").count} verts`,
+						`${brakeMesh.geometry.getAttribute("position").count} verts, ` +
+						`localPos=(${brakeMesh.position.x.toFixed(3)}, ${brakeMesh.position.y.toFixed(3)}, ${brakeMesh.position.z.toFixed(3)}), ` +
+						`localQuat=(${brakeMesh.quaternion.x.toFixed(3)}, ${brakeMesh.quaternion.y.toFixed(3)}, ${brakeMesh.quaternion.z.toFixed(3)}, ${brakeMesh.quaternion.w.toFixed(3)})`,
 				);
 			}
 		}
