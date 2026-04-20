@@ -380,7 +380,7 @@ function updateForceArrows(v: RapierVehicleController): void {
 	for (const [name, arrow] of forceArrows) {
 		const val = (v.forces as Record<string, number>)[name] ?? 0;
 		const len = Math.abs(val) * scale;
-		arrow.visible = showForceVectors && len > 0.01;
+		arrow.visible = showForceVectors && len > 0.05; // 25N minimum to show
 		if (arrow.visible) {
 			arrow.position.copy(origin);
 			const dir = val >= 0 ? fwd.clone() : fwd.clone().negate();
