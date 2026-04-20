@@ -221,7 +221,7 @@ describe("RapierVehicleController", () => {
 
 		it("high-speed steering does not cause spinout", async () => {
 			const v = await makeVehicle(0);
-			getMoving(v, 240);
+			getMoving(v, 400);
 			expect(Math.abs(v.state.speed)).toBeGreaterThan(10.0);
 
 			for (let i = 0; i < 60; i++) {
@@ -288,7 +288,7 @@ describe("RapierVehicleController", () => {
 	describe("Gearbox downshift", () => {
 		it("downshifts when RPM drops low enough", async () => {
 			const v = await makeVehicle(0);
-			getMoving(v, 300);
+			getMoving(v, 500);
 			const gearAtSpeed = v.telemetry.gear;
 			expect(gearAtSpeed).toBeGreaterThan(0);
 
@@ -303,7 +303,7 @@ describe("RapierVehicleController", () => {
 	describe("Reverse gear state machine", () => {
 		it("brakes first — gear stays forward while car has speed", async () => {
 			const v = await makeVehicle(0);
-			getMoving(v, 120);
+			getMoving(v, 200);
 			expect(v.state.speed).toBeGreaterThan(1.0);
 
 			// Hold backward for 1 second

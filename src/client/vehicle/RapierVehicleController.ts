@@ -37,7 +37,7 @@ export type { TerrainProvider, VehicleInput } from "./types.ts";
 
 // ── Vehicle controller tuning constants ──
 const STEER_SPEED = 3.5;
-const SUS_TRAVEL = 0.3;
+
 const MAX_SUS_FORCE = 100000;
 const WHEEL_FRICTION_SLIP = 2.0;
 const WHEEL_SIDE_FRICTION = 2.5;
@@ -205,7 +205,7 @@ export class RapierVehicleController {
 			this.vehicle.setWheelSuspensionStiffness(i, chassis.suspensionStiffness);
 			this.vehicle.setWheelSuspensionCompression(i, chassis.dampingCompression);
 			this.vehicle.setWheelSuspensionRelaxation(i, chassis.dampingRelaxation);
-			this.vehicle.setWheelMaxSuspensionTravel(i, SUS_TRAVEL);
+			this.vehicle.setWheelMaxSuspensionTravel(i, chassis.maxSuspensionTravel);
 			this.vehicle.setWheelMaxSuspensionForce(i, MAX_SUS_FORCE);
 			this.vehicle.setWheelFrictionSlip(i, WHEEL_FRICTION_SLIP);
 			this.vehicle.setWheelSideFrictionStiffness(i, WHEEL_SIDE_FRICTION);
