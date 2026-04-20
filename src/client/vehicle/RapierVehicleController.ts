@@ -617,8 +617,20 @@ export class RapierVehicleController {
 		const av = this.carBody.angvel();
 		const contacts = this.countContacts();
 		const wheelData: string[] = [];
+		const suspData: string[] = [];
 		for (let i = 0; i < 4; i++) {
 			wheelData.push(this.vehicle.wheelIsInContact(i) ? "●" : "○");
+			const currentLen = this.vehicle.wheelSuspensionLength(i);
+			const restLen = this.vehicle.wheelSuspensionRestLength(i);
+			const suspForce = this.vehicle.wheelSuspensionForce(i);
+			if (currentLen !== null && restLen !== null) {
+				// Compression: positive = compressed (shorter than rest), negative = extended
+				const compression = restLen - currentLen;
+				const forceStr = suspForce !== null ? `${(suspForce / 1000).toFixed(0)}kN` : "?";
+				suspData.push(`${compression.toFixed(3)}m/${forceStr}`);
+			} else {
+				suspData.push("-");
+			}
 		}
 		return {
 			pos: `${pos.x.toFixed(1)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(1)}`,
@@ -631,6 +643,7 @@ export class RapierVehicleController {
 			gear: this.state.gear,
 			steer: `${((this.steerAngle * 180) / Math.PI).toFixed(1)}°`,
 			contacts: `${contacts}/4 [${wheelData.join(" ")}]`,
+			susp: `[${suspData.join(" | ")}]`,
 			suspRest: this._config.chassis.suspensionRestLength,
 			wheelRadius: this._config.chassis.wheelRadius,
 			wheelY: -this._config.chassis.halfExtents[1] * 0.5,
