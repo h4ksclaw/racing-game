@@ -307,6 +307,7 @@ const FORCE_COLORS: Record<string, number> = {
 	aero: 0x00ccff, // cyan
 	engineBrake: 0xff00ff, // magenta
 	coast: 0xffff00, // yellow
+	offRoad: 0x88ff44, // lime green
 	total: 0xffffff, // white
 };
 const forceArrows: Map<string, THREE.ArrowHelper> = new Map();

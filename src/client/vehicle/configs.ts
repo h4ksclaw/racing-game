@@ -153,10 +153,10 @@ export interface CarModelSchema {
 
 /** Default off-road behavior when CarConfig.offRoad is omitted. */
 export const DEFAULT_OFF_ROAD: OffRoadSpec = {
-	dragPerWheel: 0.75,
+	dragPerWheel: 0.19,
 	minSpeed: 0.5,
-	bumpAmplitude: 0.3,
-	bumpAmplitudeOuter: 0.15,
+	bumpAmplitude: 0.15,
+	bumpAmplitudeOuter: 0.075,
 	bumpFrequency: 0.5,
 };
 

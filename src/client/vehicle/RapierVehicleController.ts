@@ -98,6 +98,7 @@ export class RapierVehicleController {
 		aero: number;
 		engineBrake: number;
 		coast: number;
+		offRoad: number;
 		total: number;
 	} = {
 		engine: 0,
@@ -105,6 +106,7 @@ export class RapierVehicleController {
 		wheelBrake: 0,
 		rolling: 0,
 		aero: 0,
+		offRoad: 0,
 		engineBrake: 0,
 		coast: 0,
 		total: 0,
@@ -358,11 +360,11 @@ export class RapierVehicleController {
 			}
 		}
 		const offRoadDragCoeff = wheelsOffRoad > 0 && offRoadCfg ? offRoadCfg.dragPerWheel * wheelsOffRoad : 0;
-		if (offRoadDragCoeff > 0) {
-			const dragForce = offRoadDragCoeff * speedMs * speedMs;
+		const offRoadForce = offRoadDragCoeff * speedMs * speedMs;
+		if (offRoadForce > 0) {
 			if (speedMs > 0.01) {
-				const dragImpulseX = -(vx / speedMs) * dragForce * dt;
-				const dragImpulseZ = -(vz / speedMs) * dragForce * dt;
+				const dragImpulseX = -(vx / speedMs) * offRoadForce * dt;
+				const dragImpulseZ = -(vz / speedMs) * offRoadForce * dt;
 				this.carBody.applyImpulse({ x: dragImpulseX, y: 0, z: dragImpulseZ }, true);
 			}
 		}
@@ -375,6 +377,7 @@ export class RapierVehicleController {
 		this.forces.aero = fc.forcesDebug.aero;
 		this.forces.engineBrake = fc.forcesDebug.engineBrake;
 		this.forces.coast = fc.forcesDebug.coast;
+		this.forces.offRoad = offRoadForce;
 		this.forces.total =
 			this.forces.engine +
 			this.forces.brake +
@@ -383,7 +386,7 @@ export class RapierVehicleController {
 			this.forces.aero +
 			this.forces.engineBrake +
 			this.forces.coast +
-			(wheelsOffRoad > 0 ? offRoadDragCoeff * speedMs * speedMs : 0);
+			offRoadForce;
 
 		// DIAG
 		if (!this._diagTimer) this._diagTimer = 0;
