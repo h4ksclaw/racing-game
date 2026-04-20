@@ -206,10 +206,11 @@ export class TerrainSampler {
 		return delta;
 	}
 
-	/** High-frequency noise for bumpy off-road surface. Two octaves for variation. */
+	/** High-frequency noise for bumpy off-road surface. Only produces downward displacement. */
 	private offRoadNoise(x: number, z: number, amplitude: number): number {
 		const f = this.offRoad.bumpFrequency;
-		return (this.noise2D(x * f, z * f) * 0.6 + this.noise2D(x * f * 2.4, z * f * 2.4) * 0.4) * amplitude;
+		const raw = this.noise2D(x * f, z * f) * 0.6 + this.noise2D(x * f * 2.4, z * f * 2.4) * 0.4;
+		return -Math.abs(raw) * amplitude;
 	}
 	nearestRoad(x: number, z: number): { dist: number; sample: TrackSample; sampleIndex: number } {
 		const cx = Math.floor(x / this.CELL_SIZE);
