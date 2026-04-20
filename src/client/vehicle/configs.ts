@@ -168,6 +168,13 @@ export interface CarConfig {
 	readonly chassis: ChassisSpec;
 	/** Optional sound profile. If omitted, derived from engine specs. */
 	readonly sound?: EngineSoundConfig;
+	/** Custom suspension parameters for differential loading (weight transfer). */
+	readonly suspension?: {
+		/** Spring constant per wheel (N/m). Default 5000. */
+		readonly customStiffness?: number;
+		/** Damping coefficient per wheel (N·s/m). Default 300. */
+		readonly customDamping?: number;
+	};
 }
 
 // ─── Presets ───────────────────────────────────────────────────────────

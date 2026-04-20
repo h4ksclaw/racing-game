@@ -25,6 +25,7 @@ import { EngineUnit } from "./engine/EngineUnit.ts";
 import { Guardrails } from "./rapier-guardrails.ts";
 import { TerrainCollider } from "./rapier-terrain-collider.ts";
 import { Brakes } from "./suspension/Brakes.ts";
+import { CustomSuspension } from "./suspension/CustomSuspension.ts";
 import type { TireDynamicsState } from "./tires/TireDynamics.ts";
 import { TireDynamics } from "./tires/TireDynamics.ts";
 import type { EngineTelemetry, TerrainProvider, VehicleInput, VehicleState } from "./types.ts";
@@ -37,7 +38,7 @@ const SUS_TRAVEL = 0.3;
 const MAX_SUS_FORCE = 100000;
 const WHEEL_FRICTION_SLIP = 2.0;
 const WHEEL_SIDE_FRICTION = 2.5;
-const ANGULAR_DAMPING = 5.0;
+const ANGULAR_DAMPING = 1.0;
 const PHYSICS_SUBSTEPS = 2;
 const YAW_DAMP_RATE = 15.0;
 
@@ -63,6 +64,7 @@ export class RapierVehicleController {
 	private readonly brakes: Brakes;
 	private readonly drag: DragModel;
 	private readonly tireDynamics: TireDynamics;
+	private readonly customSuspension: CustomSuspension;
 	private readonly _config: CarConfig;
 
 	private terrain: TerrainProvider | null = null;
@@ -116,6 +118,10 @@ export class RapierVehicleController {
 			tires: config.tires,
 			wheelIndices: { fl: 0, fr: 1, rl: 2, rr: 3 },
 		});
+		this.customSuspension = new CustomSuspension({
+			stiffness: config.suspension?.customStiffness ?? 5000,
+			damping: config.suspension?.customDamping ?? 300,
+		});
 		this.state = {
 			speed: 0,
 			rpm: config.engine.idleRPM,
@@ -140,7 +146,7 @@ export class RapierVehicleController {
 		const { wheelRadius, mass, halfExtents } = chassis;
 		const [halfW, halfH, halfD] = halfExtents;
 
-		// Car body — high angular damping suppresses unwanted roll/pitch
+		// Car body — moderate angular damping allows realistic pitch/roll while preventing spin
 		this.carBody = this.world.createRigidBody(
 			RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 3, 0).setLinearDamping(0.0).setAngularDamping(ANGULAR_DAMPING),
 		);
@@ -165,11 +171,12 @@ export class RapierVehicleController {
 		const wl = halfW * 0.85;
 		const wy = -halfH;
 		const wheelOpts = [
-			{ x: -wl, z: halfD * 0.7 },
-			{ x: wl, z: halfD * 0.7 },
-			{ x: -wl, z: -halfD * 0.7 },
-			{ x: wl, z: -halfD * 0.7 },
+			{ x: -wl, y: wy, z: halfD * 0.7 },
+			{ x: wl, y: wy, z: halfD * 0.7 },
+			{ x: -wl, y: wy, z: -halfD * 0.7 },
+			{ x: wl, y: wy, z: -halfD * 0.7 },
 		];
+		this.customSuspension.setAnchors(wheelOpts);
 		for (const wo of wheelOpts) {
 			this.vehicle.addWheel(
 				{ x: wo.x, y: wy, z: wo.z },
@@ -494,6 +501,10 @@ export class RapierVehicleController {
 		for (let i = 0; i < PHYSICS_SUBSTEPS; i++) {
 			this.vehicle.updateVehicle(substepDt);
 			this.world.step();
+			// CustomSuspension disabled: Rapier reports uniform compression across all wheels,
+			// so differential forces have zero input. The system was causing body oscillation.
+			// Re-enable when weight transfer data is fed in from braking/acceleration forces.
+			// this.customSuspension.apply(this.vehicle, this.carBody, chassis.suspensionRestLength, substepDt);
 		}
 
 		// ── Post-step tire dynamics ──
@@ -623,6 +634,7 @@ export class RapierVehicleController {
 		const contacts = this.countContacts();
 		const wheelData: string[] = [];
 		const suspData: string[] = [];
+		const wheelBotYs: string[] = [];
 		for (let i = 0; i < 4; i++) {
 			wheelData.push(this.vehicle.wheelIsInContact(i) ? "●" : "○");
 			const currentLen = this.vehicle.wheelSuspensionLength(i);
@@ -633,8 +645,13 @@ export class RapierVehicleController {
 				const compression = restLen - currentLen;
 				const forceStr = suspForce !== null ? `${(suspForce / 1000).toFixed(0)}kN` : "?";
 				suspData.push(`${compression.toFixed(3)}m/${forceStr}`);
+				// Physics wheel bottom world-Y
+				const anchorY = -this._config.chassis.halfExtents[1];
+				const wbY = pos.y + anchorY - currentLen - this._config.chassis.wheelRadius;
+				wheelBotYs.push(wbY.toFixed(3));
 			} else {
 				suspData.push("-");
+				wheelBotYs.push("?");
 			}
 		}
 		return {
@@ -642,6 +659,8 @@ export class RapierVehicleController {
 			vel: `${vel.x.toFixed(2)}, ${vel.y.toFixed(2)}, ${vel.z.toFixed(2)}`,
 			angvel: `${av.x.toFixed(3)}, ${av.y.toFixed(3)}, ${av.z.toFixed(3)}`,
 			heading: `${((this.getHeading() * 180) / Math.PI).toFixed(1)}°`,
+			pitch: `${((Math.atan2(2 * (this.carBody.rotation().w * this.carBody.rotation().x + this.carBody.rotation().y * this.carBody.rotation().z), 1 - 2 * (this.carBody.rotation().x ** 2 + this.carBody.rotation().y ** 2)) * 180) / Math.PI).toFixed(2)}°`,
+			roll: `${((Math.atan2(2 * (this.carBody.rotation().w * this.carBody.rotation().z + this.carBody.rotation().x * this.carBody.rotation().y), 1 - 2 * (this.carBody.rotation().y ** 2 + this.carBody.rotation().z ** 2)) * 180) / Math.PI).toFixed(2)}°`,
 			speed: this.state.speed.toFixed(1),
 			speedKmh: `${(Math.abs(this.state.speed) * 3.6).toFixed(0)}`,
 			rpm: this.state.rpm.toFixed(0),
@@ -650,6 +669,7 @@ export class RapierVehicleController {
 			contacts: `${contacts}/4 [${wheelData.join(" ")}]`,
 			susp: `[${suspData.join(" | ")}]`,
 			suspRest: this._config.chassis.suspensionRestLength,
+			wheelBotY: `[${wheelBotYs.join(" ")}]`,
 			wheelRadius: this._config.chassis.wheelRadius,
 			wheelY: -this._config.chassis.halfExtents[1] * 0.5,
 			patchCenter: `${this.terrainCollider?.patchCenterX.toFixed(0) ?? "?"}, ${this.terrainCollider?.patchCenterZ.toFixed(0) ?? "?"}`,
@@ -685,6 +705,7 @@ export class RapierVehicleController {
 			onGround: true,
 		};
 		this.telemetry = this.engineUnit.getTelemetry(0);
+		this.customSuspension.reset();
 
 		// Force immediate ground + guardrail rebuild at reset position
 		if (this.terrain) {

@@ -327,6 +327,7 @@ function updateDebugOverlay(v: RapierVehicleController): void {
 	lines.push(`pos (${info.pos})  vel (${info.vel})`);
 	lines.push(`contacts ${info.contacts}`);
 	lines.push(`susp ${info.susp}`);
+	lines.push(`wheelBotY ${info.wheelBotY}  radius ${info.wheelRadius}`);
 	if (info.rearGrip !== undefined) {
 		lines.push(`drift ${info.drifting}  grip ${info.rearGrip}  torque ${info.driftTorque}`);
 	}

@@ -29,7 +29,13 @@ export class VehicleRenderer {
 	headlights: THREE.SpotLight[] = [];
 	private _modelGroundOffset = 0;
 	private _suspRestLength = 0;
-	private _wheelBaseY: [number, number, number, number] = [0, 0, 0, 0];
+	/** Full local positions of wheel pivots (set at load time). Used for pitch/roll visual compensation. */
+	private _wheelBasePos: [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3] = [
+		new THREE.Vector3(),
+		new THREE.Vector3(),
+		new THREE.Vector3(),
+		new THREE.Vector3(),
+	];
 	private config: CarConfig;
 	private readonly schema: CarModelSchema;
 	/** Per-wheel brake disc data — axle direction in disc-local frame + base quaternion. */
@@ -259,10 +265,10 @@ export class VehicleRenderer {
 				);
 			}
 
-			// Store base Y positions for suspension visual offset and rest length
+			// Store full base positions for suspension visual + pitch/roll compensation.
 			this._suspRestLength = this.config.chassis.suspensionRestLength;
 			for (let wi = 0; wi < 4; wi++) {
-				this._wheelBaseY[wi] = this.wheelMeshes[wi].position.y;
+				this._wheelBasePos[wi].copy(this.wheelMeshes[wi].position);
 			}
 
 			this.extractBrakeDiscs();
@@ -727,19 +733,41 @@ export class VehicleRenderer {
 			const steer = i < 2 ? steerAngle : 0;
 			this.wheelSpinAngles[i] += (speed / wheelRadius) * dt;
 
-			// Suspension visual: offset wheel vertically based on compression.
-			// Rapier suspension length = distance from chassis mount to contact point.
-			// When compressed (shorter than rest), wheel pushes closer to body —
-			// but visually the wheel should move DOWN (away from body) relative to it.
-			// We store the base Y from load time and offset from there.
+			// ── Wheel vertical positioning ──
+			// Three factors determine each wheel's local Y:
+			//   1. Base position (set at load time when body is level)
+			//   2. Rapier suspension compression (bumps, load changes)
+			//   3. Body pitch/roll compensation (keeps wheels at ground level)
+			//
+			// WHY compensation: Wheels are children of the car model. When the body
+			// pitches forward, the front pivot's world-Y drops. But Rapier reports
+			// the same suspension length for all wheels (no differential loading),
+			// so without compensation the front wheel goes underground.
+			// We compute how much the body rotation shifts each wheel's world-Y
+			// and subtract that shift from the pivot's local Y.
+
+			const basePos = this._wheelBasePos[i];
+			let suspOffset = 0;
 			if (suspLengths && suspLengths[i] !== null && this._suspRestLength > 0) {
-				// Compression = rest - current. Positive means wheel pushed up (shorter travel).
-				// Visually offset wheel pivot DOWN by compression so it appears to absorb the bump.
-				const compression = this._suspRestLength - suspLengths[i]!;
-				pivot.position.y = this._wheelBaseY[i] - compression;
-			} else {
-				pivot.position.y = this._wheelBaseY[i];
+				// Offset wheel DOWN by the full current suspension length so it tracks
+				// the physics wheel position. The GLB wheel positions assume wheels
+				// at ride height (anchor level); physics has them at anchor - susLen.
+				suspOffset = -(suspLengths[i] as number);
 			}
+
+			// Compute body rotation's effect on this wheel's world-Y.
+			// The model quaternion is already set above, so we can use it directly.
+			// Rotated Y = Q × basePos, Y component. Original Y = basePos.y.
+			// Shift = rotated.y - original.y (positive = wheel moved up from rotation).
+			// We negate the shift to compensate (if wheel moved up, reduce local Y).
+			const modelQ = this.model.quaternion;
+			const rotY =
+				2 * (modelQ.x * modelQ.y + modelQ.w * modelQ.z) * basePos.x +
+				(1 - 2 * (modelQ.x * modelQ.x + modelQ.z * modelQ.z)) * basePos.y +
+				2 * (modelQ.y * modelQ.z - modelQ.w * modelQ.x) * basePos.z;
+			const yShift = rotY - basePos.y;
+
+			pivot.position.y = basePos.y + suspOffset - yShift;
 
 			// Inner wheel clone rotation is baked at load time (Y rotation for axle alignment).
 			// Pivot: spin around X (axle), steer around Y.
