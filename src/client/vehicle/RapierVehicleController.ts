@@ -254,8 +254,8 @@ export class RapierVehicleController {
 		engine.throttle = wantsForward ? 1 : isReverse ? 0.5 : 0;
 		if (wantsNeutral) {
 			gearbox.effectiveRatio = 0; // neutral = no gear ratio = no engine braking
-		} else {
-			gearbox.update(dt, engine, localVelX, isBraking);
+		} else if (!isReverse) {
+			gearbox.update(dt, engine, localVelX, isBraking); // skip during reverse — R is one fixed ratio
 		}
 		engine.update(localVelX, gearbox.effectiveRatio, chassis.wheelRadius, dt);
 
@@ -319,8 +319,8 @@ export class RapierVehicleController {
 			// Reverse: 1st gear ratio * final drive, reduced for realistic feel
 			const firstGearRatio = this._config.gearbox.gearRatios[0] || 3.5;
 			const reverseRatio = engineSpec.finalDrive * firstGearRatio;
-			engF = -(engineSpec.torqueNm * 0.3 * reverseRatio * engine.getTorqueMultiplier()) / chassis.wheelRadius;
-			engF = Math.max(engF, -tractionPerWheel * 0.6);
+			engF = -(engineSpec.torqueNm * 0.45 * reverseRatio * engine.getTorqueMultiplier()) / chassis.wheelRadius;
+			engF = Math.max(engF, -tractionPerWheel * 1.5);
 		}
 		// else: neutral — engF stays 0
 

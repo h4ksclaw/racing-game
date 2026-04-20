@@ -162,12 +162,18 @@ describe("RapierVehicleController", () => {
 		it("significantly reduces speed with sustained braking", async () => {
 			const v = await makeVehicle(0);
 			getMoving(v, 180);
+			const startSpeed = v.state.speed;
 
+			let minSpeed = startSpeed;
 			for (let i = 0; i < 300; i++) {
 				v.update(flatInput({ backward: true }), 1 / 60);
+				minSpeed = Math.min(minSpeed, Math.abs(v.state.speed));
 			}
 
-			expect(Math.abs(v.state.speed)).toBeLessThan(15);
+			// Car should have come to near-stop before entering reverse
+			expect(minSpeed).toBeLessThan(1.0);
+			// After 5s of holding S: either stopped or in reverse
+			expect(v.state.speed).toBeLessThan(0); // in reverse by now
 		});
 	});
 
