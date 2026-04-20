@@ -4,6 +4,7 @@
 
 export { DragModel } from "./aero/DragModel.ts";
 export { Chassis } from "./chassis/Chassis.ts";
+
 // Types and configs
 export {
 	type BrakeSpec,
@@ -19,14 +20,17 @@ export {
 	SPORTS_CAR,
 	type TireSpec,
 } from "./configs.ts";
+
+// Engine subsystem (used by RapierVehicleController via EngineUnit)
 export { Engine } from "./engine/Engine.ts";
-// Subsystems
 export { EngineUnit } from "./engine/EngineUnit.ts";
 export { Gearbox } from "./engine/Gearbox.ts";
+
 // Composition root — Rapier is the default now
 export { RapierVehicleController } from "./RapierVehicleController.ts";
+// Brakes (used by RapierVehicleController)
 export { Brakes } from "./suspension/Brakes.ts";
-export { frictionCircleClamp, pacejka, TireModel } from "./suspension/TireModel.ts";
+// Shared types
 export {
 	DEFAULT_INPUT,
 	type EngineTelemetry,
@@ -37,4 +41,3 @@ export {
 	type WheelVisual,
 } from "./types.ts";
 export { VehicleRenderer } from "./VehicleRenderer.ts";
-export { TerrainHandler, type TerrainSample } from "./world/TerrainHandler.ts";
