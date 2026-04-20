@@ -302,6 +302,7 @@ let showForceVectors = true;
 const FORCE_COLORS: Record<string, number> = {
 	engine: 0x00ff00, // green
 	brake: 0xff0000, // red
+	wheelBrake: 0xff4444, // light red (Rapier native — usually ineffective)
 	rolling: 0xff8800, // orange
 	aero: 0x00ccff, // cyan
 	engineBrake: 0xff00ff, // magenta

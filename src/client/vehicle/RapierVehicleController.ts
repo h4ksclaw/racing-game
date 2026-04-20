@@ -82,6 +82,7 @@ export class RapierVehicleController {
 	forces: {
 		engine: number;
 		brake: number;
+		wheelBrake: number;
 		rolling: number;
 		aero: number;
 		engineBrake: number;
@@ -90,6 +91,7 @@ export class RapierVehicleController {
 	} = {
 		engine: 0,
 		brake: 0,
+		wheelBrake: 0,
 		rolling: 0,
 		aero: 0,
 		engineBrake: 0,
@@ -254,8 +256,12 @@ export class RapierVehicleController {
 		// ── Wheel brake force (Rapier native) ──
 		let rapierBrakeForce = 0;
 		let coastBodyBrakeN = 0; // body impulse for neutral coast deceleration
+		let brakeBodyN = 0; // body impulse for active braking
 		if (isBraking || input.handbrake) {
 			rapierBrakeForce = input.handbrake ? 8.0 : 5.0;
+			// Aggressive body brake since Rapier setWheelBrake is ineffective
+			const brakeG = input.handbrake ? this._config.brakes.handbrakeG : this._config.brakes.maxBrakeG;
+			brakeBodyN = brakeG * chassis.mass * 9.81;
 		} else if (!wantsForward && !wantsBackward && localVelX > 0.1) {
 			// Neutral coast (forward only): moderate body impulse for auto creep-stop
 			const speedFactor = Math.min(1.0, localVelX / 5.0);
@@ -308,7 +314,7 @@ export class RapierVehicleController {
 							(engine.rpm / engine.config.maxRPM)) /
 						chassis.wheelRadius
 					: 0;
-			totalRetard = debugEngineBrake + debugRolling + debugAero + coastBodyBrakeN;
+			totalRetard = debugEngineBrake + debugRolling + debugAero + coastBodyBrakeN + brakeBodyN;
 			totalRetard = Math.min(totalRetard, TIRE_MU * chassis.mass * 9.81);
 		}
 		if (totalRetard > 0 && Math.abs(localVelX) > 0.01) {
@@ -320,7 +326,8 @@ export class RapierVehicleController {
 		// Record forces for debug visualization (positive = forward, negative = backward)
 		const fsign = localVelX >= 0 ? 1 : -1;
 		this.forces.engine = engF * fsign;
-		this.forces.brake = rapierBrakeForce > 0 ? -rapierBrakeForce * 500 * fsign : 0;
+		this.forces.brake = brakeBodyN * -fsign;
+		this.forces.wheelBrake = rapierBrakeForce > 0 ? -rapierBrakeForce * 500 * fsign : 0;
 		this.forces.rolling = -debugRolling * fsign;
 		this.forces.aero = -debugAero * fsign;
 		this.forces.engineBrake = -debugEngineBrake * fsign;
@@ -328,6 +335,7 @@ export class RapierVehicleController {
 		this.forces.total =
 			this.forces.engine +
 			this.forces.brake +
+			this.forces.wheelBrake +
 			this.forces.rolling +
 			this.forces.aero +
 			this.forces.engineBrake +
