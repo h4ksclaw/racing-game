@@ -16,7 +16,6 @@ export default defineConfig({
 				world: resolve(__dirname, "world.html"),
 				practice: resolve(__dirname, "practice.html"),
 				garage: resolve(__dirname, "garage.html"),
-				"physics-debug": resolve(__dirname, "physics-debug.html"),
 			},
 		},
 	},
