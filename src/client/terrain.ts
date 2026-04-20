@@ -63,6 +63,12 @@ export class TerrainSampler {
 	private readonly blendStart = 20;
 	flattenZones: FlattenZone[] = [];
 
+	// Road cross-section dimensions (must match track.ts defaults)
+	private roadHalfWidth = 4.0;
+	private kerbWidth = 0.8;
+	private shoulderWidth = 2.0;
+	private edgeDropMax = 0.15;
+
 	constructor(
 		seed: number,
 		samples: TrackSample[],
@@ -106,6 +112,36 @@ export class TerrainSampler {
 		return value / maxVal;
 	}
 
+	/**
+	 * Cross-section height delta relative to road center surface.
+	 * Returns how much higher/lower than the road surface this lateral position should be.
+	 * Kerbs are slightly raised, shoulders slightly lower, edge drops off.
+	 */
+	private crossSectionDelta(distFromCenter: number): number {
+		const kerbEdge = this.roadHalfWidth + this.kerbWidth;
+		const guardrailDist = kerbEdge + this.shoulderWidth;
+
+		if (distFromCenter <= this.roadHalfWidth) {
+			// On road — flat, no delta
+			return 0;
+		}
+		if (distFromCenter <= kerbEdge) {
+			// Kerb zone — raised above road
+			const t = (distFromCenter - this.roadHalfWidth) / this.kerbWidth;
+			return 0.01 * t; // ramps up to +0.01m at kerb outer edge
+		}
+		if (distFromCenter <= guardrailDist) {
+			// Shoulder/grass — slightly below road
+			const t = (distFromCenter - kerbEdge) / this.shoulderWidth;
+			// Transition from kerb level (+0.01) down to shoulder level (-0.02)
+			return 0.01 * (1 - t) + -0.02 * t;
+		}
+		// Past guardrail — concrete slab drops off toward terrain
+		const slabExtent = 0.75;
+		const t = Math.min(1, (distFromCenter - guardrailDist) / slabExtent);
+		// Quadratic drop from -0.02 to -0.17
+		return -0.02 - this.edgeDropMax * t * t;
+	}
 	nearestRoad(x: number, z: number): { dist: number; sample: TrackSample; sampleIndex: number } {
 		const cx = Math.floor(x / this.cellSize);
 		const cz = Math.floor(z / this.cellSize);
@@ -148,6 +184,20 @@ export class TerrainSampler {
 		return prev.point.y * (1 - st) + next.point.y * st;
 	}
 
+	getNearestSample(
+		x: number,
+		z: number,
+	): { sample: TrackSample; sampleIndex: number; dist: number; distFromCenter: number } {
+		const { sample, sampleIndex, dist } = this.nearestRoad(x, z);
+		// Cross-product lateral distance (tangent is normalized, so this is exact)
+		const toX = x - sample.point.x;
+		const toZ = z - sample.point.z;
+		const tx = sample.tangent?.x ?? 0;
+		const tz = sample.tangent?.z ?? 1;
+		const lateralDist = tz * toX - tx * toZ;
+		return { sample, sampleIndex, dist, distFromCenter: Math.abs(lateralDist) };
+	}
+
 	getHeight(x: number, z: number): number {
 		// Quantize to 0.25m grid for caching (smooth enough for driving)
 		const qx = Math.round(x * 4) / 4;
@@ -156,7 +206,7 @@ export class TerrainSampler {
 		const cached = this.heightCache.get(cacheKey);
 		if (cached !== undefined) return cached;
 
-		const { dist } = this.nearestRoad(x, z);
+		const { dist, distFromCenter } = this.getNearestSample(x, z);
 		const roadY = this.roadHeight(x, z);
 		const centerDist = Math.sqrt(x * x + z * z);
 		const mountainFactor = 1 + smoothstep(this.worldRadius * 0.75, this.worldRadius, centerDist) * this.mountainAmp;
@@ -165,7 +215,17 @@ export class TerrainSampler {
 		const blendedY = roadY * (1 - blend) + (this.avgRoadY + noiseH) * blend;
 		// Clamp height difference to prevent cliffs: max 0.4m rise per 1m from road
 		const maxSlope = dist * 0.4;
-		const result = Math.max(roadY - maxSlope, Math.min(roadY + maxSlope, blendedY)) - 0.3;
+		const baseY = Math.max(roadY - maxSlope, Math.min(roadY + maxSlope, blendedY)) - 0.3;
+
+		// Cross-section profile: kerb raised, shoulder lower, edge drop
+		// Fades out with distance from road to blend smoothly into terrain
+		const guardrailDist = this.roadHalfWidth + this.kerbWidth + this.shoulderWidth;
+		const inCrossSection = distFromCenter < guardrailDist + 0.75;
+		// 1.0 when on road, fades to 0 at 50m from road
+		const crossSectionFade = 1 - smoothstep(this.blendStart, this.roadInfluence, dist);
+		const crossSection =
+			inCrossSection && crossSectionFade > 0.01 ? this.crossSectionDelta(distFromCenter) * crossSectionFade : 0;
+		const result = baseY + crossSection;
 
 		// Apply flatten zones
 		let finalY = result;
