@@ -264,9 +264,39 @@ export class RapierVehicleController {
 		let brakeBodyN = 0; // body impulse for active braking
 		if (isBraking || input.handbrake) {
 			rapierBrakeForce = input.handbrake ? 8.0 : 5.0;
-			// Aggressive body brake since Rapier setWheelBrake is ineffective
-			const brakeG = input.handbrake ? this._config.brakes.handbrakeG : this._config.brakes.maxBrakeG;
-			brakeBodyN = brakeG * chassis.mass * 9.81;
+
+			// Speed-dependent braking model (Pacejka-lite)
+			// Peak tire grip occurs at moderate slip ratios. At very low speed,
+			// tires approach lock-up — ABS-like modulation reduces peak slightly.
+			// Weight transfer: front axle gains load under braking (front-biased).
+			const absKmh = 5; // below this, ABS-like taper to prevent jerk
+			const isHandbrake = !!input.handbrake;
+			const baseMu = isHandbrake ? this._config.brakes.handbrakeG : this._config.brakes.maxBrakeG;
+
+			// Weight transfer factor: at high decel, ~60/40 front/rear split
+			// Effective mu is slightly less than baseMu due to load sensitivity
+			// mu_eff ~ mu * (Fz / Fz0)^0.85 — since total Fz doesn't change,
+			// but distribution does. We use an average: front gets more, rear less.
+			// Net effect: ~5% reduction from ideal for the average axle.
+			const loadSensitivityFactor = 0.95;
+
+			// Speed-dependent grip: tires have slightly less grip at very low speed
+			// due to reduced aero downforce and thermal effects (minor for street cars)
+			// But more importantly: at very low speed, the ratio of brake torque
+			// to vehicle KE is high, so small changes feel large.
+			const speedKmh = Math.abs(localVelX) * 3.6;
+			const lowSpeedFactor =
+				speedKmh < absKmh
+					? 0.6 + 0.4 * (speedKmh / absKmh) // taper from 0.6g to 1.0g
+					: 1.0;
+
+			// High-speed aero effect: slight downforce increase at speed helps braking
+			const highSpeedFactor =
+				speedKmh > 100
+					? 1.0 + 0.1 * Math.min(1.0, (speedKmh - 100) / 100) // up to +10% at 200 km/h
+					: 1.0;
+
+			brakeBodyN = baseMu * loadSensitivityFactor * lowSpeedFactor * highSpeedFactor * chassis.mass * 9.81;
 		} else if (!wantsForward && !wantsBackward && localVelX > 0.1) {
 			// Neutral coast (forward only): moderate body impulse for auto creep-stop
 			const speedFactor = Math.min(1.0, localVelX / 5.0);
