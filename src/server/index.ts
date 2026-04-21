@@ -17,7 +17,7 @@ import express from "express";
 import multer from "multer";
 import { generateTrack } from "../shared/track.ts";
 import { createUploadMiddleware, processUploadedFile, promoteAsset, serveAsset } from "./assets.ts";
-import { insertCarImport } from "./db.js";
+import { _getDbForTesting, insertCarImport } from "./db.js";
 import {
 	deleteAttribution,
 	filterCars,
@@ -552,6 +552,23 @@ app.get("/api/cars/random", (req, res) => {
 	res.json(maybePredict(car, req.query.predict === "true"));
 });
 
+/** Get all cars ready for in-game use (have S3 models). */
+app.get("/api/cars/game", (_req, res) => {
+	const db = _getDbForTesting();
+	const rows = db
+		.prepare(`
+			SELECT cc.id AS configId, cc.asset_id AS assetId,
+				cc.config_json, cc.model_schema_json, cc.physics_overrides_json,
+				a.s3_key
+			FROM car_configs cc
+			JOIN assets a ON a.id = cc.asset_id
+			WHERE a.s3_key IS NOT NULL
+			ORDER BY cc.created_date DESC
+		`)
+		.all() as Record<string, unknown>[];
+	res.json(rows);
+});
+
 app.get("/api/cars/:id", (req, res) => {
 	const car = getCarById(Number(req.params.id));
 	if (!car) {
@@ -564,8 +581,8 @@ app.get("/api/cars/:id", (req, res) => {
 // ── S3 proxy & upload routes ──────────────────────────────────────
 
 /** Serve a private S3 object by key (e.g. cars/abc123.glb). */
-app.get("/api/s3/:key(*)", async (req, res) => {
-	const key = (req.params as Record<string, string>).key;
+app.get(/^\/api\/s3\/(.+)$/, async (req, res) => {
+	const key = (req.params as Record<string, string>)[0];
 	if (!key || key.includes("..")) {
 		res.status(400).json({ error: "Invalid key" });
 		return;

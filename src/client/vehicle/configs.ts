@@ -391,3 +391,33 @@ export const SPORTS_CAR: CarConfig = {
 		weightFront: 0.53,
 	},
 };
+
+// ─── Dynamic config factory ─────────────────────────────────────────
+
+import type { CarRegistryEntry } from "../editor/car-registry.ts";
+
+/** Parse JSON string safely, falling back to a default. */
+function parseJson<T>(val: string | null, fallback: T): T {
+	if (!val) return fallback;
+	try {
+		return JSON.parse(val) as T;
+	} catch {
+		return fallback;
+	}
+}
+
+/** Convert a DB registry entry into a CarConfig for VehicleRenderer. */
+export function createCarConfigFromDb(entry: CarRegistryEntry): CarConfig {
+	const base = parseJson<CarConfig>(entry.config_json, SPORTS_CAR);
+	const schema = entry.model_schema_json
+		? parseJson<CarModelSchema>(entry.model_schema_json, {} as CarModelSchema)
+		: undefined;
+	const overrides = parseJson<Partial<CarConfig>>(entry.physics_overrides_json, {});
+
+	return {
+		...base,
+		modelPath: `/api/s3/${encodeURIComponent(entry.s3_key)}`,
+		...(schema ? { modelSchema: schema } : {}),
+		...overrides,
+	};
+}
