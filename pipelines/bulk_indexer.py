@@ -80,6 +80,7 @@ WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
 # Rate limiting: FuelEconomy.gov seems tolerant, 50ms between spec fetches
 FE_SPEC_DELAY = 0.05
 FE_MENU_DELAY = 0.1
+FE_MAKE_WORKERS = 8  # parallel makes per year
 
 
 def fe_get(path, max_retries=3, backoff=2.0):
@@ -218,15 +219,77 @@ def parse_fe_spec(xml_root, make, model, year):
 # FuelEconomy bulk indexer
 # ---------------------------------------------------------------------------
 
+def _process_make_fe(year, make_name, make_val, dry_run, conn, db_lock, max_cars, counter):
+    """Process all models/options for a single make within a year.
+    Thread-safe: uses db_lock for writes, counter (thread-safe list) for totals.
+    """
+    make_count = 0
+    make_skipped = 0
+
+    models_xml = fe_get(f"/menu/model?year={year}&make={urllib.parse.quote(make_val)}")
+    if models_xml is None:
+        return
+    models = [(i.find("text").text, i.find("value").text)
+              for i in models_xml.findall(".//menuItem")
+              if i.find("text").text and i.find("value").text]
+    time.sleep(FE_MENU_DELAY)
+
+    for model_name, model_val in models:
+        if max_cars and counter[0] >= max_cars:
+            break
+
+        opts_xml = fe_get(
+            f"/menu/options?year={year}&make={urllib.parse.quote(make_val)}"
+            f"&model={urllib.parse.quote(model_val)}"
+        )
+        if opts_xml is None:
+            continue
+        options = [(i.find("text").text, i.find("value").text)
+                   for i in opts_xml.findall(".//menuItem")
+                   if i.find("value").text]
+
+        for opt_text, vid in options:
+            if not vid:
+                continue
+            if max_cars and counter[0] >= max_cars:
+                break
+
+            spec_xml = fe_get(f"/{vid}")
+            if spec_xml is None:
+                time.sleep(FE_SPEC_DELAY)
+                continue
+
+            car = parse_fe_spec(spec_xml, make_name, model_name, year)
+            if car is None:
+                make_skipped += 1
+                time.sleep(FE_SPEC_DELAY)
+                continue
+
+            make_count += 1
+            counter[0] += 1
+            if counter[0] % 100 == 0:
+                print(f"    ... {counter[0]} cars (year {year}, {make_name})")
+
+            if not dry_run and conn:
+                with db_lock:
+                    upsert_car(conn, car, merge_mode=True)
+
+            time.sleep(FE_SPEC_DELAY)
+
+    counter[1] += make_skipped
+
+
 def fueleconomy_bulk(year_start, year_end, dry_run=False, body_filter=None,
                      conn=None, max_cars=None, resume_year=None):
     """Iterate all makes/models/years from FuelEconomy.gov and upsert.
     
     If resume_year is set, skips years before that value.
     Commits after each year for checkpointing.
+    Parallelizes makes within each year (FE_MAKE_WORKERS threads).
     """
     total = 0
     skipped = 0
+    import concurrent.futures
 
     for year in range(year_start, year_end + 1):
         if resume_year and year < resume_year:
@@ -243,65 +306,24 @@ def fueleconomy_bulk(year_start, year_end, dry_run=False, body_filter=None,
                  if i.find("text").text and i.find("value").text]
         time.sleep(FE_MENU_DELAY)
 
-        for make_idx, (make_name, make_val) in enumerate(makes):
-            if max_cars and total >= max_cars:
-                break
+        # Process makes in parallel within each year
+        db_lock = threading.Lock()
+        # counter = [total_count, skipped_count] — mutable list for thread safety
+        counter = [0, 0]
 
-            models_xml = fe_get(f"/menu/model?year={year}&make={urllib.parse.quote(make_val)}")
-            if models_xml is None:
-                time.sleep(FE_MENU_DELAY)
-                continue
-
-            models = [(i.find("text").text, i.find("value").text)
-                      for i in models_xml.findall(".//menuItem")
-                      if i.find("text").text and i.find("value").text]
-            time.sleep(FE_MENU_DELAY)
-
-            for model_name, model_val in models:
-                if max_cars and total >= max_cars:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=FE_MAKE_WORKERS) as executor:
+            futures = []
+            for make_name, make_val in makes:
+                if max_cars and counter[0] >= max_cars:
                     break
+                futures.append(executor.submit(
+                    _process_make_fe, year, make_name, make_val,
+                    dry_run, conn, db_lock, max_cars, counter
+                ))
+            concurrent.futures.wait(futures)
 
-                opts_xml = fe_get(
-                    f"/menu/options?year={year}&make={urllib.parse.quote(make_val)}"
-                    f"&model={urllib.parse.quote(model_val)}"
-                )
-                if opts_xml is None:
-                    continue
-
-                options = [(i.find("text").text, i.find("value").text)
-                           for i in opts_xml.findall(".//menuItem")
-                           if i.find("value").text]
-
-                for opt_text, vid in options:
-                    if not vid:
-                        continue
-
-                    spec_xml = fe_get(f"/{vid}")
-                    if spec_xml is None:
-                        time.sleep(FE_SPEC_DELAY)
-                        continue
-
-                    car = parse_fe_spec(spec_xml, make_name, model_name, year)
-                    if car is None:
-                        skipped += 1
-                        time.sleep(FE_SPEC_DELAY)
-                        continue
-
-                    total += 1
-                    if total % 100 == 0:
-                        print(f"    ... {total} cars (year {year}, {make_name})")
-
-                    if not dry_run and conn:
-                        upsert_car(conn, car, merge_mode=True)
-
-                    time.sleep(FE_SPEC_DELAY)
-
-                    if max_cars and total >= max_cars:
-                        break
-
-            if (make_idx + 1) % 10 == 0:
-                print(f"    [{make_idx+1}/{len(makes)}] {total} total so far")
-
+        total += counter[0]
+        skipped += counter[1]
         print(f"  Year {year} done: {len(makes)} makes processed")
 
         # Checkpoint: commit after each year

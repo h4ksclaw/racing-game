@@ -33,16 +33,32 @@ import {
 import { predict_specs } from "./predictor.ts";
 
 /** Merge predictions into a car if ?predict=true was requested. */
+/** Map flat PredictedSpecs keys into nested CarMetadata fields. */
+function applyPredictions(car: ReturnType<typeof getCarById>, p: ReturnType<typeof predict_specs>) {
+	const result = { ...car };
+	if (p.cd != null) result.aero = { ...result.aero, drag_coefficient: p.cd };
+	if (p.wheelbase_m != null) result.dimensions = { ...result.dimensions, wheelbase_m: p.wheelbase_m };
+	if (p.weight_front_pct != null) result.weightFrontPct = p.weight_front_pct;
+	if (p.gear_ratios != null)
+		result.transmission = {
+			...result.transmission,
+			gear_ratios: p.gear_ratios.ratios,
+			final_drive: p.gear_ratios.final_drive,
+		};
+	if (p.suspension_front != null) result.suspension = { ...result.suspension, front_type: p.suspension_front };
+	if (p.suspension_rear != null) result.suspension = { ...result.suspension, rear_type: p.suspension_rear };
+	return result;
+}
+
 function maybePredict(car: ReturnType<typeof getCarById>, predict: boolean) {
 	if (!predict || !car) return car;
-	const predicted = predict_specs(car);
-	return { ...car, ...predicted };
+	return applyPredictions(car, predict_specs(car));
 }
 
 /** Merge predictions into a list of cars. */
 function maybePredictList(cars: ReturnType<typeof getAllCars>, predict: boolean) {
 	if (!predict) return cars;
-	return cars.map((car) => ({ ...car, ...predict_specs(car) }));
+	return cars.map((car) => applyPredictions(car, predict_specs(car)));
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -512,6 +528,69 @@ app.get("/api/cars/:id/predicted", (req, res) => {
 });
 
 /** Get single car metadata by ID. Optionally include predictions with ?predict=true. */
+/** Car database stats — field coverage, source breakdown, body type distribution. */
+app.get("/api/cars/stats", (_req, res) => {
+	const cars = getAllCars();
+	const total = cars.length;
+
+	// Source breakdown
+	const sources: Record<string, number> = {};
+	for (const c of cars) {
+		sources[c.source] = (sources[c.source] ?? 0) + 1;
+	}
+
+	// Body type distribution
+	const bodies: Record<string, number> = {};
+	for (const c of cars) {
+		const b = c.bodyType || "unknown";
+		bodies[b] = (bodies[b] ?? 0) + 1;
+	}
+
+	// Field coverage (non-null, non-empty)
+	const fields: Record<string, { count: number; pct: number }> = {};
+	const check = (name: string, val: unknown) => {
+		if (
+			val !== null &&
+			val !== undefined &&
+			val !== "" &&
+			!(typeof val === "object" && Object.keys(val as object).length === 0)
+		) {
+			fields[name] = { count: (fields[name]?.count ?? 0) + 1, pct: 0 };
+		}
+	};
+	for (const c of cars) {
+		check("weight", c.weightKg);
+		check("weight_front_pct", c.weightFrontPct);
+		check("dimensions", c.dimensions);
+		check("engine", c.engine);
+		check("performance", c.performance);
+		check("transmission", c.transmission);
+		check("drivetrain", c.drivetrain);
+		check("body_type", c.bodyType);
+		check("tires", c.tires);
+		check("aero", c.aero);
+		check("brakes", c.brakes);
+		check("suspension", c.suspension);
+		check("fuel_type", c.fuelType);
+	}
+	for (const f of Object.values(fields)) {
+		f.pct = Math.round((f.count / total) * 100);
+	}
+
+	res.json({ total, sources, bodies, fields });
+});
+
+/** Random car (with optional prediction). Useful for testing/preview. */
+app.get("/api/cars/random", (req, res) => {
+	const cars = getAllCars();
+	if (cars.length === 0) {
+		res.status(404).json({ error: "No cars in database" });
+		return;
+	}
+	const car = cars[Math.floor(Math.random() * cars.length)];
+	res.json(maybePredict(car, req.query.predict === "true"));
+});
+
 app.get("/api/cars/:id", (req, res) => {
 	const car = getCarById(Number(req.params.id));
 	if (!car) {
