@@ -30,6 +30,8 @@ export interface DebugInfoInput {
 	patchCenterZ?: number;
 	guardrailCount: number;
 	tireDynState: TireDynamicsState | null;
+	burnout?: boolean;
+	revvingNeutral?: boolean;
 	halfExtentsY: number;
 	wheel: WheelDebugInfo;
 }

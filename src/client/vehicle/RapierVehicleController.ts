@@ -22,6 +22,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { DragModel } from "./aero/DragModel.ts";
 import type { CarConfig } from "./configs.ts";
 import { buildDebugInfo } from "./DebugInfoBuilder.ts";
+import { BurnoutState, type BurnoutStateResult } from "./drive/BurnoutState.ts";
 import { DriveState } from "./drive/DriveState.ts";
 import { computeForces } from "./drive/ForceComputer.ts";
 import { EngineUnit } from "./engine/EngineUnit.ts";
@@ -36,7 +37,7 @@ import type { EngineTelemetry, TerrainProvider, VehicleInput, VehicleState } fro
 export type { TerrainProvider, VehicleInput } from "./types.ts";
 
 // ── Vehicle controller tuning constants ──
-const STEER_SPEED = 3.5;
+const STEER_SPEED = 2.0;
 
 const MAX_SUS_FORCE = 100000;
 const WHEEL_FRICTION_SLIP = 2.0;
@@ -92,9 +93,14 @@ export class RapierVehicleController {
 	private steerAngle = 0;
 	/** Whether handbrake is currently active */
 	handbrakeActive = false;
+	/** Whether burnout is currently active */
+	burnoutActive = false;
+	/** Whether revving in neutral (space+W, stopped) */
+	revvingInNeutral = false;
 	private initialized = false;
 	private _diagTimer = 0; // throttle diagnostic log output
 	private readonly driveState = new DriveState();
+	private readonly burnoutState = new BurnoutState();
 	private _wheelSpinAngles = [0, 0, 0, 0];
 	private _wheelSpinVels = [0, 0, 0, 0]; // current angular velocities (rad/s)
 	/** Tire dynamics state snapshot (updated each frame after physics step) */
@@ -257,6 +263,7 @@ export class RapierVehicleController {
 		const localVelX = vz * Math.cos(heading) + vx * Math.sin(heading);
 		const speedMs = Math.sqrt(vx * vx + vz * vz);
 		const speedKmh = speedMs * 3.6;
+		const absSpeedMs = Math.abs(localVelX);
 
 		// ── Check terrain patch rebuild ──
 		if (this.terrainCollider?.needsRebuild(pos.x, pos.z)) {
@@ -278,22 +285,63 @@ export class RapierVehicleController {
 		const ds = this.driveState.compute(wantsForward, wantsBackward, localVelX);
 		const { isBraking, isReverse, effectiveNeutral: dsNeutral } = ds;
 
-		engine.throttle = wantsForward && !input.handbrake ? 1 : isReverse ? 0.5 : 0;
-		// Handbrake forces gearbox to neutral — no engine drive, no engine braking
+		// ── Burnout state machine ──
+		// Full update happens after engine/gearbox so we have torque data.
+		const wasBurnoutActive = this.burnoutActive;
+
+		// Throttle: full during revving or burnout, normal otherwise
+		engine.throttle =
+			this.revvingInNeutral || this.burnoutActive ? 1 : wantsForward && !input.handbrake ? 1 : isReverse ? 0.5 : 0;
+
+		// Gearbox: handbrake forces neutral; during burnout lock gear until car moves
 		const effectiveNeutral = dsNeutral || !!input.handbrake;
 		if (effectiveNeutral) {
-			gearbox.effectiveRatio = 0; // neutral = no gear ratio = no engine braking
+			gearbox.effectiveRatio = 0;
 		} else if (isReverse) {
-			// During reverse, set a proper gear ratio so engine RPM stays in
-			// the torque curve's power band (above 1100 RPM where mult = 1.0).
-			// Without this, effectiveRatio=0 (from prior neutral) causes RPM
-			// to drop to idle where the torque multiplier is only 0.3.
 			const firstGearRatio = this._config.gearbox.gearRatios[0] || 3.5;
 			gearbox.effectiveRatio = engineSpec.finalDrive * firstGearRatio;
+		} else if (this.burnoutActive && absSpeedMs < 3.0) {
+			// Lock gear 1 during standstill burnout.
+			// Once car reaches ~11 km/h, unlock gearbox — auto-shift will
+			// upshift, torque drops, and the physics formula ends the burnout.
+			gearbox.effectiveRatio = this._config.gearbox.gearRatios[gearbox.currentGear];
+			gearbox.isShifting = false;
 		} else {
 			gearbox.update(dt, engine, localVelX, isBraking);
 		}
-		engine.update(localVelX, gearbox.effectiveRatio, chassis.wheelRadius, dt);
+		// During burnout, driven wheels spin freely against reduced traction.
+		// Engine should rev toward redline — pass wheel speed derived from
+		// near-redline RPM through the drivetrain so engine.update() computes correctly.
+		// Only fake wheel speed at low speeds; once car is moving, use real speed.
+		let engineWheelSpeed = localVelX;
+		if (this.burnoutActive && absSpeedMs < 3.0 && gearbox.effectiveRatio > 0.1) {
+			const nearRedlineRPM = engineSpec.maxRPM * 0.95;
+			const wheelCircumference = 2 * Math.PI * chassis.wheelRadius;
+			const burnoutWheelSpeed =
+				((nearRedlineRPM / (gearbox.effectiveRatio * engineSpec.finalDrive)) * wheelCircumference) / 60;
+			engineWheelSpeed = Math.max(localVelX, burnoutWheelSpeed);
+		}
+		engine.update(engineWheelSpeed, gearbox.effectiveRatio, chassis.wheelRadius, dt);
+
+		// ── Burnout full update (after engine — needs torque/gear data) ──
+		const bs = this.burnoutState.update(!!input.handbrake, !!input.forward, absSpeedMs, dt, this._config.drivetrain, {
+			gearRatio: gearbox.effectiveRatio,
+			engineTorqueNm: engineSpec.torqueNm * engine.getTorqueMultiplier(),
+			finalDrive: engineSpec.finalDrive,
+			wheelRadius: chassis.wheelRadius,
+			mass: chassis.mass,
+			tractionPct: tires.tractionPct,
+			currentGear: gearbox.currentGear + 1,
+		});
+		this.burnoutActive = bs.active;
+		this.revvingInNeutral = bs.revvingInNeutral;
+
+		// On burnout activation (clutch dump), force gear 1 for max torque
+		if (bs.active && !wasBurnoutActive) {
+			gearbox.currentGear = 0;
+			gearbox.effectiveRatio = this._config.gearbox.gearRatios[0];
+			gearbox.isShifting = false;
+		}
 
 		// ── Brake lights ──
 		this.brakes.isBraking = isBraking;
@@ -303,7 +351,6 @@ export class RapierVehicleController {
 
 		// ── Force computation ──
 		const tractionPerWheel = (chassis.mass * tires.tractionPct * 9.82) / 2;
-		const absSpeedMs = Math.abs(localVelX);
 		const fc = computeForces(
 			{
 				dsIsBraking: isBraking,
@@ -445,6 +492,13 @@ export class RapierVehicleController {
 		this.vehicle.setWheelSideFrictionStiffness(this.wheelRL, baseSideFriction * rearGripMul * latGripMul);
 		this.vehicle.setWheelSideFrictionStiffness(this.wheelRR, baseSideFriction * rearGripMul * latGripMul);
 
+		// Burnout: reduce friction slip on driven wheels so tires spin instead of gripping.
+		// Lower slip = more wheel spin, less force transmitted to body.
+		for (let i = 0; i < 4; i++) {
+			const slip = bs.tractionMul[i] < 1 ? WHEEL_FRICTION_SLIP * bs.tractionMul[i] : WHEEL_FRICTION_SLIP;
+			this.vehicle.setWheelFrictionSlip(i, slip);
+		}
+
 		// Handbrake also applies Rapier brake to rear wheels only (longitudinal lock)
 		if (input.handbrake) {
 			this.vehicle.setWheelBrake(this.wheelRL, 50.0);
@@ -520,7 +574,7 @@ export class RapierVehicleController {
 		}
 
 		// ── Update per-wheel spin angles ──
-		this.updateWheelSpin(fc, dt, !!input.handbrake);
+		this.updateWheelSpin(fc, dt, !!input.handbrake, bs);
 
 		// ── Output state ──
 		this.state.speed = localVelX;
@@ -639,11 +693,43 @@ export class RapierVehicleController {
 	}
 
 	/**
+	 * Aggregate slide intensity (0-1) for audio.
+	 * Combines handbrake drift, hard cornering, and burnout into a single value.
+	 * Only active above ~2 m/s to avoid static burnout screech.
+	 */
+	getSlideIntensity(): number {
+		const speed = Math.abs(this.state.speed);
+		if (speed < 2.0) return 0;
+
+		const td = this.tireDynState;
+		let intensity = 0;
+
+		// Handbrake / drift
+		if (td?.isDrifting) {
+			intensity = Math.max(intensity, Math.min(1, td.driftFactor));
+		}
+
+		// Hard cornering (lateral G)
+		const angVel = this.carBody.angvel();
+		const latG = Math.abs(angVel.y * speed) / 9.81;
+		if (latG > 0.3) {
+			intensity = Math.max(intensity, Math.min(0.6, (latG - 0.3) * 0.5));
+		}
+
+		// Burnout
+		if (this.burnoutActive) {
+			intensity = Math.max(intensity, 0.5);
+		}
+
+		return intensity;
+	}
+
+	/**
 	 * Update per-wheel spin angles based on drivetrain and handbrake state.
 	 * Driven wheels follow engine output; undriven wheels free-roll at ground speed.
 	 * Handbrake locks rear wheels with rapid deceleration.
 	 */
-	private updateWheelSpin(_fc: { engF: number }, dt: number, isHandbrake: boolean): void {
+	private updateWheelSpin(_fc: { engF: number }, dt: number, isHandbrake: boolean, bs: BurnoutStateResult): void {
 		const wheelRadius = this._config.chassis.wheelRadius;
 		const speed = this.state.speed;
 
@@ -663,6 +749,12 @@ export class RapierVehicleController {
 				targetOmega = 0;
 				const lockBlend = 1 - Math.exp(-12.0 * dt); // locks in ~0.25s
 				this._wheelSpinVels[i] *= 1 - lockBlend;
+			} else if (bs.active && bs.overspin[i] > 1.0) {
+				// Burnout: driven wheels overspin (spin faster than ground)
+				const overspinOmega = Math.abs(groundOmega) * bs.overspin[i];
+				targetOmega = overspinOmega;
+				const blend = 1 - Math.exp(-20.0 * dt);
+				this._wheelSpinVels[i] += (targetOmega - this._wheelSpinVels[i]) * blend;
 			} else {
 				// Both driven and undriven: target ground speed
 				targetOmega = Math.abs(groundOmega) < deadzone ? 0 : groundOmega;
@@ -708,6 +800,8 @@ export class RapierVehicleController {
 			patchCenterZ: this.terrainCollider?.patchCenterZ,
 			guardrailCount: this.guardrails?.bodyCount ?? 0,
 			tireDynState: this.tireDynState,
+			burnout: this.burnoutActive,
+			revvingNeutral: this.revvingInNeutral,
 			wheel: {
 				wheelIsInContact: (i: number) => this.vehicle.wheelIsInContact(i),
 				wheelSuspensionLength: (i: number) => this.vehicle.wheelSuspensionLength(i),
@@ -738,6 +832,7 @@ export class RapierVehicleController {
 		};
 		this.telemetry = this.engineUnit.getTelemetry(0);
 		this.customSuspension.reset();
+		this.burnoutState.end();
 
 		// Force immediate ground + guardrail rebuild at reset position
 		if (this._terrain) {

@@ -72,6 +72,19 @@ export class VehicleEffects {
 		const intensities = [0, 0, 0, 0];
 		const speed = Math.abs(vehicle.state.speed);
 
+		// Burnout: driven wheels smoke even at low speed
+		if (vehicle.burnoutActive) {
+			const drivetrain = vehicle.config.drivetrain;
+			if (drivetrain === "RWD" || drivetrain === "AWD") {
+				intensities[2] = Math.max(intensities[2], 0.8); // RL
+				intensities[3] = Math.max(intensities[3], 0.8); // RR
+			}
+			if (drivetrain === "FWD" || drivetrain === "AWD") {
+				intensities[0] = Math.max(intensities[0], 0.8); // FL
+				intensities[1] = Math.max(intensities[1], 0.8); // FR
+			}
+		}
+
 		if (!td || speed < 0.5) return intensities;
 
 		// Handbrake / drift: rear wheels (index 2, 3) slide only
