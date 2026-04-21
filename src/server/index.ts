@@ -30,6 +30,20 @@ import {
 	saveCarConfig,
 	searchCars,
 } from "./db.ts";
+import { predict_specs } from "./predictor.ts";
+
+/** Merge predictions into a car if ?predict=true was requested. */
+function maybePredict(car: ReturnType<typeof getCarById>, predict: boolean) {
+	if (!predict || !car) return car;
+	const predicted = predict_specs(car);
+	return { ...car, ...predicted };
+}
+
+/** Merge predictions into a list of cars. */
+function maybePredictList(cars: ReturnType<typeof getAllCars>, predict: boolean) {
+	if (!predict) return cars;
+	return cars.map((car) => ({ ...car, ...predict_specs(car) }));
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -416,7 +430,7 @@ app.get("/api/cars/search", (req, res) => {
 	}
 	const limit = Math.min(Number(req.query.limit) || 20, 50);
 	const cars = searchCars(q, limit);
-	res.json(cars);
+	res.json(maybePredictList(cars, req.query.predict === "true"));
 });
 
 /** List all cars in the database. */
@@ -439,7 +453,7 @@ app.get("/api/cars/filter", (req, res) => {
 	if (req.query.tag) filters.tag = String(req.query.tag);
 	if (req.query.limit) filters.limit = Number(req.query.limit);
 	const cars = filterCars(filters);
-	res.json(cars);
+	res.json(maybePredictList(cars, req.query.predict === "true"));
 });
 
 /** List all saved car configs. MUST be before /api/cars/:id to avoid param capture. */
@@ -487,14 +501,24 @@ app.get("/api/cars/config/:id", (req, res) => {
 	res.json(config);
 });
 
-/** Get single car metadata by ID. */
+/** Get predicted specs for a car by ID. */
+app.get("/api/cars/:id/predicted", (req, res) => {
+	const car = getCarById(Number(req.params.id));
+	if (!car) {
+		res.status(404).json({ error: "Car not found" });
+		return;
+	}
+	res.json(predict_specs(car));
+});
+
+/** Get single car metadata by ID. Optionally include predictions with ?predict=true. */
 app.get("/api/cars/:id", (req, res) => {
 	const car = getCarById(Number(req.params.id));
 	if (!car) {
 		res.status(404).json({ error: "Car not found" });
 		return;
 	}
-	res.json(car);
+	res.json(maybePredict(car, req.query.predict === "true"));
 });
 
 // ── Error handling ──────────────────────────────────────────────────

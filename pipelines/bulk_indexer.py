@@ -22,6 +22,7 @@ import os
 import re
 import sqlite3
 import sys
+import threading
 import time
 import urllib.request
 import urllib.parse
@@ -81,16 +82,22 @@ FE_SPEC_DELAY = 0.05
 FE_MENU_DELAY = 0.1
 
 
-def fe_get(path):
-    """Fetch FuelEconomy XML endpoint."""
+def fe_get(path, max_retries=3, backoff=2.0):
+    """Fetch FuelEconomy XML endpoint with retries."""
     url = f"{FE_BASE}{path}"
-    req = urllib.request.Request(url, headers={"User-Agent": "CarMetadataPipeline/1.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return ET.fromstring(resp.read().decode())
-    except Exception as e:
-        print(f"  [warn] {e}")
-        return None
+    for attempt in range(max_retries):
+        req = urllib.request.Request(url, headers={"User-Agent": "CarMetadataPipeline/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return ET.fromstring(resp.read().decode())
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait = backoff * (2 ** attempt)
+                print(f"  [retry] {url} - {e}, retrying in {wait:.1f}s")
+                time.sleep(wait)
+            else:
+                print(f"  [warn] {e}")
+                return None
 
 
 def parse_transmission(trany_str):
@@ -212,12 +219,18 @@ def parse_fe_spec(xml_root, make, model, year):
 # ---------------------------------------------------------------------------
 
 def fueleconomy_bulk(year_start, year_end, dry_run=False, body_filter=None,
-                     conn=None, max_cars=None):
-    """Iterate all makes/models/years from FuelEconomy.gov and upsert."""
+                     conn=None, max_cars=None, resume_year=None):
+    """Iterate all makes/models/years from FuelEconomy.gov and upsert.
+    
+    If resume_year is set, skips years before that value.
+    Commits after each year for checkpointing.
+    """
     total = 0
     skipped = 0
 
     for year in range(year_start, year_end + 1):
+        if resume_year and year < resume_year:
+            continue
         if max_cars and total >= max_cars:
             break
 
@@ -279,7 +292,7 @@ def fueleconomy_bulk(year_start, year_end, dry_run=False, body_filter=None,
                         print(f"    ... {total} cars (year {year}, {make_name})")
 
                     if not dry_run and conn:
-                        upsert_car(conn, car)
+                        upsert_car(conn, car, merge_mode=True)
 
                     time.sleep(FE_SPEC_DELAY)
 
@@ -290,6 +303,10 @@ def fueleconomy_bulk(year_start, year_end, dry_run=False, body_filter=None,
                 print(f"    [{make_idx+1}/{len(makes)}] {total} total so far")
 
         print(f"  Year {year} done: {len(makes)} makes processed")
+
+        # Checkpoint: commit after each year
+        if not dry_run and conn:
+            conn.commit()
 
     print(f"\n  FuelEconomy: {total} cars indexed, {skipped} excluded (SUVs/trucks/etc)")
     return total
@@ -577,6 +594,8 @@ def main():
                         help="Stop after this many cars (for testing)")
     parser.add_argument("--predict", action="store_true",
                         help="After indexing, predict missing specs and print summary")
+    parser.add_argument("--resume-year", type=int, default=None,
+                        help="Skip years before this (for resuming interrupted runs)")
     args = parser.parse_args()
 
     year_start, year_end = args.year_range
@@ -595,10 +614,33 @@ def main():
         print(f"{'='*60}")
 
         if src == "fueleconomy":
-            fueleconomy_bulk(year_start, year_end, dry_run=args.dry_run,
-                             body_filter=args.body_filter, conn=conn,
-                             max_cars=args.max_cars)
-            conn.commit()
+            # Parallel year processing with 8 workers
+            import concurrent.futures
+            db_lock = threading.Lock()
+            year_results = {}
+
+            def process_year_fe(year):
+                fe_conn = init_db(args.db)
+                count = fueleconomy_bulk(year, year, dry_run=args.dry_run,
+                                        body_filter=args.body_filter, conn=fe_conn,
+                                        max_cars=args.max_cars,
+                                        resume_year=args.resume_year)
+                with db_lock:
+                    fe_conn.commit()
+                    fe_conn.close()
+                return year, count
+
+            years_to_process = [y for y in range(year_start, year_end + 1)
+                                if not args.resume_year or y >= args.resume_year]
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                futures = {executor.submit(process_year_fe, y): y for y in years_to_process}
+                for future in concurrent.futures.as_completed(futures):
+                    year, count = future.result()
+                    year_results[year] = count
+
+            total_fe = sum(year_results.values())
+            print(f"\n  FuelEconomy parallel complete: {total_fe} cars across {len(years_to_process)} years")
         elif src == "nhtsa":
             nhtsa_bulk(year_start, year_end, dry_run=args.dry_run,
                        body_filter=args.body_filter, conn=conn,

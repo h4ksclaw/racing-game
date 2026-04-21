@@ -6,3 +6,6 @@ dist
 !.env.example
 public/textures/
 _archive/
+__pycache__/
+pipelines/__pycache__/
+sources/__pycache__/

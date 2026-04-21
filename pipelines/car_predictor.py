@@ -14,7 +14,7 @@ import json
 # ---------------------------------------------------------------------------
 
 PROFILES = {
-    # key: (body_type, era, drivetrain)
+    # ── Sedan ──
     ("sedan", "80s", "fwd"): {
         "cd": 0.34, "wheelbase_m": 2.50, "weight_front_pct": 60,
         "suspension_front": "strut", "suspension_rear": "strut",
@@ -23,28 +23,28 @@ PROFILES = {
         "cd": 0.33, "wheelbase_m": 2.60, "weight_front_pct": 55,
         "suspension_front": "double_wishbone", "suspension_rear": "four_link",
     },
-    ("coupe", "90s", "fwd"): {
-        "cd": 0.32, "wheelbase_m": 2.45, "weight_front_pct": 62,
-        "suspension_front": "double_wishbone", "suspension_rear": "double_wishbone",
+    ("sedan", "80s", "awd"): {
+        "cd": 0.35, "wheelbase_m": 2.55, "weight_front_pct": 58,
+        "suspension_front": "strut", "suspension_rear": "four_link",
     },
-    ("coupe", "90s", "rwd"): {
-        "cd": 0.31, "wheelbase_m": 2.55, "weight_front_pct": 52,
-        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
-    },
-    ("coupe", "2000s", "rwd"): {
-        "cd": 0.30, "wheelbase_m": 2.65, "weight_front_pct": 52,
-        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
-    },
-    ("hatchback", "90s", "fwd"): {
-        "cd": 0.33, "wheelbase_m": 2.40, "weight_front_pct": 62,
+    ("sedan", "90s", "fwd"): {
+        "cd": 0.32, "wheelbase_m": 2.55, "weight_front_pct": 61,
         "suspension_front": "strut", "suspension_rear": "torsion_beam",
     },
-    ("hatchback", "2000s", "fwd"): {
-        "cd": 0.31, "wheelbase_m": 2.50, "weight_front_pct": 60,
+    ("sedan", "90s", "rwd"): {
+        "cd": 0.31, "wheelbase_m": 2.65, "weight_front_pct": 53,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("sedan", "90s", "awd"): {
+        "cd": 0.32, "wheelbase_m": 2.60, "weight_front_pct": 57,
         "suspension_front": "strut", "suspension_rear": "multilink",
     },
-    ("roadster", "90s", "rwd"): {
-        "cd": 0.38, "wheelbase_m": 2.27, "weight_front_pct": 50,
+    ("sedan", "2000s", "fwd"): {
+        "cd": 0.30, "wheelbase_m": 2.65, "weight_front_pct": 60,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("sedan", "2000s", "rwd"): {
+        "cd": 0.29, "wheelbase_m": 2.80, "weight_front_pct": 52,
         "suspension_front": "double_wishbone", "suspension_rear": "multilink",
     },
     ("sedan", "2000s", "awd"): {
@@ -59,12 +59,205 @@ PROFILES = {
         "cd": 0.27, "wheelbase_m": 2.85, "weight_front_pct": 52,
         "suspension_front": "double_wishbone", "suspension_rear": "multilink",
     },
+    ("sedan", "2010s", "awd"): {
+        "cd": 0.28, "wheelbase_m": 2.75, "weight_front_pct": 57,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
     ("sedan", "2020s", "fwd"): {
         "cd": 0.26, "wheelbase_m": 2.75, "weight_front_pct": 60,
         "suspension_front": "strut", "suspension_rear": "multilink",
     },
+    ("sedan", "2020s", "rwd"): {
+        "cd": 0.26, "wheelbase_m": 2.85, "weight_front_pct": 52,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("sedan", "2020s", "awd"): {
+        "cd": 0.27, "wheelbase_m": 2.78, "weight_front_pct": 57,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    # ── Coupe ──
+    ("coupe", "80s", "rwd"): {
+        "cd": 0.33, "wheelbase_m": 2.45, "weight_front_pct": 53,
+        "suspension_front": "double_wishbone", "suspension_rear": "four_link",
+    },
+    ("coupe", "90s", "fwd"): {
+        "cd": 0.32, "wheelbase_m": 2.45, "weight_front_pct": 62,
+        "suspension_front": "double_wishbone", "suspension_rear": "double_wishbone",
+    },
+    ("coupe", "90s", "rwd"): {
+        "cd": 0.31, "wheelbase_m": 2.55, "weight_front_pct": 52,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("coupe", "2000s", "fwd"): {
+        "cd": 0.31, "wheelbase_m": 2.55, "weight_front_pct": 62,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("coupe", "2000s", "rwd"): {
+        "cd": 0.30, "wheelbase_m": 2.65, "weight_front_pct": 52,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("coupe", "2000s", "awd"): {
+        "cd": 0.31, "wheelbase_m": 2.60, "weight_front_pct": 56,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("coupe", "2010s", "fwd"): {
+        "cd": 0.29, "wheelbase_m": 2.60, "weight_front_pct": 61,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("coupe", "2010s", "rwd"): {
+        "cd": 0.28, "wheelbase_m": 2.70, "weight_front_pct": 52,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("coupe", "2010s", "awd"): {
+        "cd": 0.29, "wheelbase_m": 2.65, "weight_front_pct": 56,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
     ("coupe", "2020s", "rwd"): {
         "cd": 0.28, "wheelbase_m": 2.70, "weight_front_pct": 52,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("coupe", "2020s", "fwd"): {
+        "cd": 0.28, "wheelbase_m": 2.65, "weight_front_pct": 61,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("coupe", "2020s", "awd"): {
+        "cd": 0.29, "wheelbase_m": 2.68, "weight_front_pct": 56,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    # ── Hatchback ──
+    ("hatchback", "80s", "fwd"): {
+        "cd": 0.34, "wheelbase_m": 2.35, "weight_front_pct": 62,
+        "suspension_front": "strut", "suspension_rear": "torsion_beam",
+    },
+    ("hatchback", "90s", "fwd"): {
+        "cd": 0.33, "wheelbase_m": 2.40, "weight_front_pct": 62,
+        "suspension_front": "strut", "suspension_rear": "torsion_beam",
+    },
+    ("hatchback", "2000s", "fwd"): {
+        "cd": 0.31, "wheelbase_m": 2.50, "weight_front_pct": 60,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("hatchback", "2000s", "awd"): {
+        "cd": 0.32, "wheelbase_m": 2.50, "weight_front_pct": 58,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("hatchback", "2010s", "fwd"): {
+        "cd": 0.29, "wheelbase_m": 2.55, "weight_front_pct": 60,
+        "suspension_front": "strut", "suspension_rear": "torsion_beam",
+    },
+    ("hatchback", "2010s", "rwd"): {
+        "cd": 0.30, "wheelbase_m": 2.55, "weight_front_pct": 53,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("hatchback", "2010s", "awd"): {
+        "cd": 0.30, "wheelbase_m": 2.55, "weight_front_pct": 57,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("hatchback", "2020s", "fwd"): {
+        "cd": 0.28, "wheelbase_m": 2.60, "weight_front_pct": 60,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    # ── Wagon ──
+    ("wagon", "80s", "rwd"): {
+        "cd": 0.35, "wheelbase_m": 2.60, "weight_front_pct": 55,
+        "suspension_front": "double_wishbone", "suspension_rear": "four_link",
+    },
+    ("wagon", "90s", "rwd"): {
+        "cd": 0.34, "wheelbase_m": 2.65, "weight_front_pct": 55,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("wagon", "90s", "fwd"): {
+        "cd": 0.34, "wheelbase_m": 2.50, "weight_front_pct": 61,
+        "suspension_front": "strut", "suspension_rear": "torsion_beam",
+    },
+    ("wagon", "2000s", "rwd"): {
+        "cd": 0.32, "wheelbase_m": 2.70, "weight_front_pct": 54,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("wagon", "2000s", "fwd"): {
+        "cd": 0.31, "wheelbase_m": 2.60, "weight_front_pct": 60,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("wagon", "2000s", "awd"): {
+        "cd": 0.32, "wheelbase_m": 2.65, "weight_front_pct": 57,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("wagon", "2010s", "fwd"): {
+        "cd": 0.29, "wheelbase_m": 2.65, "weight_front_pct": 60,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("wagon", "2010s", "rwd"): {
+        "cd": 0.29, "wheelbase_m": 2.80, "weight_front_pct": 53,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("wagon", "2010s", "awd"): {
+        "cd": 0.30, "wheelbase_m": 2.72, "weight_front_pct": 57,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("wagon", "2020s", "fwd"): {
+        "cd": 0.28, "wheelbase_m": 2.70, "weight_front_pct": 60,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("wagon", "2020s", "rwd"): {
+        "cd": 0.28, "wheelbase_m": 2.80, "weight_front_pct": 53,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("wagon", "2020s", "awd"): {
+        "cd": 0.29, "wheelbase_m": 2.75, "weight_front_pct": 57,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    # ── Convertible ──
+    ("convertible", "80s", "rwd"): {
+        "cd": 0.37, "wheelbase_m": 2.40, "weight_front_pct": 53,
+        "suspension_front": "double_wishbone", "suspension_rear": "four_link",
+    },
+    ("convertible", "90s", "fwd"): {
+        "cd": 0.35, "wheelbase_m": 2.40, "weight_front_pct": 62,
+        "suspension_front": "strut", "suspension_rear": "torsion_beam",
+    },
+    ("convertible", "90s", "rwd"): {
+        "cd": 0.34, "wheelbase_m": 2.50, "weight_front_pct": 52,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("convertible", "2000s", "fwd"): {
+        "cd": 0.33, "wheelbase_m": 2.45, "weight_front_pct": 61,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("convertible", "2000s", "rwd"): {
+        "cd": 0.32, "wheelbase_m": 2.55, "weight_front_pct": 52,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("convertible", "2000s", "awd"): {
+        "cd": 0.33, "wheelbase_m": 2.50, "weight_front_pct": 56,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("convertible", "2010s", "fwd"): {
+        "cd": 0.31, "wheelbase_m": 2.50, "weight_front_pct": 61,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("convertible", "2010s", "rwd"): {
+        "cd": 0.30, "wheelbase_m": 2.60, "weight_front_pct": 52,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("convertible", "2010s", "awd"): {
+        "cd": 0.31, "wheelbase_m": 2.58, "weight_front_pct": 56,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    ("convertible", "2020s", "rwd"): {
+        "cd": 0.29, "wheelbase_m": 2.60, "weight_front_pct": 52,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("convertible", "2020s", "awd"): {
+        "cd": 0.30, "wheelbase_m": 2.60, "weight_front_pct": 56,
+        "suspension_front": "strut", "suspension_rear": "multilink",
+    },
+    # ── Roadster ──
+    ("roadster", "90s", "rwd"): {
+        "cd": 0.38, "wheelbase_m": 2.27, "weight_front_pct": 50,
+        "suspension_front": "double_wishbone", "suspension_rear": "multilink",
+    },
+    ("roadster", "2000s", "rwd"): {
+        "cd": 0.36, "wheelbase_m": 2.33, "weight_front_pct": 50,
         "suspension_front": "double_wishbone", "suspension_rear": "multilink",
     },
     # Fallback

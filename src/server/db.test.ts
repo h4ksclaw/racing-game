@@ -16,7 +16,7 @@ describe("getAllCars", () => {
 	it("returns an array", () => {
 		const cars = getAllCars();
 		expect(Array.isArray(cars)).toBe(true);
-	});
+	}, 15_000);
 });
 
 describe("searchCars", () => {

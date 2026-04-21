@@ -224,12 +224,12 @@ export interface CarMetadataRow {
 }
 
 export interface CarDimensions {
-	length_m: number;
-	width_m: number;
-	height_m: number;
-	wheelbase_m: number;
-	track_width_m: number;
-	ground_clearance_m: number;
+	length_m?: number;
+	width_m?: number;
+	height_m?: number;
+	wheelbase_m?: number;
+	track_width_m?: number;
+	ground_clearance_m?: number;
 	front_track_m?: number;
 	rear_track_m?: number;
 	front_overhang_m?: number;
@@ -237,13 +237,13 @@ export interface CarDimensions {
 }
 
 export interface CarEngine {
-	displacement_l: number;
-	cylinders: number;
-	configuration: string; // I4, V6, V8, flat4, etc.
-	aspiration: string; // NA, turbo, supercharged
-	power_hp: number;
-	torque_nm: number;
-	max_rpm: number;
+	displacement_l?: number;
+	cylinders?: number;
+	configuration?: string; // I4, V6, V8, flat4, etc.
+	aspiration?: string; // NA, turbo, supercharged
+	power_hp?: number;
+	torque_nm?: number;
+	max_rpm?: number;
 	idle_rpm?: number;
 	compression_ratio?: number;
 	bore_mm?: number;
@@ -262,8 +262,8 @@ export interface CarPerformance {
 }
 
 export interface CarTransmission {
-	gear_count: number;
-	type: string; // manual, automatic, CVT, DCT
+	gear_count?: number;
+	type?: string; // manual, automatic, CVT, DCT
 	final_drive?: number;
 	gear_ratios?: number[];
 	reverse_ratio?: number;
@@ -317,6 +317,52 @@ function parseJson<T = Record<string, unknown>>(val: string | null): T {
 	}
 }
 
+/**
+ * Normalize DB dimension keys to CarDimensions interface keys.
+ *
+ * The Python pipeline stores keys like "length", "width", "height", "wheelbase",
+ * "track_width", "ground_clearance" (in meters). The TS interface expects
+ * "length_m", "width_m", "height_m", etc. This mapper handles both conventions
+ * and passes through already-normalized keys.
+ */
+function normalizeDimensions(raw: Record<string, unknown>): CarDimensions {
+	return {
+		length_m: (raw.length_m ?? raw.length) as number | undefined,
+		width_m: (raw.width_m ?? raw.width) as number | undefined,
+		height_m: (raw.height_m ?? raw.height) as number | undefined,
+		wheelbase_m: (raw.wheelbase_m ?? raw.wheelbase) as number | undefined,
+		track_width_m: (raw.track_width_m ?? raw.track_width) as number | undefined,
+		ground_clearance_m: (raw.ground_clearance_m ?? raw.ground_clearance) as number | undefined,
+		front_track_m: raw.front_track_m as number | undefined,
+		rear_track_m: raw.rear_track_m as number | undefined,
+		front_overhang_m: raw.front_overhang_m as number | undefined,
+		rear_overhang_m: raw.rear_overhang_m as number | undefined,
+	};
+}
+
+/**
+ * Normalize DB engine keys to CarEngine interface keys.
+ * Handles both DB convention and TS interface convention.
+ */
+function normalizeEngine(raw: Record<string, unknown>): CarEngine {
+	return {
+		displacement_l: raw.displacement_l as number | undefined,
+		cylinders: raw.cylinders as number | undefined,
+		configuration: raw.configuration as string | undefined,
+		aspiration: raw.aspiration as string | undefined,
+		power_hp: raw.power_hp as number | undefined,
+		torque_nm: raw.torque_nm as number | undefined,
+		max_rpm: raw.max_rpm as number | undefined,
+		idle_rpm: raw.idle_rpm as number | undefined,
+		compression_ratio: raw.compression_ratio as number | undefined,
+		bore_mm: raw.bore_mm as number | undefined,
+		stroke_mm: raw.stroke_mm as number | undefined,
+		valves_per_cylinder: raw.valves_per_cylinder as number | undefined,
+		fuel_delivery: raw.fuel_delivery as string | undefined,
+		boost_bar: raw.boost_bar as number | undefined,
+	};
+}
+
 /** Parse tags string (comma-separated) to array. */
 function parseTags(val: string | null): string[] {
 	if (!val) return [];
@@ -360,8 +406,8 @@ function rowToMeta(row: CarMetadataRow): CarMetadata {
 		year: row.year,
 		trim: row.trim,
 		bodyType: row.body_type,
-		dimensions: parseJson<CarDimensions>(row.dimensions_json),
-		engine: parseJson<CarEngine>(row.engine_json),
+		dimensions: normalizeDimensions(parseJson(row.dimensions_json)),
+		engine: normalizeEngine(parseJson(row.engine_json)),
 		performance: parseJson<CarPerformance>(row.performance_json),
 		drivetrain: row.drivetrain,
 		transmission: parseJson<CarTransmission>(row.transmission_json),

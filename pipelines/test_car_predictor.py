@@ -54,16 +54,31 @@ class TestProfileLookup:
         assert p["wheelbase_m"] == 2.50
 
     def test_era_fallback(self):
-        # coupe + 2000s + fwd: no exact match, should find coupe 90s fwd or similar
-        p = _get_profile("coupe", "2000s", "fwd")
+        # hatchback + 90s + rwd: no exact match, should find hatchback 90s fwd or similar
+        p = _get_profile("hatchback", "90s", "rwd")
         assert "cd" in p
-        assert p["suspension_front"] == "double_wishbone"
+        # Falls back to hatchback|90s|fwd
+        assert p["suspension_front"] == "strut"
+        assert p["cd"] == 0.33
 
     def test_body_fallback(self):
-        # wagon has no profiles, should get default
-        p = _get_profile("wagon", "90s", "fwd")
+        # convertible + 90s + awd: no exact match, falls back to convertible|90s|fwd
+        p = _get_profile("convertible", "90s", "awd")
+        assert p["cd"] == 0.35
+        assert p["suspension_front"] == "strut"
+
+    def test_exact_profile_match(self):
+        # wagon + 2010s + awd now has an exact profile
+        p = _get_profile("wagon", "2010s", "awd")
+        assert p["cd"] == 0.30
+        assert p["wheelbase_m"] == 2.72
+        assert p["weight_front_pct"] == 57
+
+    def test_convertible_profile(self):
+        # convertible + 2000s + rwd now has an exact profile
+        p = _get_profile("convertible", "2000s", "rwd")
         assert p["cd"] == 0.32
-        assert p == PROFILES[("_default", None, None)]
+        assert p["wheelbase_m"] == 2.55
 
     def test_default_fallback(self):
         p = _get_profile(None, None, None)
