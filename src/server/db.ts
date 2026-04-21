@@ -46,24 +46,32 @@ function getDb(): Database.Database {
 		);
 
 		CREATE TABLE IF NOT EXISTS car_metadata (
-			id              INTEGER PRIMARY KEY AUTOINCREMENT,
-			asset_id        INTEGER REFERENCES assets(id),
-			make            TEXT,
-			model           TEXT,
-			year            INTEGER,
-			body_type       TEXT,
-			dimensions_json TEXT,
-			engine_json     TEXT,
-			performance_json TEXT,
-			drivetrain      TEXT,
-			transmission_json TEXT,
-			weight_kg       REAL,
-			fuel_type       TEXT,
-			price_json      TEXT,
-			source          TEXT NOT NULL DEFAULT 'auto',
-			confidence      REAL DEFAULT 0.5,
-			created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-			updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+			id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+			asset_id            INTEGER REFERENCES assets(id),
+			make                TEXT,
+			model               TEXT,
+			year                INTEGER,
+			trim                TEXT,
+			body_type           TEXT,
+			dimensions_json     TEXT,
+			engine_json         TEXT,
+			performance_json    TEXT,
+			drivetrain          TEXT,
+			transmission_json   TEXT,
+			brakes_json         TEXT,
+			suspension_json     TEXT,
+			tires_json          TEXT,
+			aero_json           TEXT,
+			weight_kg           REAL,
+			weight_front_pct    REAL,
+			fuel_type           TEXT,
+			price_json          TEXT,
+			eras                TEXT,
+			tags                TEXT,
+			source              TEXT NOT NULL DEFAULT 'auto',
+			confidence          REAL DEFAULT 0.5,
+			created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
 		);
 
 		CREATE TABLE IF NOT EXISTS car_configs (
@@ -85,6 +93,14 @@ function getDb(): Database.Database {
 		}
 	};
 	migrateColumn("car_metadata", "asset_id", "INTEGER REFERENCES assets(id)");
+	migrateColumn("car_metadata", "trim", "TEXT");
+	migrateColumn("car_metadata", "brakes_json", "TEXT");
+	migrateColumn("car_metadata", "suspension_json", "TEXT");
+	migrateColumn("car_metadata", "tires_json", "TEXT");
+	migrateColumn("car_metadata", "aero_json", "TEXT");
+	migrateColumn("car_metadata", "weight_front_pct", "REAL");
+	migrateColumn("car_metadata", "eras", "TEXT");
+	migrateColumn("car_metadata", "tags", "TEXT");
 
 	// Create indexes (ignore if exists)
 	db.exec(`
@@ -184,19 +200,111 @@ export interface CarMetadataRow {
 	make: string;
 	model: string;
 	year: number | null;
+	trim: string | null;
 	body_type: string | null;
 	dimensions_json: string | null;
 	engine_json: string | null;
 	performance_json: string | null;
 	drivetrain: string | null;
 	transmission_json: string | null;
+	brakes_json: string | null;
+	suspension_json: string | null;
+	tires_json: string | null;
+	aero_json: string | null;
 	weight_kg: number | null;
+	weight_front_pct: number | null;
 	fuel_type: string | null;
 	price_json: string | null;
+	eras: string | null;
+	tags: string | null;
 	source: string;
 	confidence: number;
 	created_at: string;
 	updated_at: string;
+}
+
+export interface CarDimensions {
+	length_m: number;
+	width_m: number;
+	height_m: number;
+	wheelbase_m: number;
+	track_width_m: number;
+	ground_clearance_m: number;
+	front_track_m?: number;
+	rear_track_m?: number;
+	front_overhang_m?: number;
+	rear_overhang_m?: number;
+}
+
+export interface CarEngine {
+	displacement_l: number;
+	cylinders: number;
+	configuration: string; // I4, V6, V8, flat4, etc.
+	aspiration: string; // NA, turbo, supercharged
+	power_hp: number;
+	torque_nm: number;
+	max_rpm: number;
+	idle_rpm?: number;
+	compression_ratio?: number;
+	bore_mm?: number;
+	stroke_mm?: number;
+	valves_per_cylinder?: number;
+	fuel_delivery?: string; // MPI, DI, carburetor
+	boost_bar?: number; // for forced induction
+}
+
+export interface CarPerformance {
+	"0_100_km_h"?: number;
+	"0_60_mph"?: number;
+	top_speed_km_h?: number;
+	quarter_mile_s?: number;
+	lateral_g?: number;
+}
+
+export interface CarTransmission {
+	gear_count: number;
+	type: string; // manual, automatic, CVT, DCT
+	final_drive?: number;
+	gear_ratios?: number[];
+	reverse_ratio?: number;
+}
+
+export interface CarBrakes {
+	front_type?: string; // disc, ventilated_disc, drum
+	rear_type?: string;
+	front_diameter_mm?: number;
+	rear_diameter_mm?: number;
+	abs?: boolean;
+}
+
+export interface CarSuspension {
+	front_type?: string; // macpherson, double_wishbone, multilink, torsion_beam
+	rear_type?: string;
+	front_spring_rate_nm?: number;
+	rear_spring_rate_nm?: number;
+}
+
+export interface CarTires {
+	front_size?: string; // e.g. "205/55R16"
+	rear_size?: string;
+	width_mm?: number;
+	aspect_ratio?: number;
+	wheel_diameter_in?: number;
+	tire_type?: string; // summer, all_season, winter, semi_slick
+}
+
+export interface CarAero {
+	drag_coefficient?: number; // Cd
+	lift_coefficient?: number; // Cl
+	frontal_area_m2?: number;
+	downforce_kg?: number; // at some reference speed
+}
+
+export interface CarPrice {
+	min_usd: number;
+	max_usd: number;
+	avg_usd?: number;
+	note?: string;
 }
 
 /** Parse JSON column safely — returns parsed object or empty dict. */
@@ -209,20 +317,37 @@ function parseJson<T = Record<string, unknown>>(val: string | null): T {
 	}
 }
 
+/** Parse tags string (comma-separated) to array. */
+function parseTags(val: string | null): string[] {
+	if (!val) return [];
+	return val
+		.split(",")
+		.map((t) => t.trim())
+		.filter(Boolean);
+}
+
 export interface CarMetadata {
 	id: number;
 	make: string;
 	model: string;
 	year: number | null;
+	trim: string | null;
 	bodyType: string | null;
-	dimensions: Record<string, number>;
-	engine: Record<string, number | string>;
-	performance: Record<string, number>;
+	dimensions: CarDimensions;
+	engine: CarEngine;
+	performance: CarPerformance;
 	drivetrain: string | null;
-	transmission: Record<string, number | string>;
+	transmission: CarTransmission;
+	brakes: CarBrakes;
+	suspension: CarSuspension;
+	tires: CarTires;
+	aero: CarAero;
 	weightKg: number | null;
+	weightFrontPct: number | null;
 	fuelType: string | null;
-	price: Record<string, number | string>;
+	price: CarPrice;
+	eras: string | null;
+	tags: string[];
 	source: string;
 	confidence: number;
 }
@@ -233,15 +358,23 @@ function rowToMeta(row: CarMetadataRow): CarMetadata {
 		make: row.make,
 		model: row.model,
 		year: row.year,
+		trim: row.trim,
 		bodyType: row.body_type,
-		dimensions: parseJson(row.dimensions_json),
-		engine: parseJson(row.engine_json),
-		performance: parseJson(row.performance_json),
+		dimensions: parseJson<CarDimensions>(row.dimensions_json),
+		engine: parseJson<CarEngine>(row.engine_json),
+		performance: parseJson<CarPerformance>(row.performance_json),
 		drivetrain: row.drivetrain,
-		transmission: parseJson(row.transmission_json),
+		transmission: parseJson<CarTransmission>(row.transmission_json),
+		brakes: parseJson<CarBrakes>(row.brakes_json),
+		suspension: parseJson<CarSuspension>(row.suspension_json),
+		tires: parseJson<CarTires>(row.tires_json),
+		aero: parseJson<CarAero>(row.aero_json),
 		weightKg: row.weight_kg,
+		weightFrontPct: row.weight_front_pct,
 		fuelType: row.fuel_type,
-		price: parseJson(row.price_json),
+		price: parseJson<CarPrice>(row.price_json),
+		eras: row.eras,
+		tags: parseTags(row.tags),
 		source: row.source,
 		confidence: row.confidence,
 	};
@@ -256,8 +389,76 @@ export function searchCars(query: string, limit = 20): CarMetadata[] {
 	const db = getDb();
 	const q = `%${query}%`;
 	const rows = db
-		.prepare("SELECT * FROM car_metadata WHERE make LIKE ? OR model LIKE ? ORDER BY confidence DESC LIMIT ?")
-		.all(q, q, limit) as CarMetadataRow[];
+		.prepare(
+			"SELECT * FROM car_metadata WHERE make LIKE ? OR model LIKE ? OR trim LIKE ? OR tags LIKE ? ORDER BY confidence DESC LIMIT ?",
+		)
+		.all(q, q, q, q, limit) as CarMetadataRow[];
+	return rows.map(rowToMeta);
+}
+
+/** Filter cars by specific fields. All params optional. */
+export function filterCars(filters: {
+	drivetrain?: string;
+	body_type?: string;
+	min_year?: number;
+	max_year?: number;
+	min_power_hp?: number;
+	max_power_hp?: number;
+	min_weight_kg?: number;
+	max_weight_kg?: number;
+	eras?: string;
+	tag?: string;
+	limit?: number;
+}): CarMetadata[] {
+	const db = getDb();
+	const conditions: string[] = [];
+	const params: unknown[] = [];
+
+	const add = (col: string, val: unknown) => {
+		conditions.push(`${col} = ?`);
+		params.push(val);
+	};
+
+	const addLike = (col: string, val: string) => {
+		conditions.push(`${col} LIKE ?`);
+		params.push(`%${val}%`);
+	};
+
+	const addRange = (col: string, min?: number, max?: number) => {
+		if (min !== undefined) {
+			conditions.push(`${col} >= ?`);
+			params.push(min);
+		}
+		if (max !== undefined) {
+			conditions.push(`${col} <= ?`);
+			params.push(max);
+		}
+	};
+
+	if (filters.drivetrain) add("drivetrain", filters.drivetrain);
+	if (filters.body_type) addLike("body_type", filters.body_type);
+	addRange("year", filters.min_year, filters.max_year);
+	if (filters.eras) addLike("eras", filters.eras);
+	if (filters.tag) addLike("tags", filters.tag);
+	addRange("weight_kg", filters.min_weight_kg, filters.max_weight_kg);
+
+	// JSON field filters need json_extract
+	if (filters.min_power_hp !== undefined || filters.max_power_hp !== undefined) {
+		if (filters.min_power_hp !== undefined) {
+			conditions.push("json_extract(engine_json, '$.power_hp') >= ?");
+			params.push(filters.min_power_hp);
+		}
+		if (filters.max_power_hp !== undefined) {
+			conditions.push("json_extract(engine_json, '$.power_hp') <= ?");
+			params.push(filters.max_power_hp);
+		}
+	}
+
+	const limit = filters.limit ?? 50;
+	const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+	const sql = `SELECT * FROM car_metadata ${where} ORDER BY confidence DESC LIMIT ?`;
+
+	const rows = db.prepare(sql).all(...params, limit) as CarMetadataRow[];
 	return rows.map(rowToMeta);
 }
 
@@ -270,20 +471,29 @@ export function upsertCarMetadata(car: {
 	make: string;
 	model: string;
 	year: number;
+	trim?: string;
 	body_type?: string;
-	dimensions?: Record<string, number>;
-	engine?: Record<string, number | string>;
-	performance?: Record<string, number>;
+	dimensions?: Partial<CarDimensions>;
+	engine?: Partial<CarEngine>;
+	performance?: Partial<CarPerformance>;
 	drivetrain?: string;
-	transmission?: Record<string, number | string>;
+	transmission?: Partial<CarTransmission>;
+	brakes?: Partial<CarBrakes>;
+	suspension?: Partial<CarSuspension>;
+	tires?: Partial<CarTires>;
+	aero?: Partial<CarAero>;
 	weight_kg?: number;
+	weight_front_pct?: number;
 	fuel_type?: string;
-	price?: Record<string, number | string>;
+	price?: Partial<CarPrice>;
+	eras?: string;
+	tags?: string[];
 	source?: string;
 	confidence?: number;
 }): number {
 	const db = getDb();
 	const now = new Date().toISOString();
+	const tagsStr = car.tags?.join(",") ?? null;
 
 	const existing = db
 		.prepare("SELECT id, confidence FROM car_metadata WHERE make = ? AND model = ? AND year = ?")
@@ -292,31 +502,50 @@ export function upsertCarMetadata(car: {
 	if (existing && (car.confidence ?? 0.5) > existing.confidence) {
 		// Merge: update only non-null fields
 		const current = db.prepare("SELECT * FROM car_metadata WHERE id = ?").get(existing.id) as CarMetadataRow;
-		const dims = { ...parseJson(current.dimensions_json), ...car.dimensions };
-		const eng = { ...parseJson(current.engine_json), ...car.engine };
-		const perf = { ...parseJson(current.performance_json), ...car.performance };
-		const trans = { ...parseJson(current.transmission_json), ...car.transmission };
-		const price = { ...parseJson(current.price_json), ...car.price };
+		const dims = { ...parseJson<CarDimensions>(current.dimensions_json), ...car.dimensions };
+		const eng = { ...parseJson<CarEngine>(current.engine_json), ...car.engine };
+		const perf = { ...parseJson<CarPerformance>(current.performance_json), ...car.performance };
+		const trans = { ...parseJson<CarTransmission>(current.transmission_json), ...car.transmission };
+		const brakes = { ...parseJson<CarBrakes>(current.brakes_json), ...car.brakes };
+		const susp = { ...parseJson<CarSuspension>(current.suspension_json), ...car.suspension };
+		const tires = { ...parseJson<CarTires>(current.tires_json), ...car.tires };
+		const aero = { ...parseJson<CarAero>(current.aero_json), ...car.aero };
+		const price = { ...parseJson<CarPrice>(current.price_json), ...car.price };
 
 		db.prepare(`
 			UPDATE car_metadata SET
+				trim = COALESCE(NULLIF(?, trim), trim),
 				body_type = COALESCE(NULLIF(?, body_type), body_type),
 				dimensions_json = ?, engine_json = ?, performance_json = ?,
 				drivetrain = COALESCE(NULLIF(?, drivetrain), drivetrain),
-				transmission_json = ?, weight_kg = COALESCE(?, weight_kg),
+				transmission_json = ?, brakes_json = ?, suspension_json = ?,
+				tires_json = ?, aero_json = ?,
+				weight_kg = COALESCE(?, weight_kg),
+				weight_front_pct = COALESCE(?, weight_front_pct),
 				fuel_type = COALESCE(NULLIF(?, fuel_type), fuel_type),
-				price_json = ?, source = ?, confidence = ?, updated_at = ?
+				price_json = ?,
+				eras = COALESCE(NULLIF(?, eras), eras),
+				tags = COALESCE(NULLIF(?, tags), tags),
+				source = ?, confidence = ?, updated_at = ?
 			WHERE id = ?
 		`).run(
+			car.trim ?? null,
 			car.body_type ?? null,
 			JSON.stringify(dims),
 			JSON.stringify(eng),
 			JSON.stringify(perf),
 			car.drivetrain ?? null,
 			JSON.stringify(trans),
+			JSON.stringify(brakes),
+			JSON.stringify(susp),
+			JSON.stringify(tires),
+			JSON.stringify(aero),
 			car.weight_kg ?? null,
+			car.weight_front_pct ?? null,
 			car.fuel_type ?? null,
 			JSON.stringify(price),
+			car.eras ?? null,
+			tagsStr,
 			car.source ?? "manual",
 			car.confidence ?? 0.5,
 			now,
@@ -328,23 +557,33 @@ export function upsertCarMetadata(car: {
 	if (!existing) {
 		const result = db
 			.prepare(`
-			INSERT INTO car_metadata (make, model, year, body_type, dimensions_json, engine_json,
-				performance_json, drivetrain, transmission_json, weight_kg, fuel_type, price_json, source, confidence)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO car_metadata (make, model, year, trim, body_type, dimensions_json, engine_json,
+				performance_json, drivetrain, transmission_json, brakes_json, suspension_json,
+				tires_json, aero_json, weight_kg, weight_front_pct, fuel_type, price_json,
+				eras, tags, source, confidence)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`)
 			.run(
 				car.make,
 				car.model,
 				car.year,
+				car.trim ?? null,
 				car.body_type ?? null,
 				JSON.stringify(car.dimensions ?? {}),
 				JSON.stringify(car.engine ?? {}),
 				JSON.stringify(car.performance ?? {}),
 				car.drivetrain ?? null,
 				JSON.stringify(car.transmission ?? {}),
+				JSON.stringify(car.brakes ?? {}),
+				JSON.stringify(car.suspension ?? {}),
+				JSON.stringify(car.tires ?? {}),
+				JSON.stringify(car.aero ?? {}),
 				car.weight_kg ?? null,
+				car.weight_front_pct ?? null,
 				car.fuel_type ?? null,
 				JSON.stringify(car.price ?? {}),
+				car.eras ?? null,
+				tagsStr,
 				car.source ?? "manual",
 				car.confidence ?? 0.5,
 			);

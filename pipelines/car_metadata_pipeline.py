@@ -28,144 +28,346 @@ from datetime import datetime, timezone
 # ---------------------------------------------------------------------------
 # Reference dataset for classic/JDM cars not well-covered by US APIs
 # ---------------------------------------------------------------------------
+
 REFERENCE_CARS = [
     # Toyota AE86 (1983-1987)
     {
         "make": "Toyota", "model": "Corolla AE86 (Sprinter Trueno)", "year": 1986,
+        "trim": "GT-Apex",
         "body_type": "coupe",
-        "dimensions": {"length": 4.26, "width": 1.63, "height": 1.34, "wheelbase": 2.43, "track_width": 1.40, "ground_clearance": 0.15},
-        "engine": {"displacement_l": 1.6, "cylinders": 4, "configuration": "I4", "aspiration": "NA",
-                    "power_hp": 130, "torque_nm": 152, "max_rpm": 7600, "compression_ratio": 9.4},
-        "drivetrain": "rwd", "transmission": {"gear_count": 5, "type": "manual"},
-        "weight_kg": 940, "fuel_type": "gasoline",
-        "performance": {"0_100_km_h": 8.3, "top_speed_km_h": 190},
-        "price": {"min_usd": 2500, "max_usd": 35000, "note": "original MSRP ~$9k; restored $15k-35k"},
+        "dimensions": {
+            "length": 4.26, "width": 1.63, "height": 1.34,
+            "wheelbase": 2.43, "track_width": 1.40, "ground_clearance": 0.15,
+            "front_track_m": 1.40, "rear_track_m": 1.40,
+            "front_overhang_m": 0.87, "rear_overhang_m": 0.96,
+        },
+        "engine": {
+            "displacement_l": 1.6, "cylinders": 4, "configuration": "I4",
+            "aspiration": "NA", "power_hp": 130, "torque_nm": 152,
+            "max_rpm": 7600, "idle_rpm": 850, "compression_ratio": 9.4,
+            "bore_mm": 81.0, "stroke_mm": 77.0, "valves_per_cylinder": 4,
+            "fuel_delivery": "EFI",
+        },
+        "drivetrain": "rwd",
+        "transmission": {"gear_count": 5, "type": "manual", "final_drive": 4.3},
+        "brakes": {"front_type": "ventilated_disc", "rear_type": "disc", "front_diameter_mm": 232},
+        "suspension": {"front_type": "strut", "rear_type": "four_link"},
+        "tires": {"front_size": "185/70R13", "rear_size": "185/70R13", "width_mm": 185, "aspect_ratio": 70, "wheel_diameter_in": 13},
+        "aero": {"drag_coefficient": 0.36},
+        "weight_kg": 940, "weight_front_pct": 53,
+        "fuel_type": "gasoline",
+        "performance": {"0_100_km_h": 8.3, "top_speed_km_h": 190, "quarter_mile_s": 16.4, "lateral_g": 0.82},
+        "price": {"min_usd": 2500, "max_usd": 35000, "avg_usd": 12000, "note": "original MSRP ~$9k; restored $15k-35k"},
+        "eras": "80s,90s", "tags": "jdm,drift,classic,lightweight,affordable",
         "confidence": 0.9, "source": "reference"
     },
     # Mazda MX-5 NA (1989-1997)
     {
         "make": "Mazda", "model": "MX-5 Miata NA", "year": 1990,
+        "trim": "1.6",
         "body_type": "roadster",
-        "dimensions": {"length": 3.97, "width": 1.67, "height": 1.23, "wheelbase": 2.27, "track_width": 1.40, "ground_clearance": 0.14},
-        "engine": {"displacement_l": 1.6, "cylinders": 4, "configuration": "I4", "aspiration": "NA",
-                    "power_hp": 116, "torque_nm": 137, "max_rpm": 6500, "compression_ratio": 9.0},
-        "drivetrain": "rwd", "transmission": {"gear_count": 5, "type": "manual"},
-        "weight_kg": 960, "fuel_type": "gasoline",
-        "performance": {"0_100_km_h": 9.4, "top_speed_km_h": 183},
-        "price": {"min_usd": 2000, "max_usd": 15000, "note": "original MSRP ~$14k; good ones $5k-15k"},
+        "dimensions": {
+            "length": 3.97, "width": 1.67, "height": 1.23,
+            "wheelbase": 2.27, "track_width": 1.40, "ground_clearance": 0.14,
+            "front_track_m": 1.41, "rear_track_m": 1.40,
+            "front_overhang_m": 0.78, "rear_overhang_m": 0.92,
+        },
+        "engine": {
+            "displacement_l": 1.6, "cylinders": 4, "configuration": "I4",
+            "aspiration": "NA", "power_hp": 116, "torque_nm": 137,
+            "max_rpm": 6500, "idle_rpm": 800, "compression_ratio": 9.0,
+            "bore_mm": 78.0, "stroke_mm": 83.6, "valves_per_cylinder": 4,
+            "fuel_delivery": "EFI",
+        },
+        "drivetrain": "rwd",
+        "transmission": {"gear_count": 5, "type": "manual", "final_drive": 4.1},
+        "brakes": {"front_type": "disc", "rear_type": "disc", "front_diameter_mm": 255},
+        "suspension": {"front_type": "double_wishbone", "rear_type": "multilink"},
+        "tires": {"front_size": "185/60R14", "rear_size": "185/60R14", "width_mm": 185, "aspect_ratio": 60, "wheel_diameter_in": 14},
+        "aero": {"drag_coefficient": 0.38},
+        "weight_kg": 960, "weight_front_pct": 50,
+        "fuel_type": "gasoline",
+        "performance": {"0_100_km_h": 9.4, "top_speed_km_h": 183, "quarter_mile_s": 17.1, "lateral_g": 0.87},
+        "price": {"min_usd": 2000, "max_usd": 15000, "avg_usd": 7000, "note": "original MSRP ~$14k; good ones $5k-15k"},
+        "eras": "90s", "tags": "roadster,lightweight,miata,jdm,affordable,handling",
         "confidence": 0.9, "source": "reference"
     },
     {
         "make": "Mazda", "model": "MX-5 Miata NB", "year": 2000,
+        "trim": "1.8",
         "body_type": "roadster",
-        "dimensions": {"length": 3.95, "width": 1.67, "height": 1.22, "wheelbase": 2.29, "track_width": 1.44, "ground_clearance": 0.14},
-        "engine": {"displacement_l": 1.8, "cylinders": 4, "configuration": "I4", "aspiration": "NA",
-                    "power_hp": 146, "torque_nm": 167, "max_rpm": 6800, "compression_ratio": 10.0},
-        "drivetrain": "rwd", "transmission": {"gear_count": 5, "type": "manual"},
-        "weight_kg": 1040, "fuel_type": "gasoline",
-        "performance": {"0_100_km_h": 7.8, "top_speed_km_h": 200},
-        "price": {"min_usd": 3000, "max_usd": 18000, "note": "original MSRP ~$21k"},
+        "dimensions": {
+            "length": 3.95, "width": 1.67, "height": 1.22,
+            "wheelbase": 2.29, "track_width": 1.44, "ground_clearance": 0.14,
+            "front_track_m": 1.45, "rear_track_m": 1.44,
+            "front_overhang_m": 0.78, "rear_overhang_m": 0.88,
+        },
+        "engine": {
+            "displacement_l": 1.8, "cylinders": 4, "configuration": "I4",
+            "aspiration": "NA", "power_hp": 146, "torque_nm": 167,
+            "max_rpm": 6800, "idle_rpm": 800, "compression_ratio": 10.0,
+            "bore_mm": 83.0, "stroke_mm": 85.0, "valves_per_cylinder": 4,
+            "fuel_delivery": "EFI",
+        },
+        "drivetrain": "rwd",
+        "transmission": {"gear_count": 5, "type": "manual", "final_drive": 4.1},
+        "brakes": {"front_type": "ventilated_disc", "rear_type": "disc", "front_diameter_mm": 258},
+        "suspension": {"front_type": "double_wishbone", "rear_type": "multilink"},
+        "tires": {"front_size": "195/50R15", "rear_size": "195/50R15", "width_mm": 195, "aspect_ratio": 50, "wheel_diameter_in": 15},
+        "aero": {"drag_coefficient": 0.36},
+        "weight_kg": 1040, "weight_front_pct": 50,
+        "fuel_type": "gasoline",
+        "performance": {"0_100_km_h": 7.8, "top_speed_km_h": 200, "quarter_mile_s": 16.0, "lateral_g": 0.91},
+        "price": {"min_usd": 3000, "max_usd": 18000, "avg_usd": 9000, "note": "original MSRP ~$21k"},
+        "eras": "2000s", "tags": "roadster,lightweight,miata,handling",
         "confidence": 0.9, "source": "reference"
     },
-    # Honda Civic (multiple generations)
+    # Honda Civic EG6 (1992-1995)
     {
         "make": "Honda", "model": "Civic EG6 (Si II)", "year": 1995,
+        "trim": "Si II",
         "body_type": "hatchback",
-        "dimensions": {"length": 4.19, "width": 1.70, "height": 1.35, "wheelbase": 2.57, "track_width": 1.47, "ground_clearance": 0.15},
-        "engine": {"displacement_l": 1.6, "cylinders": 4, "configuration": "I4", "aspiration": "NA",
-                    "power_hp": 160, "torque_nm": 150, "max_rpm": 7800, "compression_ratio": 10.4},
-        "drivetrain": "fwd", "transmission": {"gear_count": 5, "type": "manual"},
-        "weight_kg": 1060, "fuel_type": "gasoline",
-        "performance": {"0_100_km_h": 7.5, "top_speed_km_h": 210},
-        "price": {"min_usd": 3000, "max_usd": 25000, "note": "JDM Si II, B16A engine"},
+        "dimensions": {
+            "length": 4.19, "width": 1.70, "height": 1.35,
+            "wheelbase": 2.57, "track_width": 1.47, "ground_clearance": 0.15,
+            "front_track_m": 1.47, "rear_track_m": 1.46,
+            "front_overhang_m": 0.78, "rear_overhang_m": 0.84,
+        },
+        "engine": {
+            "displacement_l": 1.6, "cylinders": 4, "configuration": "I4",
+            "aspiration": "NA", "power_hp": 160, "torque_nm": 150,
+            "max_rpm": 7800, "idle_rpm": 800, "compression_ratio": 10.4,
+            "bore_mm": 81.0, "stroke_mm": 77.0, "valves_per_cylinder": 4,
+            "fuel_delivery": "MPI",
+        },
+        "drivetrain": "fwd",
+        "transmission": {"gear_count": 5, "type": "manual", "final_drive": 4.26},
+        "brakes": {"front_type": "disc", "rear_type": "drum", "front_diameter_mm": 262},
+        "suspension": {"front_type": "double_wishbone", "rear_type": "double_wishbone"},
+        "tires": {"front_size": "185/60R14", "rear_size": "185/60R14", "width_mm": 185, "aspect_ratio": 60, "wheel_diameter_in": 14},
+        "aero": {"drag_coefficient": 0.32},
+        "weight_kg": 1060, "weight_front_pct": 60,
+        "fuel_type": "gasoline",
+        "performance": {"0_100_km_h": 7.5, "top_speed_km_h": 210, "quarter_mile_s": 15.8, "lateral_g": 0.85},
+        "price": {"min_usd": 3000, "max_usd": 25000, "avg_usd": 12000, "note": "JDM Si II, B16A engine"},
+        "eras": "90s", "tags": "jdm,hatchback,hot_hatch,vtec,affordable",
         "confidence": 0.85, "source": "reference"
     },
+    # Honda Civic EK9 Type R (1997-2000)
     {
         "make": "Honda", "model": "Civic EK9 (Type R)", "year": 1998,
+        "trim": "Type R",
         "body_type": "hatchback",
-        "dimensions": {"length": 4.18, "width": 1.70, "height": 1.38, "wheelbase": 2.62, "track_width": 1.47, "ground_clearance": 0.15},
-        "engine": {"displacement_l": 1.6, "cylinders": 4, "configuration": "I4", "aspiration": "NA",
-                    "power_hp": 185, "torque_nm": 160, "max_rpm": 8200, "compression_ratio": 10.8},
-        "drivetrain": "fwd", "transmission": {"gear_count": 5, "type": "manual"},
-        "weight_kg": 1040, "fuel_type": "gasoline",
-        "performance": {"0_100_km_h": 6.7, "top_speed_km_h": 215},
-        "price": {"min_usd": 8000, "max_usd": 40000, "note": "JDM only, B16B engine"},
+        "dimensions": {
+            "length": 4.18, "width": 1.70, "height": 1.38,
+            "wheelbase": 2.62, "track_width": 1.47, "ground_clearance": 0.15,
+            "front_track_m": 1.47, "rear_track_m": 1.46,
+            "front_overhang_m": 0.76, "rear_overhang_m": 0.80,
+        },
+        "engine": {
+            "displacement_l": 1.6, "cylinders": 4, "configuration": "I4",
+            "aspiration": "NA", "power_hp": 185, "torque_nm": 160,
+            "max_rpm": 8200, "idle_rpm": 850, "compression_ratio": 10.8,
+            "bore_mm": 81.0, "stroke_mm": 77.0, "valves_per_cylinder": 4,
+            "fuel_delivery": "MPI",
+        },
+        "drivetrain": "fwd",
+        "transmission": {"gear_count": 5, "type": "manual", "final_drive": 4.79},
+        "brakes": {"front_type": "ventilated_disc", "rear_type": "disc", "front_diameter_mm": 282},
+        "suspension": {"front_type": "double_wishbone", "rear_type": "double_wishbone"},
+        "tires": {"front_size": "195/55R15", "rear_size": "195/55R15", "width_mm": 195, "aspect_ratio": 55, "wheel_diameter_in": 15},
+        "aero": {"drag_coefficient": 0.31},
+        "weight_kg": 1040, "weight_front_pct": 60,
+        "fuel_type": "gasoline",
+        "performance": {"0_100_km_h": 6.7, "top_speed_km_h": 215, "quarter_mile_s": 15.2, "lateral_g": 0.93},
+        "price": {"min_usd": 8000, "max_usd": 40000, "avg_usd": 20000, "note": "JDM only, B16B engine"},
+        "eras": "90s,2000s", "tags": "jdm,type_r,hatchback,hot_hatch,vtec,legend",
         "confidence": 0.85, "source": "reference"
     },
-    # Nissan Silvia S13
+    # Nissan Silvia S13 (1988-1994)
     {
         "make": "Nissan", "model": "Silvia S13", "year": 1989,
+        "trim": "Kouki Turbo",
         "body_type": "coupe",
-        "dimensions": {"length": 4.47, "width": 1.69, "height": 1.29, "wheelbase": 2.47, "track_width": 1.46, "ground_clearance": 0.15},
-        "engine": {"displacement_l": 1.8, "cylinders": 4, "configuration": "I4", "aspiration": "turbo",
-                    "power_hp": 177, "torque_nm": 226, "max_rpm": 6800, "compression_ratio": 8.5},
-        "drivetrain": "rwd", "transmission": {"gear_count": 5, "type": "manual"},
-        "weight_kg": 1080, "fuel_type": "gasoline",
-        "performance": {"0_100_km_h": 7.0, "top_speed_km_h": 215},
-        "price": {"min_usd": 3000, "max_usd": 30000, "note": "CA18DET turbo; SR20DET in later S13"},
+        "dimensions": {
+            "length": 4.47, "width": 1.69, "height": 1.29,
+            "wheelbase": 2.47, "track_width": 1.46, "ground_clearance": 0.15,
+            "front_track_m": 1.46, "rear_track_m": 1.46,
+            "front_overhang_m": 0.88, "rear_overhang_m": 1.12,
+        },
+        "engine": {
+            "displacement_l": 1.8, "cylinders": 4, "configuration": "I4",
+            "aspiration": "turbo", "power_hp": 177, "torque_nm": 226,
+            "max_rpm": 6800, "idle_rpm": 800, "compression_ratio": 8.5,
+            "bore_mm": 83.0, "stroke_mm": 83.0, "valves_per_cylinder": 4,
+            "fuel_delivery": "MPI", "boost_bar": 0.6,
+        },
+        "drivetrain": "rwd",
+        "transmission": {"gear_count": 5, "type": "manual", "final_drive": 4.08},
+        "brakes": {"front_type": "ventilated_disc", "rear_type": "disc", "front_diameter_mm": 257},
+        "suspension": {"front_type": "macpherson", "rear_type": "multilink"},
+        "tires": {"front_size": "205/60R15", "rear_size": "205/60R15", "width_mm": 205, "aspect_ratio": 60, "wheel_diameter_in": 15},
+        "aero": {"drag_coefficient": 0.33},
+        "weight_kg": 1080, "weight_front_pct": 52,
+        "fuel_type": "gasoline",
+        "performance": {"0_100_km_h": 7.0, "top_speed_km_h": 215, "quarter_mile_s": 15.6, "lateral_g": 0.84},
+        "price": {"min_usd": 3000, "max_usd": 30000, "avg_usd": 12000, "note": "CA18DET turbo; SR20DET in later S13"},
+        "eras": "80s,90s", "tags": "jdm,drift,classic,turbo,affordable",
         "confidence": 0.85, "source": "reference"
     },
+    # Nissan Silvia S14 (1993-1999)
     {
         "make": "Nissan", "model": "Silvia S14 (Kouki)", "year": 1997,
+        "trim": "Kouki",
         "body_type": "coupe",
-        "dimensions": {"length": 4.50, "width": 1.73, "height": 1.31, "wheelbase": 2.52, "track_width": 1.48, "ground_clearance": 0.14},
-        "engine": {"displacement_l": 2.0, "cylinders": 4, "configuration": "I4", "aspiration": "turbo",
-                    "power_hp": 220, "torque_nm": 275, "max_rpm": 7000, "compression_ratio": 8.5},
-        "drivetrain": "rwd", "transmission": {"gear_count": 5, "type": "manual"},
-        "weight_kg": 1240, "fuel_type": "gasoline",
-        "performance": {"0_100_km_h": 6.0, "top_speed_km_h": 235},
-        "price": {"min_usd": 5000, "max_usd": 35000, "note": "SR20DET, JDM spec"},
+        "dimensions": {
+            "length": 4.50, "width": 1.73, "height": 1.31,
+            "wheelbase": 2.52, "track_width": 1.48, "ground_clearance": 0.14,
+            "front_track_m": 1.48, "rear_track_m": 1.48,
+            "front_overhang_m": 0.90, "rear_overhang_m": 1.08,
+        },
+        "engine": {
+            "displacement_l": 2.0, "cylinders": 4, "configuration": "I4",
+            "aspiration": "turbo", "power_hp": 220, "torque_nm": 275,
+            "max_rpm": 7000, "idle_rpm": 800, "compression_ratio": 8.5,
+            "bore_mm": 86.0, "stroke_mm": 86.0, "valves_per_cylinder": 4,
+            "fuel_delivery": "MPI", "boost_bar": 0.7,
+        },
+        "drivetrain": "rwd",
+        "transmission": {"gear_count": 5, "type": "manual", "final_drive": 3.69},
+        "brakes": {"front_type": "ventilated_disc", "rear_type": "ventilated_disc", "front_diameter_mm": 280},
+        "suspension": {"front_type": "macpherson", "rear_type": "multilink"},
+        "tires": {"front_size": "205/55R16", "rear_size": "205/55R16", "width_mm": 205, "aspect_ratio": 55, "wheel_diameter_in": 16},
+        "aero": {"drag_coefficient": 0.32},
+        "weight_kg": 1240, "weight_front_pct": 52,
+        "fuel_type": "gasoline",
+        "performance": {"0_100_km_h": 6.0, "top_speed_km_h": 235, "quarter_mile_s": 14.8, "lateral_g": 0.89},
+        "price": {"min_usd": 5000, "max_usd": 35000, "avg_usd": 15000, "note": "SR20DET, JDM spec"},
+        "eras": "90s,2000s", "tags": "jdm,drift,turbo,classic",
         "confidence": 0.85, "source": "reference"
     },
+    # Nissan Silvia S15 (1999-2002)
     {
         "make": "Nissan", "model": "Silvia S15 Spec R", "year": 2002,
+        "trim": "Spec R",
         "body_type": "coupe",
-        "dimensions": {"length": 4.44, "width": 1.73, "height": 1.32, "wheelbase": 2.52, "track_width": 1.48, "ground_clearance": 0.14},
-        "engine": {"displacement_l": 2.0, "cylinders": 4, "configuration": "I4", "aspiration": "turbo",
-                    "power_hp": 247, "torque_nm": 275, "max_rpm": 7200, "compression_ratio": 8.5},
-        "drivetrain": "rwd", "transmission": {"gear_count": 6, "type": "manual"},
-        "weight_kg": 1240, "fuel_type": "gasoline",
-        "performance": {"0_100_km_h": 5.4, "top_speed_km_h": 245},
-        "price": {"min_usd": 10000, "max_usd": 50000, "note": "SR20DET, JDM only"},
+        "dimensions": {
+            "length": 4.44, "width": 1.73, "height": 1.32,
+            "wheelbase": 2.52, "track_width": 1.48, "ground_clearance": 0.14,
+            "front_track_m": 1.48, "rear_track_m": 1.48,
+            "front_overhang_m": 0.88, "rear_overhang_m": 1.04,
+        },
+        "engine": {
+            "displacement_l": 2.0, "cylinders": 4, "configuration": "I4",
+            "aspiration": "turbo", "power_hp": 247, "torque_nm": 275,
+            "max_rpm": 7200, "idle_rpm": 800, "compression_ratio": 8.5,
+            "bore_mm": 86.0, "stroke_mm": 86.0, "valves_per_cylinder": 4,
+            "fuel_delivery": "DI", "boost_bar": 0.85,
+        },
+        "drivetrain": "rwd",
+        "transmission": {"gear_count": 6, "type": "manual", "final_drive": 3.69},
+        "brakes": {"front_type": "ventilated_disc", "rear_type": "ventilated_disc", "front_diameter_mm": 296, "abs": True},
+        "suspension": {"front_type": "macpherson", "rear_type": "multilink"},
+        "tires": {"front_size": "225/45R17", "rear_size": "245/40R17", "width_mm": 225, "aspect_ratio": 45, "wheel_diameter_in": 17},
+        "aero": {"drag_coefficient": 0.30},
+        "weight_kg": 1240, "weight_front_pct": 53,
+        "fuel_type": "gasoline",
+        "performance": {"0_100_km_h": 5.4, "top_speed_km_h": 245, "quarter_mile_s": 13.9, "lateral_g": 0.96},
+        "price": {"min_usd": 10000, "max_usd": 50000, "avg_usd": 25000, "note": "SR20DET, JDM only"},
+        "eras": "2000s", "tags": "jdm,drift,turbo,legend,handling",
         "confidence": 0.85, "source": "reference"
     },
-    # BMW M3 E30
+    # BMW M3 E30 (1986-1991)
     {
         "make": "BMW", "model": "M3 E30", "year": 1989,
+        "trim": "",
         "body_type": "coupe",
-        "dimensions": {"length": 4.33, "width": 1.68, "height": 1.37, "wheelbase": 2.57, "track_width": 1.41, "ground_clearance": 0.13},
-        "engine": {"displacement_l": 2.3, "cylinders": 4, "configuration": "I4", "aspiration": "NA",
-                    "power_hp": 200, "torque_nm": 240, "max_rpm": 7000, "compression_ratio": 10.5},
-        "drivetrain": "rwd", "transmission": {"gear_count": 5, "type": "manual"},
-        "weight_kg": 1200, "fuel_type": "gasoline",
-        "performance": {"0_100_km_h": 6.7, "top_speed_km_h": 235},
-        "price": {"min_usd": 30000, "max_usd": 150000, "note": "S14 engine, collector car"},
+        "dimensions": {
+            "length": 4.33, "width": 1.68, "height": 1.37,
+            "wheelbase": 2.57, "track_width": 1.41, "ground_clearance": 0.13,
+            "front_track_m": 1.41, "rear_track_m": 1.42,
+            "front_overhang_m": 0.80, "rear_overhang_m": 0.96,
+        },
+        "engine": {
+            "displacement_l": 2.3, "cylinders": 4, "configuration": "I4",
+            "aspiration": "NA", "power_hp": 200, "torque_nm": 240,
+            "max_rpm": 7000, "idle_rpm": 900, "compression_ratio": 10.5,
+            "bore_mm": 93.4, "stroke_mm": 84.0, "valves_per_cylinder": 4,
+            "fuel_delivery": "MPI",
+        },
+        "drivetrain": "rwd",
+        "transmission": {"gear_count": 5, "type": "manual", "final_drive": 3.15},
+        "brakes": {"front_type": "ventilated_disc", "rear_type": "ventilated_disc", "front_diameter_mm": 282, "abs": False},
+        "suspension": {"front_type": "macpherson", "rear_type": "semi_trailing_arm"},
+        "tires": {"front_size": "205/55R15", "rear_size": "205/55R15", "width_mm": 205, "aspect_ratio": 55, "wheel_diameter_in": 15},
+        "aero": {"drag_coefficient": 0.35},
+        "weight_kg": 1200, "weight_front_pct": 54,
+        "fuel_type": "gasoline",
+        "performance": {"0_100_km_h": 6.7, "top_speed_km_h": 235, "quarter_mile_s": 15.1, "lateral_g": 0.90},
+        "price": {"min_usd": 30000, "max_usd": 150000, "avg_usd": 65000, "note": "S14 engine, collector car"},
+        "eras": "80s,90s", "tags": "classic,bmw,homologation,legend,collector",
         "confidence": 0.9, "source": "reference"
     },
-    # BMW M3 E36
+    # BMW M3 E36 (1992-1999)
     {
         "make": "BMW", "model": "M3 E36", "year": 1996,
+        "trim": "Euro",
         "body_type": "coupe",
-        "dimensions": {"length": 4.43, "width": 1.71, "height": 1.35, "wheelbase": 2.70, "track_width": 1.43, "ground_clearance": 0.12},
-        "engine": {"displacement_l": 3.2, "cylinders": 6, "configuration": "I6", "aspiration": "NA",
-                    "power_hp": 321, "torque_nm": 350, "max_rpm": 7000, "compression_ratio": 10.5},
-        "drivetrain": "rwd", "transmission": {"gear_count": 5, "type": "manual"},
-        "weight_kg": 1460, "fuel_type": "gasoline",
-        "performance": {"0_100_km_h": 5.5, "top_speed_km_h": 250},
-        "price": {"min_usd": 5000, "max_usd": 30000, "note": "US-spec 240hp; Euro 321hp shown here"},
+        "dimensions": {
+            "length": 4.43, "width": 1.71, "height": 1.35,
+            "wheelbase": 2.70, "track_width": 1.43, "ground_clearance": 0.12,
+            "front_track_m": 1.43, "rear_track_m": 1.44,
+            "front_overhang_m": 0.80, "rear_overhang_m": 0.93,
+        },
+        "engine": {
+            "displacement_l": 3.2, "cylinders": 6, "configuration": "I6",
+            "aspiration": "NA", "power_hp": 321, "torque_nm": 350,
+            "max_rpm": 7000, "idle_rpm": 800, "compression_ratio": 10.5,
+            "bore_mm": 86.0, "stroke_mm": 91.0, "valves_per_cylinder": 4,
+            "fuel_delivery": "MPI",
+        },
+        "drivetrain": "rwd",
+        "transmission": {"gear_count": 5, "type": "manual", "final_drive": 3.23},
+        "brakes": {"front_type": "ventilated_disc", "rear_type": "ventilated_disc", "front_diameter_mm": 315, "abs": True},
+        "suspension": {"front_type": "macpherson", "rear_type": "z_axle"},
+        "tires": {"front_size": "225/45R17", "rear_size": "245/40R17", "width_mm": 225, "aspect_ratio": 45, "wheel_diameter_in": 17},
+        "aero": {"drag_coefficient": 0.32},
+        "weight_kg": 1460, "weight_front_pct": 54,
+        "fuel_type": "gasoline",
+        "performance": {"0_100_km_h": 5.5, "top_speed_km_h": 250, "quarter_mile_s": 13.7, "lateral_g": 0.92},
+        "price": {"min_usd": 5000, "max_usd": 30000, "avg_usd": 15000, "note": "US-spec 240hp; Euro 321hp shown here"},
+        "eras": "90s", "tags": "classic,bmw,straight_six,affordable",
         "confidence": 0.85, "source": "reference"
     },
-    # BMW M3 E46
+    # BMW M3 E46 (2000-2006)
     {
         "make": "BMW", "model": "M3 E46", "year": 2003,
+        "trim": "CSL",
         "body_type": "coupe",
-        "dimensions": {"length": 4.57, "width": 1.78, "height": 1.37, "wheelbase": 2.76, "track_width": 1.51, "ground_clearance": 0.11},
-        "engine": {"displacement_l": 3.2, "cylinders": 6, "configuration": "I6", "aspiration": "NA",
-                    "power_hp": 343, "torque_nm": 365, "max_rpm": 7900, "compression_ratio": 11.5},
-        "drivetrain": "rwd", "transmission": {"gear_count": 6, "type": "manual"},
-        "weight_kg": 1570, "fuel_type": "gasoline",
-        "performance": {"0_100_km_h": 4.8, "top_speed_km_h": 250},
-        "price": {"min_usd": 8000, "max_usd": 50000, "note": "S54 engine, SMG or manual"},
+        "dimensions": {
+            "length": 4.57, "width": 1.78, "height": 1.37,
+            "wheelbase": 2.76, "track_width": 1.51, "ground_clearance": 0.11,
+            "front_track_m": 1.51, "rear_track_m": 1.51,
+            "front_overhang_m": 0.82, "rear_overhang_m": 0.99,
+        },
+        "engine": {
+            "displacement_l": 3.2, "cylinders": 6, "configuration": "I6",
+            "aspiration": "NA", "power_hp": 343, "torque_nm": 365,
+            "max_rpm": 7900, "idle_rpm": 800, "compression_ratio": 11.5,
+            "bore_mm": 87.0, "stroke_mm": 89.6, "valves_per_cylinder": 4,
+            "fuel_delivery": "DI",
+        },
+        "drivetrain": "rwd",
+        "transmission": {"gear_count": 6, "type": "manual", "final_drive": 3.62},
+        "brakes": {"front_type": "ventilated_disc", "rear_type": "ventilated_disc", "front_diameter_mm": 345, "abs": True},
+        "suspension": {"front_type": "macpherson", "rear_type": "multilink"},
+        "tires": {"front_size": "225/40R19", "rear_size": "255/35R19", "width_mm": 225, "aspect_ratio": 40, "wheel_diameter_in": 19},
+        "aero": {"drag_coefficient": 0.35, "downforce_kg": 35},
+        "weight_kg": 1570, "weight_front_pct": 53,
+        "fuel_type": "gasoline",
+        "performance": {"0_100_km_h": 4.8, "top_speed_km_h": 250, "quarter_mile_s": 13.0, "lateral_g": 0.99},
+        "price": {"min_usd": 8000, "max_usd": 50000, "avg_usd": 25000, "note": "S54 engine, SMG or manual"},
+        "eras": "2000s", "tags": "classic,bmw,legend,handling,straight_six",
         "confidence": 0.9, "source": "reference"
     },
 ]
@@ -226,16 +428,14 @@ def nhtsa_source(search=None, dry_run=False):
         else:
             makes_models = [(search, None)]
     else:
-        # Default: fetch models for popular makes
         for make in ["Toyota", "Honda", "Nissan", "Mazda", "BMW", "Ford", "Chevrolet"]:
             models = nhtsa_get_models(make)
             if models:
                 makes_models.extend(models)
-            time.sleep(0.3)  # rate limit courtesy
+            time.sleep(0.3)
 
     for make, model in makes_models:
         if not model:
-            # Make-only search: get all models
             models = nhtsa_get_models(make)
             for m, mdl in models:
                 cars.append({
@@ -248,14 +448,12 @@ def nhtsa_source(search=None, dry_run=False):
                 })
             continue
 
-        # Get specific model - try a few recent years
         for year in range(2024, 2018, -1):
             url = f"{NHTSA_BASE}/GetModelsForMakeYear/make/{urllib.parse.quote(make)}/modelyear/{year}?format=json"
             data = api_get_json(url)
             if data and data.get("Results"):
                 for r in data["Results"]:
                     model_name = r.get("Model_Name", model)
-                    # Filter to matching model if specific search
                     if model and model.lower() not in model_name.lower():
                         continue
                     cars.append({
@@ -263,16 +461,10 @@ def nhtsa_source(search=None, dry_run=False):
                         "model": model_name,
                         "year": year,
                         "body_type": None,
-                        "dimensions": {},
-                        "engine": {},
-                        "performance": {},
-                        "drivetrain": None,
-                        "transmission": {},
-                        "weight_kg": None,
-                        "fuel_type": None,
-                        "price": {},
-                        "confidence": 0.3,
-                        "source": "nhtsa"
+                        "dimensions": {}, "engine": {}, "performance": {},
+                        "drivetrain": None, "transmission": {},
+                        "weight_kg": None, "fuel_type": None,
+                        "price": {}, "confidence": 0.3, "source": "nhtsa"
                     })
                 break
         time.sleep(0.3)
@@ -288,13 +480,9 @@ FE_BASE = "https://fueleconomy.gov/ws/rest/vehicle"
 
 
 def fe_source(search=None, dry_run=False):
-    """Fetch car specs from fueleconomy.gov API.
-
-    Flow: make -> model (trim list) -> options (vehicle IDs) -> vehicle spec by ID.
-    Each step is a separate XML menu API call.
-    """
+    """Fetch car specs from fueleconomy.gov API."""
     cars = []
-    year = 2020  # representative year for US-market cars
+    year = 2020
 
     if search:
         parts = search.split()
@@ -305,7 +493,6 @@ def fe_source(search=None, dry_run=False):
         makes_to_fetch = ["Toyota", "Honda", "Nissan", "Mazda", "BMW"]
 
     for make in makes_to_fetch:
-        # Step 1: get model/trim list for this make
         models_xml = api_get_xml(f"{FE_BASE}/menu/model?year={year}&make={urllib.parse.quote(make)}")
         if models_xml is None:
             continue
@@ -319,7 +506,6 @@ def fe_source(search=None, dry_run=False):
             continue
 
         for trim_name, trim_value in models[:5]:
-            # Step 2: get options -> vehicle IDs
             opts_xml = api_get_xml(
                 f"{FE_BASE}/menu/options?year={year}&make={urllib.parse.quote(make)}&model={urllib.parse.quote(trim_value)}"
             )
@@ -330,7 +516,6 @@ def fe_source(search=None, dry_run=False):
                        for item in opts_xml.findall(".//menuItem")
                        if item.find("text") is not None and item.find("value") is not None]
 
-            # Step 3: fetch vehicle spec by ID
             for opt_text, vid in options[:2]:
                 if not vid:
                     continue
@@ -383,19 +568,14 @@ def _parse_fe_vehicle(xml_root, make, model):
         engine["power_hp"] = power_hp
 
     perf = {}
-    speed = num("sCharger")  # not quite top speed, but we have limited data
     co2 = text("co2")
     if co2:
         perf["co2_grams_per_mile"] = float(co2)
 
-    dims = {}
-    # FuelEconomy doesn't have dimensions, but we take what we can
-
-    # Drivetrain from transmission description
     drive_raw = text("trany") or ""
     drive = "awd" if "AWD" in drive_raw else ("rwd" if "RWD" in drive_raw else "fwd")
 
-    weight = num("pv4", None)  # not always available
+    weight = num("pv4", None)
     fuel = text("fuelType1") or "gasoline"
 
     car = {
@@ -403,7 +583,7 @@ def _parse_fe_vehicle(xml_root, make, model):
         "model": text("model") or model,
         "year": year,
         "body_type": None,
-        "dimensions": dims,
+        "dimensions": {},
         "engine": engine,
         "performance": perf,
         "drivetrain": drive,
@@ -411,7 +591,7 @@ def _parse_fe_vehicle(xml_root, make, model):
         "weight_kg": int(weight) if weight else None,
         "fuel_type": fuel,
         "price": {},
-        "confidence": 0.5,  # moderate - specs are real but incomplete
+        "confidence": 0.5,
         "source": "fueleconomy"
     }
     return car
@@ -438,101 +618,61 @@ DEFAULT_DB = "racing-game/game/data/game_assets.db"
 
 
 def init_db(db_path):
-    """Create car_metadata table if it doesn't exist."""
+    """Create car_metadata table if it doesn't exist. Adds new columns if missing."""
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
+
+    # Base table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS car_metadata (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             make            TEXT,
             model           TEXT,
             year            INTEGER,
+            trim            TEXT,
             body_type       TEXT,
             dimensions_json TEXT,
             engine_json     TEXT,
             performance_json TEXT,
             drivetrain      TEXT,
             transmission_json TEXT,
+            brakes_json     TEXT,
+            suspension_json TEXT,
+            tires_json      TEXT,
+            aero_json       TEXT,
             weight_kg       REAL,
+            weight_front_pct REAL,
             fuel_type       TEXT,
             price_json      TEXT,
+            eras            TEXT,
+            tags            TEXT,
             source          TEXT NOT NULL DEFAULT 'auto',
             confidence      REAL DEFAULT 0.5,
             created_at      TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
-    conn.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_car_meta_unique
-        ON car_metadata(make, model, year)
-    """)
+
+    # Migrate: add any new columns to existing tables
+    new_cols = [
+        ("trim", "TEXT"),
+        ("brakes_json", "TEXT"),
+        ("suspension_json", "TEXT"),
+        ("tires_json", "TEXT"),
+        ("aero_json", "TEXT"),
+        ("weight_front_pct", "REAL"),
+        ("eras", "TEXT"),
+        ("tags", "TEXT"),
+    ]
+    cursor = conn.cursor()
+    for col_name, col_type in new_cols:
+        try:
+            cursor.execute(f"ALTER TABLE car_metadata ADD COLUMN {col_name} {col_type}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
     conn.commit()
     return conn
-
-
-def upsert_car(conn, car, dry_run=False):
-    """Insert or update a car record. Deduplicates by make+model+year."""
-    now = datetime.now(timezone.utc).isoformat()
-    existing = conn.execute(
-        "SELECT id, source, confidence FROM car_metadata WHERE make=? AND model=? AND year=?",
-        (car["make"], car["model"], car["year"])
-    ).fetchone()
-
-    if existing:
-        eid, old_source, old_conf = existing
-        # Merge: keep higher confidence, combine data
-        if car.get("confidence", 0.5) > old_conf:
-            new_dims = _merge_json(conn, eid, "dimensions_json", car.get("dimensions", {}))
-            new_eng = _merge_json(conn, eid, "engine_json", car.get("engine", {}))
-            new_perf = _merge_json(conn, eid, "performance_json", car.get("performance", {}))
-            new_price = _merge_json(conn, eid, "price_json", car.get("price", {}))
-            new_trans = _merge_json(conn, eid, "transmission_json", car.get("transmission", {}))
-
-            conn.execute("""
-                UPDATE car_metadata SET
-                    body_type=COALESCE(NULLIF(?, ''), body_type),
-                    dimensions_json=?, engine_json=?, performance_json=?,
-                    drivetrain=COALESCE(NULLIF(?, ''), drivetrain),
-                    transmission_json=?,
-                    weight_kg=COALESCE(?, weight_kg),
-                    fuel_type=COALESCE(NULLIF(?, ''), fuel_type),
-                    price_json=?,
-                    source=?,
-                    confidence=?,
-                    updated_at=?
-                WHERE id=?
-            """, (
-                car.get("body_type"), new_dims, new_eng, new_perf,
-                car.get("drivetrain"), new_trans,
-                car.get("weight_kg"), car.get("fuel_type"), new_price,
-                car.get("source", "auto"), car.get("confidence", 0.5),
-                now, eid
-            ))
-            return "updated"
-    else:
-        if not dry_run:
-            conn.execute("""
-                INSERT INTO car_metadata
-                    (make, model, year, body_type, dimensions_json, engine_json,
-                     performance_json, drivetrain, transmission_json, weight_kg,
-                     fuel_type, price_json, source, confidence)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (
-                car["make"], car["model"], car["year"],
-                car.get("body_type"),
-                json.dumps(car.get("dimensions", {})),
-                json.dumps(car.get("engine", {})),
-                json.dumps(car.get("performance", {})),
-                car.get("drivetrain"),
-                json.dumps(car.get("transmission", {})),
-                car.get("weight_kg"),
-                car.get("fuel_type"),
-                json.dumps(car.get("price", {})),
-                car.get("source", "auto"),
-                car.get("confidence", 0.5),
-            ))
-        return "inserted"
-    return "skipped"
 
 
 def _merge_json(conn, car_id, col, new_data):
@@ -541,6 +681,92 @@ def _merge_json(conn, car_id, col, new_data):
     existing = json.loads(row[0]) if row and row[0] else {}
     merged = {**existing, **{k: v for k, v in new_data.items() if v is not None and v != {}}}
     return json.dumps(merged)
+
+
+def upsert_car(conn, car, dry_run=False):
+    """Insert or update a car record. Deduplicates by make+model+year."""
+    now = datetime.now(timezone.utc).isoformat()
+    tags_str = ",".join(car.get("tags", [])) if isinstance(car.get("tags"), list) else car.get("tags", "")
+
+    existing = conn.execute(
+        "SELECT id, source, confidence FROM car_metadata WHERE make=? AND model=? AND year=?",
+        (car["make"], car["model"], car["year"])
+    ).fetchone()
+
+    if existing:
+        eid, old_source, old_conf = existing
+        if car.get("confidence", 0.5) > old_conf:
+            new_dims = _merge_json(conn, eid, "dimensions_json", car.get("dimensions", {}))
+            new_eng = _merge_json(conn, eid, "engine_json", car.get("engine", {}))
+            new_perf = _merge_json(conn, eid, "performance_json", car.get("performance", {}))
+            new_price = _merge_json(conn, eid, "price_json", car.get("price", {}))
+            new_trans = _merge_json(conn, eid, "transmission_json", car.get("transmission", {}))
+            new_brakes = _merge_json(conn, eid, "brakes_json", car.get("brakes", {}))
+            new_susp = _merge_json(conn, eid, "suspension_json", car.get("suspension", {}))
+            new_tires = _merge_json(conn, eid, "tires_json", car.get("tires", {}))
+            new_aero = _merge_json(conn, eid, "aero_json", car.get("aero", {}))
+
+            conn.execute("""
+                UPDATE car_metadata SET
+                    trim=COALESCE(NULLIF(?, ''), trim),
+                    body_type=COALESCE(NULLIF(?, ''), body_type),
+                    dimensions_json=?, engine_json=?, performance_json=?,
+                    drivetrain=COALESCE(NULLIF(?, ''), drivetrain),
+                    transmission_json=?, brakes_json=?, suspension_json=?,
+                    tires_json=?, aero_json=?,
+                    weight_kg=COALESCE(?, weight_kg),
+                    weight_front_pct=COALESCE(?, weight_front_pct),
+                    fuel_type=COALESCE(NULLIF(?, ''), fuel_type),
+                    price_json=?,
+                    eras=COALESCE(NULLIF(?, ''), eras),
+                    tags=COALESCE(NULLIF(?, ''), tags),
+                    source=?,
+                    confidence=?,
+                    updated_at=?
+                WHERE id=?
+            """, (
+                car.get("trim"), car.get("body_type"),
+                new_dims, new_eng, new_perf,
+                car.get("drivetrain"), new_trans, new_brakes, new_susp,
+                new_tires, new_aero,
+                car.get("weight_kg"), car.get("weight_front_pct"),
+                car.get("fuel_type"), new_price,
+                car.get("eras"), tags_str,
+                car.get("source", "auto"), car.get("confidence", 0.5),
+                now, eid
+            ))
+            return "updated"
+    else:
+        if not dry_run:
+            conn.execute("""
+                INSERT INTO car_metadata
+                    (make, model, year, trim, body_type, dimensions_json, engine_json,
+                     performance_json, drivetrain, transmission_json, brakes_json,
+                     suspension_json, tires_json, aero_json,
+                     weight_kg, weight_front_pct, fuel_type, price_json,
+                     eras, tags, source, confidence)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                car["make"], car["model"], car["year"],
+                car.get("trim"), car.get("body_type"),
+                json.dumps(car.get("dimensions", {})),
+                json.dumps(car.get("engine", {})),
+                json.dumps(car.get("performance", {})),
+                car.get("drivetrain"),
+                json.dumps(car.get("transmission", {})),
+                json.dumps(car.get("brakes", {})),
+                json.dumps(car.get("suspension", {})),
+                json.dumps(car.get("tires", {})),
+                json.dumps(car.get("aero", {})),
+                car.get("weight_kg"), car.get("weight_front_pct"),
+                car.get("fuel_type"),
+                json.dumps(car.get("price", {})),
+                car.get("eras"), tags_str,
+                car.get("source", "auto"),
+                car.get("confidence", 0.5),
+            ))
+        return "inserted"
+    return "skipped"
 
 
 # ---------------------------------------------------------------------------
@@ -566,15 +792,15 @@ def main():
     if args.list:
         conn = init_db(args.db)
         rows = conn.execute(
-            "SELECT id, make, model, year, body_type, source, confidence FROM car_metadata ORDER BY make, model, year"
+            "SELECT id, make, model, year, body_type, drivetrain, source, confidence FROM car_metadata ORDER BY make, model, year"
         ).fetchall()
         if not rows:
             print("No cars in database.")
         else:
-            print(f"{'ID':>3} {'Make':<12} {'Model':<30} {'Year':>4} {'Body':<10} {'Src':<12} {'Conf'}")
-            print("-" * 90)
+            print(f"{'ID':>3} {'Make':<12} {'Model':<30} {'Year':>4} {'Body':<10} {'Drive':<5} {'Src':<12} {'Conf'}")
+            print("-" * 95)
             for r in rows:
-                print(f"{r[0]:>3} {r[1]:<12} {r[2]:<30} {r[3]:>4} {(r[4] or '-'):<10} {r[5]:<12} {r[6]:.1f}")
+                print(f"{r[0]:>3} {r[1]:<12} {r[2]:<30} {r[3]:>4} {(r[4] or '-'):<10} {(r[5] or '-'):<5} {r[6]:<12} {r[7]:.1f}")
         conn.close()
         return
 
@@ -599,27 +825,27 @@ def main():
         print(f"  Found {len(cars)} car(s)")
 
         for car in cars:
-            result = upsert_car(conn, car, dry_run=args.dry_run)
-            status = f"[{result.upper()}]"
-            name = f"{car['make']} {car['model']} ({car['year']})"
-            conf = car.get("confidence", 0.5)
+            if args.dry_run:
+                print(f"  [DRY] {car['make']} {car['model']} ({car['year']}) — {car.get('drivetrain', '?')}")
+                continue
+            result = upsert_car(conn, car)
             if result == "inserted":
                 total_inserted += 1
             elif result == "updated":
                 total_updated += 1
-            print(f"    {status} {name:<45} conf={conf:.1f}")
+            if args.dry_run or result != "skipped":
+                drive = car.get("drivetrain", "?")
+                power = car.get("engine", {}).get("power_hp", "?")
+                weight = car.get("weight_kg", "?")
+                print(f"  [{result:7s}] {car['make']} {car['model']} ({car['year']}) — {drive}, {power}hp, {weight}kg")
 
-    if not args.dry_run:
         conn.commit()
-        print(f"\n  Committed: {total_inserted} inserted, {total_updated} updated")
-
-        # Summary
-        count = conn.execute("SELECT COUNT(*) FROM car_metadata").fetchone()[0]
-        print(f"  Total cars in DB: {count}")
-    else:
-        print(f"\n  [DRY RUN] Would insert {total_inserted}, update {total_updated}")
 
     conn.close()
+
+    print(f"\n{'='*60}")
+    print(f"  Done: {total_inserted} inserted, {total_updated} updated")
+    print(f"{'='*60}")
 
 
 if __name__ == "__main__":

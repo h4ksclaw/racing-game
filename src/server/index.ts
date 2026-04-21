@@ -16,6 +16,7 @@ import multer from "multer";
 import { generateTrack } from "../shared/track.ts";
 import { createUploadMiddleware, processUploadedFile, promoteAsset, serveAsset } from "./assets.ts";
 import {
+	filterCars,
 	getAllCars,
 	getAssetByHash,
 	getAssetById,
@@ -221,6 +222,24 @@ app.get("/api/cars/search", (req, res) => {
 /** List all cars in the database. */
 app.get("/api/cars", (_req, res) => {
 	res.json(getAllCars());
+});
+
+/** Filter cars by specific fields. */
+app.get("/api/cars/filter", (req, res) => {
+	const filters: Record<string, unknown> = {};
+	if (req.query.drivetrain) filters.drivetrain = String(req.query.drivetrain);
+	if (req.query.body_type) filters.body_type = String(req.query.body_type);
+	if (req.query.min_year) filters.min_year = Number(req.query.min_year);
+	if (req.query.max_year) filters.max_year = Number(req.query.max_year);
+	if (req.query.min_power_hp) filters.min_power_hp = Number(req.query.min_power_hp);
+	if (req.query.max_power_hp) filters.max_power_hp = Number(req.query.max_power_hp);
+	if (req.query.min_weight_kg) filters.min_weight_kg = Number(req.query.min_weight_kg);
+	if (req.query.max_weight_kg) filters.max_weight_kg = Number(req.query.max_weight_kg);
+	if (req.query.eras) filters.eras = String(req.query.eras);
+	if (req.query.tag) filters.tag = String(req.query.tag);
+	if (req.query.limit) filters.limit = Number(req.query.limit);
+	const cars = filterCars(filters);
+	res.json(cars);
 });
 
 /** Get single car metadata by ID. */
