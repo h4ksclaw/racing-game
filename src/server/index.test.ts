@@ -207,6 +207,48 @@ describe("Express 5 route ordering", () => {
 	});
 });
 
+describe("Express 5 route ordering — cars", () => {
+	let close: () => Promise<void>;
+	let get: (path: string) => Promise<{ status: number; body: unknown }>;
+
+	beforeAll(() => {
+		const app = express();
+		app.use(express.json());
+
+		// /api/cars/configs MUST be before /api/cars/:id
+		app.get("/api/cars/configs", (_req, res) => res.json([{ id: 1, name: "Test" }]));
+		app.get("/api/cars/config/:id", (req, res) => res.json({ configId: Number(req.params.id) }));
+		app.get("/api/cars/:id", (req, res) => res.json({ carId: Number(req.params.id) }));
+		app.use((_req, res) => res.status(404).json({ error: "Not found" }));
+
+		const server = createTestServer(app);
+		get = server.get;
+		close = server.close;
+	});
+
+	afterAll(async () => {
+		await close();
+	});
+
+	it("matches /api/cars/configs before /api/cars/:id", async () => {
+		const { status, body } = await get("/api/cars/configs");
+		expect(status).toBe(200);
+		expect(body).toEqual([{ id: 1, name: "Test" }]);
+	});
+
+	it("matches /api/cars/config/:id with a config ID", async () => {
+		const { status, body } = await get("/api/cars/config/5");
+		expect(status).toBe(200);
+		expect(body).toEqual({ configId: 5 });
+	});
+
+	it("matches /api/cars/:id with a car ID", async () => {
+		const { status, body } = await get("/api/cars/9");
+		expect(status).toBe(200);
+		expect(body).toEqual({ carId: 9 });
+	});
+});
+
 describe("JSON error responses", () => {
 	let close: () => Promise<void>;
 	let post: (path: string, payload: unknown, contentType?: string) => Promise<{ status: number; body: unknown }>;

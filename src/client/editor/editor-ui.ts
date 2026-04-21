@@ -163,10 +163,51 @@ function renderSketchfabResults(results: Array<Record<string, unknown>>, append:
 				${author ? ` · ${author}` : ""}
 				${url ? ` · <a href="${url}" target="_blank" rel="noopener">Sketchfab ↗</a>` : ""}
 			</div>
+			<div class="sf-meta">
+				<button class="sf-download-btn" data-uid="${r.uid}" data-name="${name}" data-license="${license}" data-author="${author}" data-url="${url}">⬇ Download</button>
+				<span class="sf-download-status" data-uid="${r.uid}"></span>
+			</div>
 			<div style="clear:both"></div>
 		`;
 
 		sfResults.appendChild(div);
+	}
+
+	// Attach download button handlers
+	for (const btn of sfResults.querySelectorAll<HTMLButtonElement>(".sf-download-btn")) {
+		btn.addEventListener("click", async (e) => {
+			e.stopPropagation();
+			const uid = btn.dataset.uid!;
+			const statusEl = sfResults.querySelector<HTMLSpanElement>(`.sf-download-status[data-uid="${uid}"]`);
+			if (statusEl) statusEl.textContent = "Downloading...";
+			btn.disabled = true;
+
+			try {
+				const resp = await fetch(`${API_BASE}/sketchfab/download`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						uid,
+						name: btn.dataset.name,
+						license: btn.dataset.license,
+						author: btn.dataset.author,
+						sourceUrl: btn.dataset.url,
+					}),
+				});
+				const data = await resp.json();
+				if (resp.ok) {
+					if (statusEl) statusEl.textContent = `✓ ${data.name} (${(data.size / 1048576).toFixed(1)} MB)`;
+					// Refresh pending assets list
+					loadPendingAssets();
+				} else {
+					if (statusEl) statusEl.textContent = `✗ ${data.error}`;
+					btn.disabled = false;
+				}
+			} catch {
+				if (statusEl) statusEl.textContent = "✗ Network error";
+				btn.disabled = false;
+			}
+		});
 	}
 
 	// Load more button

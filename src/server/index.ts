@@ -8,6 +8,7 @@
  * - Serves frontend static files from dist/ in production
  */
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -292,6 +293,112 @@ app.get("/api/sketchfab/search", async (req, res) => {
 	}
 });
 
+/** Download a Sketchfab model by UID. Streams GLB to data/assets/pending/.
+ *
+ * Requires SKETCHFAB_API_KEY env var. The flow:
+ * 1. POST to Sketchfab download API to get GLB URL
+ * 2. Stream-download the GLB to pending directory
+ * 3. Compute SHA256 hash
+ * 4. Register in assets DB
+ * 5. Return asset info
+ */
+app.post("/api/sketchfab/download", async (req, res) => {
+	const { uid, name, license: licenseLabel, author, sourceUrl } = req.body;
+	if (!uid) {
+		res.status(400).json({ error: "uid is required" });
+		return;
+	}
+
+	const apiKey = process.env.SKETCHFAB_API_KEY;
+	if (!apiKey) {
+		res.status(503).json({ error: "SKETCHFAB_API_KEY not configured" });
+		return;
+	}
+
+	try {
+		// Step 1: Get download link from Sketchfab
+		const dlResp = await fetch(`https://api.sketchfab.com/v3/models/${uid}/download`, {
+			method: "POST",
+			headers: { Authorization: `Token ${apiKey}` },
+		});
+		if (!dlResp.ok) {
+			if (dlResp.status === 403) {
+				res.status(403).json({ error: "Model download not authorized" });
+			} else {
+				res.status(502).json({ error: `Sketchfab download API error: ${dlResp.status}` });
+			}
+			return;
+		}
+		const dlData = (await dlResp.json()) as {
+			uri?: string;
+			gltf?: Array<{ format?: string; url?: string; size?: number }>;
+			files?: Array<{ format?: string; url?: string; size?: number; filename?: string }>;
+		};
+
+		// Find GLB download URL
+		let glbUrl: string | null = null;
+		const searchFormats = dlData.files ?? dlData.gltf ?? [];
+		for (const f of searchFormats) {
+			if (f.format?.toLowerCase() === "glb") {
+				glbUrl = f.url ?? null;
+				break;
+			}
+		}
+		if (!glbUrl) {
+			glbUrl = dlData.uri ?? null;
+		}
+		if (!glbUrl) {
+			res.status(502).json({ error: "No GLB download format available" });
+			return;
+		}
+
+		// Step 2: Download to buffer, hash, write to disk
+		const pendingDir = process.env.ASSET_DIR
+			? path.join(process.env.ASSET_DIR, "pending")
+			: path.join(process.cwd(), "data", "assets", "pending");
+		fs.mkdirSync(pendingDir, { recursive: true });
+
+		const safeName = (name || uid).replace(/[^a-zA-Z0-9._-]/g, "_");
+		const destPath = path.join(pendingDir, `${safeName}.glb`);
+
+		const fileResp = await fetch(glbUrl);
+		if (!fileResp.ok) {
+			res.status(502).json({ error: `GLB download failed: ${fileResp.status}` });
+			return;
+		}
+
+		const arrayBuf = await fileResp.arrayBuffer();
+		const buf = Buffer.from(arrayBuf);
+		const sha256 = crypto.createHash("sha256").update(buf).digest("hex");
+		fs.writeFileSync(destPath, buf);
+
+		// Step 3: Register in DB
+		const fileSize = fs.statSync(destPath).size;
+		const assetId = insertAsset({
+			filepath: destPath,
+			sha256_hash: sha256,
+			source_url: sourceUrl || `https://sketchfab.com/3d-models/${uid}`,
+			source_type: "sketchfab",
+			license: licenseLabel || "Unknown",
+			attribution: author ? `"${name}" by ${author}` : name || uid,
+			original_name: safeName,
+			status: "pending",
+			metadata_json: JSON.stringify({ uid, sketchfab_name: name }),
+		});
+
+		res.json({
+			assetId,
+			hash: sha256,
+			name: safeName,
+			size: fileSize,
+			status: "pending",
+			message: "Downloaded to pending — open in editor to classify",
+		});
+	} catch (err) {
+		res.status(500).json({ error: `Download failed: ${String(err)}` });
+	}
+});
+
 /** Get saved car configs for an asset. */
 app.get("/api/assets/:id/configs", (req, res) => {
 	const configs = getCarConfigsByAsset(Number(req.params.id));
@@ -335,14 +442,9 @@ app.get("/api/cars/filter", (req, res) => {
 	res.json(cars);
 });
 
-/** Get single car metadata by ID. */
-app.get("/api/cars/:id", (req, res) => {
-	const car = getCarById(Number(req.params.id));
-	if (!car) {
-		res.status(404).json({ error: "Car not found" });
-		return;
-	}
-	res.json(car);
+/** List all saved car configs. MUST be before /api/cars/:id to avoid param capture. */
+app.get("/api/cars/configs", (_req, res) => {
+	res.json(getCarConfigs());
 });
 
 /** Save a car config (CarConfig JSON + optional CarModelSchema). */
@@ -375,7 +477,7 @@ app.post("/api/cars/config", (req, res) => {
 	}
 });
 
-/** Get a saved car config by ID. */
+/** Get a saved car config by ID. MUST be before /api/cars/:id. */
 app.get("/api/cars/config/:id", (req, res) => {
 	const config = getCarConfigById(Number(req.params.id));
 	if (!config) {
@@ -385,9 +487,14 @@ app.get("/api/cars/config/:id", (req, res) => {
 	res.json(config);
 });
 
-/** List all saved car configs. */
-app.get("/api/cars/configs", (_req, res) => {
-	res.json(getCarConfigs());
+/** Get single car metadata by ID. */
+app.get("/api/cars/:id", (req, res) => {
+	const car = getCarById(Number(req.params.id));
+	if (!car) {
+		res.status(404).json({ error: "Car not found" });
+		return;
+	}
+	res.json(car);
 });
 
 // ── Error handling ──────────────────────────────────────────────────
