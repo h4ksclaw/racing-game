@@ -344,6 +344,25 @@ REFERENCE_CARS = [
 ]
 
 
+from models import CarRecord
+from base import CarSource
+
+
+class ReferenceSource(CarSource):
+    priority = 90
+
+    @property
+    def name(self):
+        return "reference"
+
+    def fetch(self, conn=None, search=None, dry_run=False, **kwargs):
+        cars = REFERENCE_CARS
+        if search:
+            q = search.lower()
+            cars = [c for c in cars if q in f"{c['make']} {c['model']}".lower()]
+        return [CarRecord.from_dict(c) for c in cars]
+
+
 def reference_source(search=None, dry_run=False):
     """Return hardcoded reference cars, optionally filtered."""
     cars = REFERENCE_CARS

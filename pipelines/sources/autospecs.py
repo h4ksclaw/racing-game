@@ -6,6 +6,9 @@ import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from models import CarRecord
+from base import CarSource
+
 AUTOSPECS_HOME = "https://www.autospecs.org"
 
 # Skip SUVs, trucks, vans — only keep passenger cars
@@ -199,6 +202,60 @@ def retry_fetch(url, max_retries=3, backoff=2.0):
             print(f"  [retry] Waiting {wait:.1f}s before retry {attempt+2}/{max_retries} for {url}")
             time.sleep(wait)
     return None
+
+
+class AutoSpecsSource(CarSource):
+    priority = 70
+
+    @property
+    def name(self):
+        return "autospecs"
+
+    def fetch(self, conn=None, search=None, dry_run=False, **kwargs):
+        records = autospecs_extract(search=search)
+        return [CarRecord.from_dict(c) for c in records]
+
+
+def autospecs_extract(search=None):
+    """Extract car records from autospecs.org without writing to DB. Returns list of dicts."""
+    home = _fetch_next_data(f"{AUTOSPECS_HOME}/")
+    if not home:
+        return []
+
+    cars_data = home.get('props', {}).get('pageProps', {}).get('cars', [])
+    if not cars_data:
+        return []
+
+    brands = [(c['name'], c['name'].lower()) for c in cars_data]
+    if search:
+        q = search.lower()
+        brands = [(n, s) for n, s in brands if q in n.lower()]
+        if not brands:
+            return []
+
+    all_cars = []
+    print(f"  Fetching {len(brands)} brand pages (4 parallel workers)...")
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        future_to_brand = {
+            executor.submit(retry_fetch, f"{AUTOSPECS_HOME}/brand/{slug}"): (idx, name, slug)
+            for idx, (name, slug) in enumerate(brands)
+        }
+        batch_count = 0
+        for future in as_completed(future_to_brand):
+            brand_idx, brand_name, slug = future_to_brand[future]
+            brand_data = future.result()
+            batch_count += 1
+            if not brand_data:
+                continue
+            cars, brand_trims = _process_brand_data(brand_name, brand_data)
+            all_cars.extend(cars)
+            if brand_trims > 0:
+                print(f"  Brand {brand_idx+1}/{len(brands)}: {brand_name} - {brand_trims} trims extracted")
+            if batch_count % 4 == 0:
+                time.sleep(1)
+
+    print(f"  AutoSpecs: {len(all_cars)} trims extracted across {len(brands)} brands")
+    return all_cars
 
 
 def autospecs_scrape(conn, args):

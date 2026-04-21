@@ -4,6 +4,8 @@ import json
 import urllib.request
 import xml.etree.ElementTree as ET
 
+from base import registry
+
 
 def api_get_json(url, timeout=15, max_retries=3, backoff=2.0):
     """GET a URL and return parsed JSON. Returns None on error after retries."""
@@ -50,4 +52,8 @@ __all__ = [
     "nhtsa_source", "nhtsa_get_models",
     "fe_source",
     "autospecs_scrape",
+    "registry",
 ]
+
+# Auto-discover and register all CarSource subclasses
+registry.discover(__name__)

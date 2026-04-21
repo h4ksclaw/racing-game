@@ -32,6 +32,9 @@ import urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from models import CarRecord
+from base import CarSource
+
 # Module-level DB upsert function (set by caller to avoid circular imports)
 DB_UPSERT = None
 
@@ -489,6 +492,92 @@ def _trim_to_car(detail, source_confidence=0.4):
     car["tags"] = tags
 
     return car
+
+
+class CarQuerySource(CarSource):
+    priority = 50
+
+    @property
+    def name(self):
+        return "carquery"
+
+    def fetch(self, conn=None, search=None, dry_run=False, **kwargs):
+        makes = [search] if search else None
+        records = carquery_extract(makes=makes, **kwargs)
+        return [CarRecord.from_dict(c) for c in records]
+
+
+def _extract_process_make(make_info, checkpoint=None, limit=None):
+    """Process a single make: download and parse (no DB writes)."""
+    make_id = make_info.get("i", "")
+    make_name = make_info.get("n", "")
+
+    if checkpoint and make_id in checkpoint:
+        return None
+
+    data = _download_make(make_id)
+    if data is None:
+        return f"download_error:{make_id}"
+
+    _normalize_weights(data)
+
+    parsed_cars = []
+    trim_count = 0
+
+    for trim_id, detail in data.items():
+        if not isinstance(detail, dict):
+            continue
+        if limit and trim_count >= limit:
+            break
+        try:
+            car = _trim_to_car(detail)
+            if car is None:
+                continue
+            parsed_cars.append(car)
+            trim_count += 1
+        except Exception as e:
+            if len(parsed_cars) < 3:
+                print(f"  [error] {make_name} trim {trim_id}: {e}")
+
+    return make_id, make_name, parsed_cars
+
+
+def carquery_extract(dry_run=False, makes=None, limit=None, workers=4, checkpoint_file=None):
+    """Extract car records from CarQuery dataset without writing to DB. Returns list of dicts."""
+    checkpoint = {}
+    if checkpoint_file and os.path.exists(checkpoint_file):
+        try:
+            with open(checkpoint_file) as f:
+                checkpoint = json.load(f)
+        except Exception:
+            checkpoint = {}
+
+    print("CarQuery: Fetching make list...")
+    make_list = _fetch_make_list()
+    if not make_list:
+        return []
+
+    if makes:
+        make_ids = set(m.lower() for m in makes)
+        make_list = [m for m in make_list if m.get("i", "").lower() in make_ids]
+
+    all_cars = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_extract_process_make, m): m for m in make_list}
+        completed = 0
+        for future in as_completed(futures):
+            completed += 1
+            try:
+                result = future.result()
+                if result is None or (isinstance(result, str) and result.startswith("download_error")):
+                    continue
+                make_id, mname, parsed_cars = result
+                all_cars.extend(parsed_cars)
+                if completed % 10 == 0 or parsed_cars:
+                    print(f"  [{completed}/{len(make_list)}] {mname}: {len(parsed_cars)} trims")
+            except Exception:
+                pass
+    return all_cars
 
 
 def carquery_import(conn, dry_run=False, makes=None, limit=None, workers=4, checkpoint_file=None):

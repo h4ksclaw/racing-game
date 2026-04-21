@@ -5,6 +5,21 @@ import urllib.parse
 import urllib.request
 
 from sources import api_get_json
+from models import CarRecord
+from base import CarSource
+
+
+class NHTSASource(CarSource):
+    priority = 10
+
+    @property
+    def name(self):
+        return "nhtsa"
+
+    def fetch(self, conn=None, search=None, dry_run=False, **kwargs):
+        cars = nhtsa_source(search=search, dry_run=dry_run)
+        return [CarRecord.from_dict(c) for c in cars]
+
 
 NHTSA_BASE = "https://vpic.nhtsa.dot.gov/api/vehicles"
 

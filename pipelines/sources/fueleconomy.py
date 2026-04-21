@@ -5,6 +5,21 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 
 from sources import api_get_xml
+from models import CarRecord
+from base import CarSource
+
+
+class FuelEconomySource(CarSource):
+    priority = 30
+
+    @property
+    def name(self):
+        return "fueleconomy"
+
+    def fetch(self, conn=None, search=None, dry_run=False, **kwargs):
+        cars = fe_source(search=search, dry_run=dry_run)
+        return [CarRecord.from_dict(c) for c in cars]
+
 
 FE_BASE = "https://fueleconomy.gov/ws/rest/vehicle"
 

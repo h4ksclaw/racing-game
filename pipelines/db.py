@@ -376,11 +376,12 @@ def _merge_into_row(conn, eid, car, merge_mode):
 def upsert_car(conn, car, dry_run=False, dedup_trim=False, merge_mode=False):
     """Insert or update a car record. Deduplicates by make+model+year.
 
-    If dedup_trim=True, also includes trim in the dedup key.
-    If merge_mode=True, uses fuzzy model matching (LIKE) and merges
-    complementary fields into ALL matching rows (e.g. FuelEconomy MPG/cylinders
-    fills gaps in autospecs weight/dimension records).
+    Accepts both CarRecord objects and plain dicts.
     """
+    from models import CarRecord
+    if isinstance(car, CarRecord):
+        car = car.to_dict()
+
     car = normalize_record(car)
 
     tags_str = ",".join(car.get("tags", [])) if isinstance(car.get("tags"), list) else car.get("tags", "")
