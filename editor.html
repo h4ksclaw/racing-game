@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Car Editor</title>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+	<style>
+		:root {
+			--bg: #0a0a0f;
+			--panel: #12121a;
+			--border: #1e1e2e;
+			--text: #e0e0e8;
+			--muted: #6b6b80;
+			--accent: #4a9eff;
+			--accent-dim: #2a5e99;
+			--danger: #ff4a6a;
+			--success: #4aff8b;
+			--warn: #ffaa4a;
+			--radius: 6px;
+		}
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; font-size: 13px; }
+		#viewport { position: fixed; top: 0; left: 280px; right: 0; bottom: 0; }
+		#viewport canvas { display: block; width: 100%; height: 100%; }
+
+		/* Sidebar */
+		#sidebar {
+			position: fixed; top: 0; left: 0; width: 280px; height: 100%;
+			background: var(--panel); border-right: 1px solid var(--border);
+			overflow-y: auto; z-index: 10;
+			display: flex; flex-direction: column;
+		}
+		#sidebar::-webkit-scrollbar { width: 4px; }
+		#sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+		.sidebar-header {
+			padding: 14px 16px; border-bottom: 1px solid var(--border);
+			font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px;
+		}
+		.sidebar-header span { color: var(--accent); }
+
+		.section { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+		.section-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
+
+		/* Drop zone */
+		#drop-zone {
+			border: 2px dashed var(--border); border-radius: var(--radius);
+			padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s;
+			color: var(--muted);
+		}
+		#drop-zone:hover, #drop-zone.drag-over { border-color: var(--accent); color: var(--accent); background: rgba(74,158,255,0.05); }
+		#drop-zone input { display: none; }
+
+		/* Search */
+		#search-wrap { position: relative; }
+		#search-input {
+			width: 100%; padding: 7px 10px; background: var(--bg); border: 1px solid var(--border);
+			border-radius: var(--radius); color: var(--text); font-size: 12px; outline: none;
+		}
+		#search-input:focus { border-color: var(--accent); }
+		#search-results {
+			position: absolute; top: 100%; left: 0; right: 0; background: var(--panel);
+			border: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius);
+			max-height: 150px; overflow-y: auto; display: none; z-index: 20;
+		}
+		#search-results.active { display: block; }
+		.search-item {
+			padding: 6px 10px; cursor: pointer; font-size: 12px;
+			border-bottom: 1px solid var(--border);
+		}
+		.search-item:hover { background: var(--accent-dim); }
+
+		/* Car info */
+		#car-info { display: none; font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+		#car-info.active { display: block; }
+		.info-row { display: flex; justify-content: space-between; padding: 2px 0; }
+		.info-label { color: var(--muted); }
+
+		/* Scale */
+		.scale-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+		.scale-row label { width: 14px; color: var(--muted); font-size: 11px; font-weight: 600; }
+		.scale-row input[type=range] { flex: 1; accent-color: var(--accent); }
+		.scale-row .val { width: 36px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+
+		/* Markers */
+		#marker-list { display: flex; flex-direction: column; gap: 3px; }
+		.marker-item {
+			display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+			border-radius: 4px; font-size: 11px; cursor: default;
+		}
+		.marker-item:hover { background: rgba(255,255,255,0.03); }
+		.marker-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+		.marker-name { flex: 1; }
+		.marker-pos { font-family: 'JetBrains Mono', monospace; color: var(--muted); font-size: 10px; }
+		.marker-btn {
+			padding: 1px 5px; border: 1px solid var(--border); border-radius: 3px;
+			background: transparent; color: var(--text); cursor: pointer; font-size: 10px;
+		}
+		.marker-btn:hover { background: var(--accent-dim); border-color: var(--accent); }
+		.marker-btn.del { color: var(--danger); }
+		.marker-btn.del:hover { background: rgba(255,74,106,0.15); border-color: var(--danger); }
+
+		/* Validation */
+		#validation { font-size: 11px; }
+		.val-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+		.val-item.error { color: var(--danger); }
+		.val-item.warn { color: var(--warn); }
+		.val-item.ok { color: var(--success); }
+
+		/* Toolbar */
+		#toolbar {
+			position: fixed; top: 10px; left: 294px; z-index: 10;
+			display: flex; gap: 4px;
+		}
+		.tool-btn {
+			padding: 6px 10px; background: var(--panel); border: 1px solid var(--border);
+			border-radius: var(--radius); color: var(--text); cursor: pointer; font-size: 11px;
+			font-family: 'Inter', sans-serif; transition: all 0.15s;
+		}
+		.tool-btn:hover { background: var(--accent-dim); border-color: var(--accent); }
+		.tool-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+		/* Export */
+		.btn-primary {
+			width: 100%; padding: 8px; background: var(--accent); border: none;
+			border-radius: var(--radius); color: #fff; cursor: pointer; font-size: 12px;
+			font-weight: 600; font-family: 'Inter', sans-serif; transition: all 0.15s;
+		}
+		.btn-primary:hover { background: #5ab0ff; }
+		.btn-secondary {
+			width: 100%; padding: 6px; background: transparent; border: 1px solid var(--border);
+			border-radius: var(--radius); color: var(--text); cursor: pointer; font-size: 11px;
+			margin-top: 6px; font-family: 'Inter', sans-serif;
+		}
+		.btn-secondary:hover { border-color: var(--accent); }
+	</style>
+</head>
+<body>
+	<div id="sidebar">
+		<div class="sidebar-header">🚗 <span>Car Editor</span></div>
+
+		<div class="section">
+			<div class="section-title">Load Model</div>
+			<div id="drop-zone">
+				<div>Drop GLB here or click</div>
+				<input type="file" id="file-input" accept=".glb,.gltf">
+			</div>
+		</div>
+
+		<div class="section">
+			<div class="section-title">Car Database</div>
+			<div id="search-wrap">
+				<input type="text" id="search-input" placeholder="Search cars..." autocomplete="off">
+				<div id="search-results"></div>
+			</div>
+			<div id="car-info">
+				<div class="info-row"><span class="info-label">Dimensions</span><span id="car-dims"></span></div>
+				<div class="info-row"><span class="info-label">Weight</span><span id="car-weight"></span></div>
+				<div class="info-row"><span class="info-label">Model</span><span id="car-model"></span></div>
+			</div>
+		</div>
+
+		<div class="section">
+			<div class="section-title">Scale</div>
+			<div class="scale-row"><label>U</label><input type="range" id="scale-u" min="0.01" max="5" step="0.01" value="1"><span class="val" id="scale-u-val">1.00</span></div>
+			<div class="scale-row"><label>X</label><input type="range" id="scale-x" min="0.01" max="5" step="0.01" value="1"><span class="val" id="scale-x-val">1.00</span></div>
+			<div class="scale-row"><label>Y</label><input type="range" id="scale-y" min="0.01" max="5" step="0.01" value="1"><span class="val" id="scale-y-val">1.00</span></div>
+			<div class="scale-row"><label>Z</label><input type="range" id="scale-z" min="0.01" max="5" step="0.01" value="1"><span class="val" id="scale-z-val">1.00</span></div>
+		</div>
+
+		<div class="section">
+			<div class="section-title">Markers</div>
+			<div id="marker-list"></div>
+		</div>
+
+		<div class="section">
+			<div class="section-title">Validation</div>
+			<div id="validation"></div>
+		</div>
+
+		<div class="section">
+			<button class="btn-primary" id="btn-export">Save Config</button>
+			<button class="btn-secondary" id="btn-download">Download JSON</button>
+		</div>
+	</div>
+
+	<div id="toolbar">
+		<button class="tool-btn active" data-mode="orbit">🖱 Orbit</button>
+		<button class="tool-btn" data-mode="place">📍 Place</button>
+		<button class="tool-btn" data-mode="move">✋ Move</button>
+		<button class="tool-btn" data-mode="delete">🗑 Delete</button>
+		<button class="tool-btn" id="btn-wireframe">Wire</button>
+		<button class="tool-btn" id="btn-dims">Dims</button>
+		<button class="tool-btn" id="btn-autodetect">Auto</button>
+	</div>
+
+	<div id="viewport"></div>
+
+	<script type="module" src="/src/client/editor/editor-ui.ts"></script>
+</body>
+</html>

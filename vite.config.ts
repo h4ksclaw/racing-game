@@ -16,6 +16,7 @@ export default defineConfig({
 				world: resolve(__dirname, "world.html"),
 				practice: resolve(__dirname, "practice.html"),
 				garage: resolve(__dirname, "garage.html"),
+			editor: resolve(__dirname, "editor.html"),
 			},
 		},
 	},

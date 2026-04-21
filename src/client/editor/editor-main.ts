@@ -1,0 +1,195 @@
+/**
+ * Three.js scene setup for the car editor viewport.
+ */
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+export const API_BASE = "/api";
+
+let scene: THREE.Scene;
+let camera: THREE.PerspectiveCamera;
+let renderer: THREE.WebGLRenderer;
+let orbitControls: OrbitControls;
+let transformControls: TransformControls;
+let gridHelper: THREE.GridHelper;
+let gltfLoader: GLTFLoader;
+let currentModel: THREE.Group | null = null;
+let wireframe = false;
+let showDims = false;
+
+export type EditorMode = "orbit" | "place" | "move" | "delete";
+let currentMode: EditorMode = "orbit";
+let modeChangeCallback: ((mode: EditorMode) => void) | null = null;
+
+export function getScene() {
+	return scene;
+}
+export function getCamera() {
+	return camera;
+}
+export function getRenderer() {
+	return renderer;
+}
+export function getOrbitControls() {
+	return orbitControls;
+}
+export function getTransformControls() {
+	return transformControls;
+}
+export function getGLTFLoader() {
+	return gltfLoader;
+}
+export function getCurrentModel() {
+	return currentModel;
+}
+export function getMode() {
+	return currentMode;
+}
+export function isWireframe() {
+	return wireframe;
+}
+export function isShowingDims() {
+	return showDims;
+}
+
+export function setMode(mode: EditorMode) {
+	currentMode = mode;
+	orbitControls.enabled = mode === "orbit";
+	(transformControls as any).visible = mode === "move";
+	if (mode !== "move") transformControls.detach();
+	modeChangeCallback?.(mode);
+}
+
+export function onModeChange(cb: (mode: EditorMode) => void) {
+	modeChangeCallback = cb;
+}
+
+export function toggleWireframe() {
+	wireframe = !wireframe;
+	if (currentModel) {
+		currentModel.traverse((c) => {
+			if ((c as THREE.Mesh).isMesh) {
+				((c as THREE.Mesh).material as any).wireframe = wireframe;
+			}
+		});
+	}
+	return wireframe;
+}
+
+export function toggleDims() {
+	showDims = !showDims;
+	return showDims;
+}
+
+export function setModelScale(sx: number, sy: number, sz: number) {
+	if (currentModel) {
+		currentModel.scale.set(sx, sy, sz);
+	}
+}
+
+export function loadGLB(url: string): Promise<THREE.Group> {
+	return new Promise((resolve, reject) => {
+		gltfLoader.load(
+			url,
+			(gltf) => {
+				const model = gltf.scene;
+				if (currentModel) {
+					scene.remove(currentModel);
+				}
+				currentModel = model;
+				scene.add(model);
+
+				// Center model on grid
+				const box = new THREE.Box3().setFromObject(model);
+				const center = box.getCenter(new THREE.Vector3());
+				model.position.sub(center);
+				model.position.y += box.min.y * -1; // sit on grid
+
+				// Frame camera
+				const size = box.getSize(new THREE.Vector3());
+				const maxDim = Math.max(size.x, size.y, size.z);
+				const dist = maxDim * 2;
+				camera.position.set(dist * 0.5, dist * 0.4, dist * 0.8);
+				orbitControls.target.set(0, maxDim * 0.3, 0);
+				orbitControls.update();
+
+				if (wireframe) {
+					model.traverse((c) => {
+						if ((c as THREE.Mesh).isMesh) {
+							((c as THREE.Mesh).material as any).wireframe = true;
+						}
+					});
+				}
+
+				resolve(model);
+			},
+			undefined,
+			reject,
+		);
+	});
+}
+
+export function init(container: HTMLElement) {
+	scene = new THREE.Scene();
+	scene.background = new THREE.Color(0x0a0a0f);
+
+	camera = new THREE.PerspectiveCamera(50, 1, 0.01, 1000);
+	camera.position.set(3, 2, 4);
+
+	renderer = new THREE.WebGLRenderer({ antialias: true });
+	renderer.setPixelRatio(window.devicePixelRatio);
+	renderer.shadowMap.enabled = true;
+	renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+	container.appendChild(renderer.domElement);
+
+	// Lights
+	const ambient = new THREE.AmbientLight(0x404060, 1.5);
+	scene.add(ambient);
+	const dir = new THREE.DirectionalLight(0xffffff, 2);
+	dir.position.set(5, 10, 7);
+	dir.castShadow = true;
+	dir.shadow.mapSize.set(2048, 2048);
+	scene.add(dir);
+	const fill = new THREE.DirectionalLight(0x8888ff, 0.5);
+	fill.position.set(-5, 3, -5);
+	scene.add(fill);
+
+	// Grid
+	gridHelper = new THREE.GridHelper(20, 40, 0x1e1e2e, 0x14141e);
+	scene.add(gridHelper);
+
+	// Controls
+	orbitControls = new OrbitControls(camera, renderer.domElement);
+	orbitControls.enableDamping = true;
+	orbitControls.dampingFactor = 0.1;
+	orbitControls.minDistance = 0.5;
+	orbitControls.maxDistance = 50;
+
+	transformControls = new TransformControls(camera, renderer.domElement);
+	transformControls.addEventListener("dragging-changed", (e) => {
+		orbitControls.enabled = !e.value;
+	});
+	scene.add(transformControls as any);
+
+	gltfLoader = new GLTFLoader();
+
+	// Resize
+	function onResize() {
+		const w = container.clientWidth;
+		const h = container.clientHeight;
+		camera.aspect = w / h;
+		camera.updateProjectionMatrix();
+		renderer.setSize(w, h);
+	}
+	window.addEventListener("resize", onResize);
+	onResize();
+
+	// Render loop
+	(function animate() {
+		requestAnimationFrame(animate);
+		orbitControls.update();
+		renderer.render(scene, camera);
+	})();
+}
