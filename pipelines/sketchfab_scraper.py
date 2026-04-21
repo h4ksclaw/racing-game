@@ -43,6 +43,7 @@ DEFAULT_DB_PATH = Path("./data/game_assets.db")
 # Rate limiting
 MIN_REQUEST_INTERVAL = 0.5  # seconds between API calls
 MAX_RETRIES = 3
+MAX_FILE_SIZE = 40 * 1024 * 1024  # 40 MB — skip models larger than this
 RETRY_BACKOFF = 2  # exponential backoff base
 
 
@@ -226,26 +227,29 @@ def build_attribution(model_data: dict) -> str:
     return f'"{name}" by {author}, licensed under {license_label}. {url} {license_url}'
 
 
-def extract_glb_download_url(download_response: dict) -> str | None:
-    """Extract GLB download URL from download API response."""
+def extract_glb_download_url(download_response: dict) -> tuple[str | None, int | None]:
+    """Extract GLB download URL from download API response.
+    
+    Returns (url, size_bytes) tuple. Size from API if available, None otherwise.
+    """
     # download_response typically has {"uri": "...", "gltf": [...], "files": [...]}
     # Look for GLB in files list
     files = download_response.get("files", [])
     for f in files:
         if isinstance(f, dict) and f.get("format", "").lower() in ("glb",):
-            return f.get("url") or f.get("downloadUrl")
+            return f.get("url") or f.get("downloadUrl"), f.get("size")
         if isinstance(f, dict) and f.get("filename", "").endswith(".glb"):
-            return f.get("url") or f.get("downloadUrl")
+            return f.get("url") or f.get("downloadUrl"), f.get("size")
     # Fallback: check for gltf list
     gltf_list = download_response.get("gltf", [])
     for g in gltf_list:
         if isinstance(g, dict) and g.get("format", "").lower() in ("glb",):
-            return g.get("url") or g.get("downloadUrl")
+            return g.get("url") or g.get("downloadUrl"), g.get("size")
     # Last resort: use the main URI if present
     uri = download_response.get("uri")
     if uri:
-        return uri
-    return None
+        return uri, None
+    return None, None
 
 
 def download_file(url: str, dest: Path, client: requests.Session) -> Path:
@@ -381,7 +385,7 @@ def search_and_collect(
                 collected.append({"uid": uid, "name": name, "status": "no-download"})
                 continue
 
-            glb_url = extract_glb_download_url(dl)
+            glb_url, glb_size = extract_glb_download_url(dl)
             if not glb_url:
                 log.warning("  No GLB format in download options")
                 db.insert_asset(
@@ -395,6 +399,22 @@ def search_and_collect(
                     metadata_json=metadata,
                 )
                 collected.append({"uid": uid, "name": name, "status": "no-glb"})
+                continue
+
+            # Skip files over size limit
+            if glb_size and glb_size > MAX_FILE_SIZE:
+                log.info("  Skipping: file too large (%.1f MB > %.0f MB)", glb_size / 1048576, MAX_FILE_SIZE / 1048576)
+                db.insert_asset(
+                    filepath=filepath,
+                    sha256_hash="",
+                    source_url=viewer_url,
+                    license_info=license_label,
+                    attribution=attribution,
+                    original_name=name,
+                    status="failed",
+                    metadata_json=metadata,
+                )
+                collected.append({"uid": uid, "name": name, "status": "too-large"})
                 continue
 
             try:

@@ -137,6 +137,9 @@ app.get("/api/world", (req, res) => {
 
 const upload = createUploadMiddleware();
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.resolve(__dirname, "../..");
+
 // ── Asset routes ──────────────────────────────────────────────────────
 
 /** Upload a GLB file. Returns hash and asset ID. */
@@ -198,6 +201,96 @@ app.get("/api/assets/:id", (req, res) => {
 
 /** Serve asset file by hash. */
 app.get("/api/assets/file/:hash", serveAsset);
+
+/** Proxy Sketchfab search — lets editor search without exposing API key. */
+app.get("/api/sketchfab/search", async (req, res) => {
+	const q = req.query.q as string;
+	if (!q || q.length < 2) {
+		res.status(400).json({ error: "Query too short (min 2 chars)" });
+		return;
+	}
+	const limit = Math.min(Number(req.query.limit) || 24, 50);
+	const cursor = req.query.cursor as string | undefined;
+	const categories = (req.query.categories as string) || "cars-vehicles";
+
+	try {
+		const params = new URLSearchParams({
+			q,
+			downloadable: "true",
+			sort_by: "-likeCount",
+			count: String(limit),
+			categories,
+			...(cursor ? { cursor } : {}),
+		});
+		const resp = await fetch(`https://api.sketchfab.com/v3/search?type=models&${params}`);
+		if (!resp.ok) {
+			res.status(502).json({ error: `Sketchfab API error: ${resp.status}` });
+			return;
+		}
+		const data = (await resp.json()) as {
+			results?: Array<{
+				uid?: string;
+				name?: string;
+				thumbnails?: { images?: Array<{ url?: string }> };
+				viewCount?: number;
+				likeCount?: number;
+				faceCount?: number;
+				vertexCount?: number;
+				license?: { label?: string; slug?: string };
+				user?: { displayName?: string };
+			}>;
+			totalResults?: number;
+			cursors?: { next?: string };
+		};
+		const results = (data.results || []).map((m) => ({
+			uid: m.uid,
+			name: m.name,
+			thumbnail: m.thumbnails?.images?.[0]?.url ?? null,
+			viewCount: m.viewCount ?? 0,
+			likeCount: m.likeCount ?? 0,
+			faceCount: m.faceCount ?? 0,
+			vertexCount: m.vertexCount ?? 0,
+			license: m.license?.label ?? "Unknown",
+			licenseSlug: m.license?.slug ?? "",
+			author: m.user?.displayName ?? "",
+			url: `https://sketchfab.com/3d-models/${m.uid}`,
+		}));
+		res.json({
+			results,
+			total: data.totalResults ?? results.length,
+			nextCursor: data.cursors?.next ?? null,
+		});
+	} catch (err) {
+		res.status(502).json({ error: `Sketchfab fetch failed: ${String(err)}` });
+	}
+});
+
+/** List pending GLB files from filesystem, enriched with DB info. */
+app.get("/api/assets/pending", (_req, res) => {
+	try {
+		const pendingDir = path.join(PROJECT_ROOT, "data", "assets", "pending");
+		if (!fs.existsSync(pendingDir)) {
+			res.json([]);
+			return;
+		}
+		const files = fs.readdirSync(pendingDir).filter((f) => f.endsWith(".glb"));
+		const result = files.map((f) => {
+			const hash = path.basename(f, ".glb");
+			const dbAsset = getAssetByHash(hash);
+			const stat = fs.statSync(path.join(pendingDir, f));
+			return {
+				hash,
+				originalName: dbAsset?.original_name ?? f,
+				status: dbAsset?.status ?? "untracked",
+				sourceUrl: dbAsset?.source_url ?? null,
+				size: stat.size,
+			};
+		});
+		res.json(result);
+	} catch (err) {
+		res.status(500).json({ error: String(err) });
+	}
+});
 
 /** Get saved car configs for an asset. */
 app.get("/api/assets/:id/configs", (req, res) => {
@@ -314,8 +407,7 @@ app.use((err: unknown, _req: express.Request, res: express.Response, next: expre
 
 // ── Serve frontend (production) ──────────────────────────────────────
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, "../..");
+const projectRoot = PROJECT_ROOT;
 const distPath = path.join(projectRoot, "dist");
 
 // In dev, Vite proxies /api here and serves frontend itself.

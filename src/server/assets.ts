@@ -72,7 +72,7 @@ export function createUploadMiddleware(): multer.Multer {
 
 	return multer({
 		storage,
-		limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB max
+		limits: { fileSize: 40 * 1024 * 1024 }, // 40 MB max
 		fileFilter: (_req, file, cb) => {
 			const ext = path.extname(file.originalname).toLowerCase();
 			if (ext === ".glb" || ext === ".gltf") {

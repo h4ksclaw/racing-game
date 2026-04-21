@@ -77,6 +77,38 @@
 		.info-row { display: flex; justify-content: space-between; padding: 2px 0; }
 		.info-label { color: var(--muted); }
 
+		/* Pending assets */
+		.pending-item {
+			padding: 6px 8px; margin-bottom: 3px; background: var(--bg); border: 1px solid var(--border);
+			border-radius: var(--radius); cursor: pointer; font-size: 11px; display: flex;
+			justify-content: space-between; align-items: center; transition: all 0.15s;
+		}
+		.pending-item:hover { border-color: var(--accent); background: rgba(74,158,255,0.05); }
+		.pending-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+		.pending-size { color: var(--muted); font-family: 'JetBrains Mono', monospace; font-size: 10px; margin-left: 8px; }
+
+		/* Sketchfab search */
+		.sf-input-row { display: flex; gap: 4px; margin-bottom: 6px; }
+		.sf-input-row input { flex: 1; }
+		.sf-input-row button {
+			padding: 4px 10px; background: var(--accent-dim); border: 1px solid var(--accent);
+			border-radius: var(--radius); color: var(--accent); cursor: pointer; font-size: 11px;
+			font-family: 'Inter', sans-serif; white-space: nowrap;
+		}
+		.sf-input-row button:hover { background: var(--accent); color: #fff; }
+		.sf-item {
+			padding: 6px 8px; margin-bottom: 3px; background: var(--bg); border: 1px solid var(--border);
+			border-radius: var(--radius); cursor: pointer; font-size: 11px; transition: all 0.15s;
+		}
+		.sf-item:hover { border-color: var(--accent); background: rgba(74,158,255,0.05); }
+		.sf-name { font-weight: 600; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+		.sf-meta { color: var(--muted); font-size: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+		.sf-meta a { color: var(--accent); text-decoration: none; }
+		.sf-meta a:hover { text-decoration: underline; }
+		.sf-thumb { width: 48px; height: 48px; border-radius: 4px; object-fit: cover; margin-right: 8px; float: left; }
+		.sf-load-more { text-align: center; padding: 6px; color: var(--muted); font-size: 10px; cursor: pointer; }
+		.sf-load-more:hover { color: var(--accent); }
+
 		/* Scale */
 		.scale-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 		.scale-row label { width: 14px; color: var(--muted); font-size: 11px; font-weight: 600; }
@@ -149,6 +181,11 @@
 		</div>
 
 		<div class="section">
+			<div class="section-title">Pending Assets</div>
+			<div id="pending-assets"></div>
+		</div>
+
+		<div class="section">
 			<div class="section-title">Car Database</div>
 			<div id="search-wrap">
 				<input type="text" id="search-input" placeholder="Search cars..." autocomplete="off">
@@ -159,6 +196,15 @@
 				<div class="info-row"><span class="info-label">Weight</span><span id="car-weight"></span></div>
 				<div class="info-row"><span class="info-label">Model</span><span id="car-model"></span></div>
 			</div>
+		</div>
+
+		<div class="section">
+			<div class="section-title">Sketchfab</div>
+			<div class="sf-input-row">
+				<input type="text" id="sf-search" placeholder="Search free car models..." autocomplete="off">
+				<button id="sf-search-btn">Search</button>
+			</div>
+			<div id="sf-results"></div>
 		</div>
 
 		<div class="section">

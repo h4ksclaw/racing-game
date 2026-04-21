@@ -58,7 +58,7 @@ fileInput.addEventListener("change", () => {
 
 async function uploadFile(file: File) {
 	const formData = new FormData();
-	formData.append("file", file);
+	formData.append("model", file);
 	try {
 		const resp = await fetch(`${API_BASE}/assets/upload`, { method: "POST", body: formData });
 		const data = await resp.json();
@@ -75,6 +75,122 @@ async function uploadFile(file: File) {
 		console.error("Upload failed:", err);
 	}
 }
+
+// ── Pending assets browser ──
+const pendingContainer = document.getElementById("pending-assets")!;
+
+async function loadPendingAssets() {
+	try {
+		const resp = await fetch(`${API_BASE}/assets/pending`);
+		const assets = await resp.json();
+		pendingContainer.innerHTML = "";
+		if (assets.length === 0) {
+			pendingContainer.innerHTML = '<div style="color:var(--muted);font-size:11px;">No pending assets</div>';
+			return;
+		}
+		for (const asset of assets) {
+			const div = document.createElement("div");
+			div.className = "pending-item";
+			const sizeStr =
+				asset.size > 1024 * 1024
+					? `${(asset.size / 1024 / 1024).toFixed(1)} MB`
+					: `${(asset.size / 1024).toFixed(0)} KB`;
+			div.innerHTML = `<span class="pending-name">${asset.originalName}</span><span class="pending-size">${sizeStr}</span>`;
+			div.addEventListener("click", async () => {
+				currentModelPath = `/api/assets/file/${asset.hash}`;
+				currentCarName = asset.originalName.replace(/\.(glb|gltf)$/i, "");
+				await loadGLB(currentModelPath);
+				clearMarkers();
+				clearGhost();
+				updateDimensions();
+				refreshUI();
+			});
+			pendingContainer.appendChild(div);
+		}
+	} catch {
+		pendingContainer.innerHTML = '<div style="color:var(--muted);font-size:11px;">Failed to load</div>';
+	}
+}
+
+loadPendingAssets();
+
+// ── Sketchfab search ──
+const sfSearchInput = document.getElementById("sf-search") as HTMLInputElement;
+const sfSearchBtn = document.getElementById("sf-search-btn")!;
+const sfResults = document.getElementById("sf-results")!;
+let sfNextCursor: string | null = null;
+let sfCurrentQuery = "";
+
+async function sketchfabSearch(query: string, cursor?: string) {
+	if (query.length < 2) return;
+	sfCurrentQuery = query;
+	const params = new URLSearchParams({ q: query, limit: "12" });
+	if (cursor) params.set("cursor", cursor);
+
+	try {
+		const resp = await fetch(`${API_BASE}/sketchfab/search?${params}`);
+		const data = await resp.json();
+		renderSketchfabResults(data.results, !!cursor);
+		sfNextCursor = data.nextCursor || null;
+	} catch {
+		sfResults.innerHTML = '<div style="color:var(--muted);font-size:11px;">Search failed</div>';
+	}
+}
+
+function renderSketchfabResults(results: Array<Record<string, unknown>>, append: boolean) {
+	if (!append) sfResults.innerHTML = "";
+
+	for (const r of results) {
+		const div = document.createElement("div");
+		div.className = "sf-item";
+		const faces = Number(r.faceCount ?? 0);
+		const likes = Number(r.likeCount ?? 0);
+		const license = String(r.license ?? "");
+		const author = String(r.author ?? "");
+		const url = String(r.url ?? "");
+		const name = String(r.name ?? "Unnamed");
+		const thumb = String(r.thumbnail ?? "");
+
+		const faceStr = faces > 0 ? `${(faces / 1000).toFixed(0)}k faces` : "";
+		const likeStr = likes > 0 ? `♥${likes}` : "";
+		const metaParts = [faceStr, likeStr, license].filter(Boolean);
+
+		div.innerHTML = thumb ? `<img class="sf-thumb" src="${thumb}" alt="" loading="lazy">` : "";
+		div.innerHTML += `
+			<div class="sf-name">${name}</div>
+			<div class="sf-meta">
+				${metaParts.join(" · ")}
+				${author ? ` · ${author}` : ""}
+				${url ? ` · <a href="${url}" target="_blank" rel="noopener">Sketchfab ↗</a>` : ""}
+			</div>
+			<div style="clear:both"></div>
+		`;
+
+		sfResults.appendChild(div);
+	}
+
+	// Load more button
+	if (sfNextCursor) {
+		let loadMore = sfResults.querySelector(".sf-load-more") as HTMLElement | null;
+		if (!loadMore) {
+			loadMore = document.createElement("div");
+			loadMore.className = "sf-load-more";
+			loadMore.textContent = "Load more...";
+			loadMore.addEventListener("click", () => {
+				if (sfNextCursor && sfCurrentQuery) sketchfabSearch(sfCurrentQuery, sfNextCursor);
+			});
+			sfResults.appendChild(loadMore);
+		}
+	} else {
+		const existing = sfResults.querySelector(".sf-load-more");
+		if (existing) existing.remove();
+	}
+}
+
+sfSearchBtn.addEventListener("click", () => sketchfabSearch(sfSearchInput.value.trim()));
+sfSearchInput.addEventListener("keydown", (e) => {
+	if (e.key === "Enter") sketchfabSearch(sfSearchInput.value.trim());
+});
 
 // ── Car search ──
 const searchInput = document.getElementById("search-input") as HTMLInputElement;
