@@ -1,121 +1,60 @@
-# Asset Pipeline
+# Car Metadata Pipeline
 
-Scripts and database schema for acquiring and managing 3D game assets.
+Populates the `car_metadata` table with real-world car specifications from five sources: CarQuery, AutoSpecs, FuelEconomy.gov, NHTSA, and a hand-curated reference dataset.
+
+**Current DB: ~21K unique cars.**
 
 ## Quick Start
 
 ```bash
-export SKETCHFAB_API_KEY=your_key_here
-python pipelines/sketchfab_scraper.py --dry-run
+# Import all sources in parallel
+python3 pipelines/cli.py --source all --parallel
+
+# Run cross-source enrichment (fills gaps)
+python3 pipelines/cli.py --enrich
+
+# Deduplicate and normalize
+python3 pipelines/cli.py --cleanup
+
+# List DB contents
+python3 pipelines/cli.py --list
 ```
 
-## Sketchfab Scraper
+## Sources
 
-Searches the Sketchfab API for free downloadable car models, downloads GLB files, and stores metadata with proper attribution in SQLite.
+| Source | Coverage | Confidence | Key Data |
+|--------|----------|:----------:|----------|
+| CarQuery | ~18K trims, 155 makes | 0.4 | Dimensions, engine, weight, performance |
+| AutoSpecs | ~764 cars | 0.7 | Tire sizes, top speed, drivetrain |
+| FuelEconomy.gov | ~40K US-market (1984+) | 0.3 | Engine, fuel economy, weight |
+| NHTSA | ~60K US makes/models | 0.2 | Make, model, year, body type |
+| Reference | ~50 JDM/classic cars | 0.9 | Full specs (hand-verified) |
 
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SKETCHFAB_API_KEY` | *(required)* | Sketchfab API token from https://sketchfab.com/settings/oauth |
-| `ASSET_DIR` | `./assets/glb` | Where to save downloaded GLB files |
-| `DB_PATH` | `./data/game_assets.db` | SQLite database path |
-
-### Usage
+## CLI Options
 
 ```bash
-# Dry run — search and log without downloading
-python pipelines/sketchfab_scraper.py --dry-run
+python3 pipelines/cli.py [OPTIONS]
 
-# Download up to 50 CC0 car models
-python pipelines/sketchfab_scraper.py --limit 50
-
-# Search for specific types
-python pipelines/sketchfab_scraper.py --query "jdm sports car" --limit 20
-
-# Any downloadable license (not just CC0)
-python pipelines/sketchfab_scraper.py --license "" --limit 10
+  --source {nhtsa,fueleconomy,reference,autospecs,carquery,all}
+  --search TEXT          Search filter (e.g. "Toyota AE86")
+  --db PATH              SQLite database path (default: data/game_assets.db)
+  --dry-run              Preview without writing
+  --list                 List current DB contents
+  --parallel             Run sources concurrently
+  --workers N            Worker threads for parallel mode (default: 4)
+  --cleanup              Deduplicate and re-normalize existing data
+  --enrich               Run cross-source enrichment
+  --makes TEXT           Comma-separated makes (carquery only)
+  --limit N              Max cars per make (carquery only)
+  --checkpoint PATH      Checkpoint file for resume (carquery only)
 ```
 
-### Features
+## Data Flow
 
-- **Incremental** — skips models already in the database
-- **Rate limited** — 0.5s between requests, exponential backoff on 429/5xx
-- **Attribution tracking** — every asset stores license and attribution text
-- **Dry-run mode** — preview what would be downloaded without using bandwidth
-- **SQLite storage** — asset metadata, car metadata, and game configs
+Sources → Normalize → Upsert (merge) → Cross-Source Enrich → Dedup
 
-### Database Schema
+See [`aidocs/car-data-pipeline.md`](../aidocs/car-data-pipeline.md) for detailed architecture, unit conventions, known data issues, and instructions for adding new sources.
 
-Three tables defined in `schema.sql`:
+## Dependencies
 
-- **`assets`** — all 3D assets with source info, license, hash, and status
-- **`car_metadata`** — make/model/year/body type for car assets
-- **`car_configs`** — game-specific CarConfig JSON linked to assets
-
-### Adding Car Metadata
-
-After downloading, you can populate car metadata manually:
-
-```sql
-INSERT INTO car_metadata (asset_id, make, model, year, body_type)
-VALUES (1, 'Toyota', 'AE86', 1986, 'coupe');
-```
-
-Or link game configs:
-
-```sql
-INSERT INTO car_configs (asset_id, car_metadata_id, config_json)
-VALUES (1, 1, '{"maxSpeed": 180, "acceleration": 0.8, "handling": 0.7}');
-```
-
-## Car Metadata Pipeline
-
-Populates the `car_metadata` table with real-world car specifications from public APIs and a curated reference dataset.
-
-### Sources
-
-| Source | Auth Required | Coverage | Quality |
-|--------|:---:|---|---|
-| `nhtsa` | No | US makes/models (1970s+) | Low (make/model/year only) |
-| `fueleconomy` | No | US-market cars (1984+) | Medium (engine, fuel, weight) |
-| `reference` | No | Curated JDM/classic cars | High (full specs) |
-
-### Usage
-
-```bash
-# Import all reference cars (AE86, MX-5, Civic, Silvia, M3)
-python3 car_metadata_pipeline.py --source reference
-
-# Search NHTSA for a specific car
-python3 car_metadata_pipeline.py --source nhtsa --search "Toyota Supra"
-
-# Fetch from fueleconomy.gov
-python3 car_metadata_pipeline.py --source fueleconomy --search "Honda Civic"
-
-# Run all sources
-python3 car_metadata_pipeline.py
-
-# Preview without writing
-python3 car_metadata_pipeline.py --source reference --dry-run
-
-# List current DB contents
-python3 car_metadata_pipeline.py --list
-
-# Custom database path
-python3 car_metadata_pipeline.py --db /path/to/cars.db
-```
-
-### Schema (car_metadata)
-
-The table stores JSON blobs for dimensions, engine, performance, transmission, and pricing. Records are deduplicated by `(make, model, year)` — higher-confidence sources update lower ones.
-
-```bash
-# Query example
-sqlite3 data/game_assets.db "SELECT make, model, year, json_extract(engine_json, '$.power_hp') as hp FROM car_metadata;"
-```
-
-### Dependencies
-
-- Python 3.8+ with stdlib only (no pip required)
-- `requests` not needed — uses `urllib`
+Python 3.8+ with stdlib only. No pip packages required.

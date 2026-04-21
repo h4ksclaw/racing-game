@@ -9,3 +9,8 @@ _archive/
 __pycache__/
 pipelines/__pycache__/
 sources/__pycache__/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.db.bak*
+data/carquery_checkpoint.json

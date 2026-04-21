@@ -607,7 +607,7 @@ def print_stats(conn):
 def main():
     parser = argparse.ArgumentParser(description="Bulk Car Metadata Indexer")
     parser.add_argument("--source", required=True,
-                        choices=["fueleconomy", "nhtsa", "wikidata", "all"])
+                        choices=["fueleconomy", "nhtsa", "wikidata", "carquery", "all"])
     parser.add_argument("--year-range", nargs=2, type=int, default=[2000, 2024])
     parser.add_argument("--body-filter", choices=["passenger"])
     parser.add_argument("--db", default=DEFAULT_DB)
@@ -628,7 +628,15 @@ def main():
 
     conn = init_db(args.db)
 
-    sources = [args.source] if args.source != "all" else ["fueleconomy", "nhtsa", "wikidata"]
+    parser.add_argument("--makes", nargs="+", default=None,
+                        help="CarQuery: specific make IDs to import (e.g. mazda toyota)")
+    parser.add_argument("--workers", type=int, default=4,
+                        help="CarQuery: parallel download workers")
+    parser.add_argument("--checkpoint", default=None,
+                        help="CarQuery: checkpoint file for resume")
+    args = parser.parse_args()
+
+    sources = [args.source] if args.source != "all" else ["fueleconomy", "nhtsa", "wikidata", "carquery"]
 
     for src in sources:
         print(f"\n{'='*60}")
@@ -671,6 +679,19 @@ def main():
         elif src == "wikidata":
             wikidata_enrich(dry_run=args.dry_run, conn=conn,
                             max_cars=args.max_cars)
+            conn.commit()
+        elif src == "carquery":
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), "sources"))
+            from carquery import carquery_import, set_db_upsert
+            set_db_upsert(upsert_car)
+            stats = carquery_import(
+                conn,
+                dry_run=args.dry_run,
+                makes=args.makes,
+                limit=args.max_cars,
+                workers=args.workers,
+                checkpoint_file=args.checkpoint,
+            )
             conn.commit()
 
     print_stats(conn)

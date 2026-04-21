@@ -1,8 +1,210 @@
 """Database operations for car metadata pipeline."""
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
+
+
+def _parse_tire_string(tire_str):
+    """Parse tire size string like '215/40 R18' or 'P235/65/R17' into components."""
+    cleaned = re.sub(r'\s+\d{2,3}[A-Z]?\s*$', '', tire_str.strip())
+    m = re.match(r'P?(\d{2,3})[/\s](\d{2,3})[/\s]*R(\d{2}(?:\.\d)?)', cleaned)
+    if m:
+        return {
+            "width_mm": int(m.group(1)),
+            "aspect_ratio": int(m.group(2)),
+            "wheel_diameter_in": int(m.group(3).split('.')[0]),
+        }
+    return None
+
+
+def normalize_record(car):
+    """Normalize car record field names and values at ingestion time.
+
+    Ensures consistency between Python pipeline and TypeScript game engine expectations.
+    Call this in upsert_car() BEFORE any DB operation.
+
+    Normalizes: dimensions (strip None), tires (split dual-size strings, parse components),
+    drivetrain (lowercase), body_type (lowercase).
+    Does NOT normalize: engine, performance, transmission, brakes, suspension, aero, price
+    (those are stored as-is from the source).
+    """
+    # Normalize dimensions: strip None values
+    dims = car.get("dimensions", {})
+    if dims:
+        normalized_dims = {k: v for k, v in dims.items() if v is not None}
+        car["dimensions"] = normalized_dims
+
+    # Parse tire sizes: autospecs stores "215/40 R18 // 245/40 R18" in front_size
+    tires = car.get("tires", {})
+    if tires:
+        front = tires.get("front_size", "")
+        if front and "//" in front:
+            parts = [p.strip() for p in front.split("//")]
+            if len(parts) == 2:
+                tires["front_size"] = parts[0]
+                tires["rear_size"] = parts[1]
+            elif len(parts) > 2:
+                tires["front_size"] = parts[0]
+                tires["rear_size"] = parts[-1]
+
+        for size_key in ["front_size", "rear_size"]:
+            size_str = tires.get(size_key, "")
+            if size_str:
+                parsed = _parse_tire_string(size_str)
+                if parsed:
+                    prefix = "front" if "front" in size_key else "rear"
+                    tires[f"{prefix}_width_mm"] = parsed["width_mm"]
+                    tires[f"{prefix}_aspect_ratio"] = parsed["aspect_ratio"]
+                    tires[f"{prefix}_wheel_diameter_in"] = parsed["wheel_diameter_in"]
+
+        car["tires"] = tires
+
+    if car.get("drivetrain"):
+        car["drivetrain"] = car["drivetrain"].lower().strip()
+
+    if car.get("body_type"):
+        car["body_type"] = car["body_type"].lower().strip()
+
+    return car
+
+
+def deduplicate_database(conn, dry_run=False):
+    """Remove duplicate car entries, keeping the most complete row per (make, model, year).
+
+    For each group of duplicates:
+    1. Find the row with the most non-null fields (the "best" row)
+    2. Merge any unique fields from other rows into the best row
+    3. Delete the redundant rows
+
+    Returns dict with stats.
+    """
+    groups = conn.execute(
+        "SELECT make, model, year, source, COUNT(*) as cnt FROM car_metadata "
+        "GROUP BY UPPER(make), UPPER(model), year, source HAVING cnt > 1"
+    ).fetchall()
+
+    stats = {"groups_found": len(groups), "rows_deleted": 0, "rows_merged": 0}
+
+    json_cols = ["dimensions_json", "engine_json", "performance_json", "transmission_json",
+                 "brakes_json", "suspension_json", "tires_json", "aero_json", "price_json"]
+    scalar_cols = ["body_type", "drivetrain", "weight_kg", "weight_front_pct", "fuel_type", "trim"]
+    all_cols = json_cols + scalar_cols
+
+    for make, model, year, source, count in groups:
+        rows = conn.execute(
+            "SELECT id, " + ", ".join(all_cols) + " FROM car_metadata "
+            "WHERE UPPER(make)=UPPER(?) AND UPPER(model)=UPPER(?) AND year=? AND source=?",
+            (make, model, year, source)
+        ).fetchall()
+
+        # Score each row
+        def score_row(r):
+            s = 0
+            for i, col in enumerate(all_cols):
+                val = r[i + 1]  # offset by id
+                if val is not None:
+                    if col in json_cols:
+                        try:
+                            d = json.loads(val) if isinstance(val, str) else val
+                            if d:
+                                s += len(d)
+                        except Exception:
+                            pass
+                    else:
+                        s += 1
+            return s
+
+        scored = sorted(rows, key=score_row, reverse=True)
+        keep = scored[0]
+        keep_id = keep[0]
+        duplicates = scored[1:]
+
+        # Merge JSON fields from duplicates into kept row
+        merged = False
+        for col in json_cols:
+            col_idx = all_cols.index(col) + 1
+            keep_val = json.loads(keep[col_idx]) if keep[col_idx] else {}
+            for dup in duplicates:
+                dup_val = json.loads(dup[col_idx]) if dup[col_idx] else {}
+                for k, v in dup_val.items():
+                    if k not in keep_val and v is not None:
+                        keep_val[k] = v
+                        merged = True
+            if merged and not dry_run:
+                conn.execute(f"UPDATE car_metadata SET {col}=? WHERE id=?",
+                             (json.dumps(keep_val), keep_id))
+
+        # Merge scalar fields
+        for col in scalar_cols:
+            col_idx = all_cols.index(col) + 1
+            if keep[col_idx] is None:
+                for dup in duplicates:
+                    if dup[col_idx] is not None:
+                        if not dry_run:
+                            conn.execute(f"UPDATE car_metadata SET {col}=? WHERE id=?",
+                                         (dup[col_idx], keep_id))
+                        merged = True
+                        break
+
+        if merged:
+            stats["rows_merged"] += 1
+
+        # Delete duplicates
+        if not dry_run:
+            dup_ids = [d[0] for d in duplicates]
+            placeholders = ",".join("?" * len(dup_ids))
+            conn.execute(f"DELETE FROM car_metadata WHERE id IN ({placeholders})", dup_ids)
+            stats["rows_deleted"] += len(dup_ids)
+        else:
+            stats["rows_deleted"] += len(duplicates)
+
+    if not dry_run:
+        conn.commit()
+
+    return stats
+
+
+def normalize_all_records(conn, dry_run=False):
+    """Re-normalize all existing records in the database (e.g., after adding new normalization rules)."""
+    rows = conn.execute(
+        "SELECT id, dimensions_json, tires_json, drivetrain, body_type FROM car_metadata"
+    ).fetchall()
+    updated = 0
+    for row in rows:
+        car_id = row[0]
+        car = {
+            "dimensions": json.loads(row[1]) if row[1] else {},
+            "tires": json.loads(row[2]) if row[2] else {},
+            "drivetrain": row[3],
+            "body_type": row[4],
+        }
+
+        normalized = normalize_record(car)
+
+        changes = []
+        if normalized["dimensions"] != json.loads(row[1] or "{}"):
+            changes.append("dimensions")
+        if normalized["tires"] != json.loads(row[2] or "{}"):
+            changes.append("tires")
+        if (normalized.get("drivetrain") or "").lower() != (row[3] or "").lower():
+            changes.append("drivetrain")
+        if (normalized.get("body_type") or "").lower() != (row[4] or "").lower():
+            changes.append("body_type")
+
+        if changes and not dry_run:
+            conn.execute(
+                "UPDATE car_metadata SET dimensions_json=?, tires_json=?, drivetrain=?, body_type=?, updated_at=datetime('now') WHERE id=?",
+                (json.dumps(normalized["dimensions"]), json.dumps(normalized["tires"]),
+                 normalized.get("drivetrain"), normalized.get("body_type"), car_id))
+            updated += 1
+        elif changes:
+            updated += 1
+
+    if not dry_run:
+        conn.commit()
+    return updated
 
 
 def init_db(db_path):
@@ -98,6 +300,7 @@ def _merge_into_row(conn, eid, car, merge_mode):
     """Merge car data into an existing row. Fills gaps in merge_mode, overwrites otherwise."""
     now = datetime.now(timezone.utc).isoformat()
 
+    # --- JSON merge: merge new data into existing JSON columns ---
     new_dims = _merge_json(conn, eid, "dimensions_json", car.get("dimensions", {}))
     new_eng = _merge_json(conn, eid, "engine_json", car.get("engine", {}))
     new_perf = _merge_json(conn, eid, "performance_json", car.get("performance", {}))
@@ -108,6 +311,7 @@ def _merge_into_row(conn, eid, car, merge_mode):
     new_tires = _merge_json(conn, eid, "tires_json", car.get("tires", {}))
     new_aero = _merge_json(conn, eid, "aero_json", car.get("aero", {}))
 
+    # --- Scalar merge: fill gaps (merge_mode) or overwrite (replace mode) ---
     set_parts = []
     params = []
 
@@ -177,6 +381,8 @@ def upsert_car(conn, car, dry_run=False, dedup_trim=False, merge_mode=False):
     complementary fields into ALL matching rows (e.g. FuelEconomy MPG/cylinders
     fills gaps in autospecs weight/dimension records).
     """
+    car = normalize_record(car)
+
     tags_str = ",".join(car.get("tags", [])) if isinstance(car.get("tags"), list) else car.get("tags", "")
 
     if dedup_trim:

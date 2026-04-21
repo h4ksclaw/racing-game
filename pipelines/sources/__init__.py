@@ -41,19 +41,13 @@ def api_get_xml(url, timeout=15, max_retries=3, backoff=2.0):
 
 from sources.reference import reference_source, REFERENCE_CARS  # noqa: E402
 from sources.nhtsa import nhtsa_source, nhtsa_get_models  # noqa: E402
-from sources.fueleconomy import fe_source, _parse_fe_vehicle  # noqa: E402
-from sources.autospecs import (  # noqa: E402
-    autospecs_scrape, _parse_weight, _parse_mm, _parse_drive,
-    _parse_hp, _parse_top_speed, _parse_year, _parse_displacement,
-    _is_excluded, _fetch_next_data, AUTOSPECS_HOME, SUV_FILTER_WORDS,
-)
+from sources.fueleconomy import fe_source  # noqa: E402
+from sources.autospecs import autospecs_scrape  # noqa: E402
 
 __all__ = [
     "api_get_json", "api_get_xml",
     "reference_source", "REFERENCE_CARS",
     "nhtsa_source", "nhtsa_get_models",
-    "fe_source", "_parse_fe_vehicle",
-    "autospecs_scrape", "_parse_weight", "_parse_mm", "_parse_drive",
-    "_parse_hp", "_parse_top_speed", "_parse_year", "_parse_displacement",
-    "_is_excluded", "_fetch_next_data", "AUTOSPECS_HOME", "SUV_FILTER_WORDS",
+    "fe_source",
+    "autospecs_scrape",
 ]
