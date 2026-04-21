@@ -3,13 +3,31 @@
  *
  * - Lobby management: /api/lobby
  * - Track generation: /api/world
+ * - Asset management: /api/assets
+ * - Car metadata: /api/cars
  * - Serves frontend static files from dist/ in production
  */
 
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
+import multer from "multer";
 import { generateTrack } from "../shared/track.ts";
+import { createUploadMiddleware, processUploadedFile, promoteAsset, serveAsset } from "./assets.ts";
+import {
+	getAllCars,
+	getAssetByHash,
+	getAssetById,
+	getAssets,
+	getCarById,
+	getCarConfigById,
+	getCarConfigs,
+	getCarConfigsByAsset,
+	insertAsset,
+	saveCarConfig,
+	searchCars,
+} from "./db.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -116,7 +134,166 @@ app.get("/api/world", (req, res) => {
 	res.json(response);
 });
 
-// ── Serve frontend (production) ──────────────────────────────────────────
+const upload = createUploadMiddleware();
+
+// ── Asset routes ──────────────────────────────────────────────────────
+
+/** Upload a GLB file. Returns hash and asset ID. */
+app.post("/api/assets/upload", upload.single("model"), (req, res) => {
+	if (!req.file) {
+		res.status(400).json({ error: "No file uploaded (use field name 'model')" });
+		return;
+	}
+	try {
+		const processed = processUploadedFile(req.file.path, req.file.originalname);
+		const existing = getAssetByHash(processed.hash);
+		if (existing) {
+			// Idempotent: same file already exists
+			res.json({
+				hash: processed.hash,
+				assetId: existing.id,
+				status: existing.status,
+				originalName: existing.original_name,
+				message: "File already exists",
+			});
+			return;
+		}
+		const assetId = insertAsset({
+			filepath: processed.filePath,
+			sha256_hash: processed.hash,
+			source_url: `upload://${processed.hash}`,
+			source_type: "upload",
+			original_name: processed.originalName,
+			status: "pending",
+		});
+		res.json({
+			hash: processed.hash,
+			assetId,
+			status: "pending",
+			originalName: processed.originalName,
+			size: processed.size,
+		});
+	} catch (err) {
+		res.status(500).json({ error: String(err) });
+	}
+});
+
+/** List assets, optionally filtered by status. */
+app.get("/api/assets", (req, res) => {
+	const status = req.query.status as string | undefined;
+	const assets = getAssets(status);
+	res.json(assets);
+});
+
+/** Get single asset by ID. */
+app.get("/api/assets/:id", (req, res) => {
+	const asset = getAssetById(Number(req.params.id));
+	if (!asset) {
+		res.status(404).json({ error: "Asset not found" });
+		return;
+	}
+	res.json(asset);
+});
+
+/** Serve asset file by hash. */
+app.get("/api/assets/file/:hash", serveAsset);
+
+/** Get saved car configs for an asset. */
+app.get("/api/assets/:id/configs", (req, res) => {
+	const configs = getCarConfigsByAsset(Number(req.params.id));
+	res.json(configs);
+});
+
+// ── Car metadata routes ──────────────────────────────────────────────
+
+/** Search car metadata by make/model name. */
+app.get("/api/cars/search", (req, res) => {
+	const q = req.query.q as string;
+	if (!q || q.length < 2) {
+		res.status(400).json({ error: "Query too short (min 2 chars)" });
+		return;
+	}
+	const limit = Math.min(Number(req.query.limit) || 20, 50);
+	const cars = searchCars(q, limit);
+	res.json(cars);
+});
+
+/** List all cars in the database. */
+app.get("/api/cars", (_req, res) => {
+	res.json(getAllCars());
+});
+
+/** Get single car metadata by ID. */
+app.get("/api/cars/:id", (req, res) => {
+	const car = getCarById(Number(req.params.id));
+	if (!car) {
+		res.status(404).json({ error: "Car not found" });
+		return;
+	}
+	res.json(car);
+});
+
+/** Save a car config (CarConfig JSON + optional CarModelSchema). */
+app.post("/api/cars/config", (req, res) => {
+	const { assetId, config, modelSchema, carMetadataId } = req.body;
+	if (!assetId || !config) {
+		res.status(400).json({ error: "assetId and config are required" });
+		return;
+	}
+	// Verify asset exists
+	const asset = getAssetById(Number(assetId));
+	if (!asset) {
+		res.status(404).json({ error: "Asset not found" });
+		return;
+	}
+	try {
+		const configId = saveCarConfig(
+			Number(assetId),
+			JSON.stringify(config),
+			modelSchema ? JSON.stringify(modelSchema) : undefined,
+			carMetadataId ? Number(carMetadataId) : undefined,
+		);
+		// Promote asset from pending to ready
+		if (asset.status === "pending") {
+			promoteAsset(asset.sha256_hash);
+		}
+		res.json({ configId, status: "saved" });
+	} catch (err) {
+		res.status(500).json({ error: String(err) });
+	}
+});
+
+/** Get a saved car config by ID. */
+app.get("/api/cars/config/:id", (req, res) => {
+	const config = getCarConfigById(Number(req.params.id));
+	if (!config) {
+		res.status(404).json({ error: "Config not found" });
+		return;
+	}
+	res.json(config);
+});
+
+/** List all saved car configs. */
+app.get("/api/cars/configs", (_req, res) => {
+	res.json(getCarConfigs());
+});
+
+// ── Error handling ──────────────────────────────────────────────────
+
+/** Multer/file upload errors. */
+app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+	if (err instanceof multer.MulterError) {
+		res.status(400).json({ error: `Upload error: ${err.message}` });
+		return;
+	}
+	if (err instanceof Error && err.message.includes("Only .glb")) {
+		res.status(400).json({ error: err.message });
+		return;
+	}
+	next(err);
+});
+
+// ── Serve frontend (production) ──────────────────────────────────────
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "../..");
@@ -124,23 +301,30 @@ const distPath = path.join(projectRoot, "dist");
 
 // In dev, Vite proxies /api here and serves frontend itself.
 // In production, Express serves both.
-app.use(express.static(distPath));
+if (fs.existsSync(distPath)) {
+	app.use(express.static(distPath));
+}
 
 // Clean URL routing: /world → world.html, /practice → practice.html
-app.get("/world", (_req, res) => {
-	res.sendFile(path.join(distPath, "world.html"));
-});
-app.get("/practice", (_req, res) => {
-	res.sendFile(path.join(distPath, "practice.html"));
-});
-app.get("/garage", (_req, res) => {
-	res.sendFile(path.join(distPath, "garage.html"));
-});
-app.get("/physics-debug", (_req, res) => {
-	res.sendFile(path.join(distPath, "physics-debug.html"));
-});
-app.get("*path", (_req, res) => {
-	res.sendFile(path.join(distPath, "world.html"));
+// Only in production (dist/ exists)
+if (fs.existsSync(distPath)) {
+	app.get("/world", (_req, res) => {
+		res.sendFile(path.join(distPath, "world.html"));
+	});
+	app.get("/practice", (_req, res) => {
+		res.sendFile(path.join(distPath, "practice.html"));
+	});
+	app.get("/garage", (_req, res) => {
+		res.sendFile(path.join(distPath, "garage.html"));
+	});
+	app.get("/physics-debug", (_req, res) => {
+		res.sendFile(path.join(distPath, "physics-debug.html"));
+	});
+}
+
+// Fallback 404 (registered last so all routes get a chance to match)
+app.use((_req, res) => {
+	res.status(404).json({ error: "Not found" });
 });
 
 const PORT = Number(process.env.PORT ?? 3001);
