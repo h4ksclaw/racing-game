@@ -184,8 +184,9 @@ export async function saveConfig(payload: ExportPayload): Promise<{ ok: boolean;
 		});
 		if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` };
 		return { ok: true };
-	} catch (e: any) {
-		return { ok: false, error: e.message };
+	} catch (e: unknown) {
+		const msg = e instanceof Error ? e.message : String(e);
+		return { ok: false, error: msg };
 	}
 }
 

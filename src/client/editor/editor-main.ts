@@ -57,7 +57,8 @@ export function isShowingDims() {
 export function setMode(mode: EditorMode) {
 	currentMode = mode;
 	orbitControls.enabled = mode === "orbit";
-	(transformControls as any).visible = mode === "move";
+	// TransformControls extends Object3D but TS types don't reflect that in this version
+	(transformControls as unknown as THREE.Object3D).visible = mode === "move";
 	if (mode !== "move") transformControls.detach();
 	modeChangeCallback?.(mode);
 }
@@ -66,15 +67,25 @@ export function onModeChange(cb: (mode: EditorMode) => void) {
 	modeChangeCallback = cb;
 }
 
+/** Set wireframe on all mesh materials in the model. */
+function applyWireframe(model: THREE.Object3D, value: boolean) {
+	model.traverse((c) => {
+		const mesh = c as THREE.Mesh;
+		if (!mesh.isMesh) return;
+		const mat = mesh.material;
+		if (Array.isArray(mat)) {
+			for (const m of mat) {
+				if ("wireframe" in m) (m as THREE.MeshStandardMaterial).wireframe = value;
+			}
+		} else if ("wireframe" in mat) {
+			(mat as THREE.MeshStandardMaterial).wireframe = value;
+		}
+	});
+}
+
 export function toggleWireframe() {
 	wireframe = !wireframe;
-	if (currentModel) {
-		currentModel.traverse((c) => {
-			if ((c as THREE.Mesh).isMesh) {
-				((c as THREE.Mesh).material as any).wireframe = wireframe;
-			}
-		});
-	}
+	if (currentModel) applyWireframe(currentModel, wireframe);
 	return wireframe;
 }
 
@@ -95,9 +106,7 @@ export function loadGLB(url: string): Promise<THREE.Group> {
 			url,
 			(gltf) => {
 				const model = gltf.scene;
-				if (currentModel) {
-					scene.remove(currentModel);
-				}
+				if (currentModel) scene.remove(currentModel);
 				currentModel = model;
 				scene.add(model);
 
@@ -105,9 +114,9 @@ export function loadGLB(url: string): Promise<THREE.Group> {
 				const box = new THREE.Box3().setFromObject(model);
 				const center = box.getCenter(new THREE.Vector3());
 				model.position.sub(center);
-				model.position.y += box.min.y * -1; // sit on grid
+				model.position.y += box.min.y * -1;
 
-				// Frame camera
+				// Frame camera to fit model
 				const size = box.getSize(new THREE.Vector3());
 				const maxDim = Math.max(size.x, size.y, size.z);
 				const dist = maxDim * 2;
@@ -115,13 +124,7 @@ export function loadGLB(url: string): Promise<THREE.Group> {
 				orbitControls.target.set(0, maxDim * 0.3, 0);
 				orbitControls.update();
 
-				if (wireframe) {
-					model.traverse((c) => {
-						if ((c as THREE.Mesh).isMesh) {
-							((c as THREE.Mesh).material as any).wireframe = true;
-						}
-					});
-				}
+				if (wireframe) applyWireframe(model, true);
 
 				resolve(model);
 			},
@@ -171,7 +174,7 @@ export function init(container: HTMLElement) {
 	transformControls.addEventListener("dragging-changed", (e) => {
 		orbitControls.enabled = !e.value;
 	});
-	scene.add(transformControls as any);
+	scene.add(transformControls as unknown as THREE.Object3D);
 
 	gltfLoader = new GLTFLoader();
 
