@@ -598,6 +598,273 @@ def _parse_fe_vehicle(xml_root, make, model):
 
 
 # ---------------------------------------------------------------------------
+# AutoSpecs.org source - Next.js SSR site with __NEXT_DATA__ JSON blocks
+# ---------------------------------------------------------------------------
+
+AUTOSPECS_HOME = "https://www.autospecs.org"
+
+# Skip SUVs, trucks, vans — only keep passenger cars
+SUV_FILTER_WORDS = [
+    "suv", "land cruiser", "4runner", "rav4", "highlander", "sequoia",
+    "sienna", "alphard", "previa", "hilux", "fortuner", "prado",
+    "cr-v", "hr-v", "pilot", "passport", "pathfinder", "armada",
+    "murano", "rogue", "kicks", "tucson", "santa fe", "sorento",
+    "sportage", "telluride", "palisade", "venue", "seltos", "trailblazer",
+    "equinox", "traverse", "tahoe", "suburban", "expedition",
+    "explorer", "bronco", "escalade", "yukon", "durango",
+    "wrangler", "cherokee", "grand cherokee", "compass",
+    " Range Rover", "discovery", "defender", "cayenne", "macan",
+    "x5", "x7", "qx80", "rx", "gx", "lx", "nx", "tx",
+    "outback", "forester", "ascend", "traverse", "blazer",
+    "ecosport", "escape", "edge", "flex", "territory",
+    "minivan", "van", "pickup", "truck", "ute",
+    "crossover", "suv",
+]
+
+
+def _parse_weight(weight_str):
+    """Extract kg from '2860 lbs (1297 kg)' or range '3197 - 3450 lbs (1450 - 1565 kg)'."""
+    if not weight_str:
+        return None
+    m = re.search(r'\((\d+(?:\s*-\s*\d+)?)\s*kg\)', str(weight_str))
+    if not m:
+        m = re.search(r'(\d+(?:\s*-\s*\d+)?)\s*kg', str(weight_str))
+    if not m:
+        return None
+    parts = m.group(1).split('-')
+    nums = [float(p.strip()) for p in parts]
+    return sum(nums) / len(nums) if nums else None
+
+
+def _parse_mm(dim_str):
+    """Extract mm from '183.1 in (4651 mm)' and return meters."""
+    if not dim_str:
+        return None
+    m = re.search(r'\((\d+(?:\.\d+)?)\s*mm\)', str(dim_str))
+    if not m:
+        m = re.search(r'(\d+(?:\.\d+)?)\s*mm', str(dim_str))
+    if not m:
+        return None
+    return round(float(m.group(1)) / 1000, 3)
+
+
+def _parse_drive(drive_str):
+    """Map drive type string to fwd/rwd/awd."""
+    if not drive_str:
+        return None
+    low = drive_str.lower()
+    if "front" in low:
+        return "fwd"
+    if "rear" in low:
+        return "rwd"
+    if "all" in low or "four" in low or "4" in low:
+        return "awd"
+    return None
+
+
+def _parse_hp(trim_name):
+    """Extract HP from trim name like '1.8L 6MT FWD (132 HP)'."""
+    if not trim_name:
+        return None
+    m = re.search(r'\((\d+)\s*HP\)', str(trim_name), re.IGNORECASE)
+    return int(m.group(1)) if m else None
+
+
+def _parse_top_speed(speed_str):
+    """Extract km/h from '130 mph (209 km/h)'."""
+    if not speed_str:
+        return None
+    m = re.search(r'\((\d+)\s*km/h\)', str(speed_str))
+    if not m:
+        m = re.search(r'(\d+)\s*km/h', str(speed_str))
+    return int(m.group(1)) if m else None
+
+
+def _parse_year(gen_year_str):
+    """Extract start year from generation year string like '2023 Toyota Corolla|...'."""
+    if not gen_year_str:
+        return None
+    m = re.match(r'(\d{4})', str(gen_year_str))
+    return int(m.group(1)) if m else None
+
+
+def _parse_displacement(disp_str):
+    """Extract displacement in liters from '1798 cm3'."""
+    if not disp_str:
+        return None
+    m = re.search(r'(\d+)\s*cm3', str(disp_str))
+    if m:
+        return round(int(m.group(1)) / 1000, 3)
+    # Try liters directly
+    m = re.search(r'(\d+\.\d+)\s*[lL]', str(disp_str))
+    return float(m.group(1)) if m else None
+
+
+def _is_excluded(model_name):
+    """Check if model name contains SUV/truck/van keywords."""
+    if not model_name:
+        return True
+    low = model_name.lower()
+    for word in SUV_FILTER_WORDS:
+        if word in low:
+            return True
+    return False
+
+
+def _fetch_next_data(url, timeout=20):
+    """Fetch URL and extract __NEXT_DATA__ JSON."""
+    req = urllib.request.Request(url, headers={"User-Agent": "CarMetadataPipeline/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            html = resp.read().decode()
+    except Exception as e:
+        print(f"  [warn] Failed to fetch {url}: {e}")
+        return None
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return None
+
+
+def autospecs_scrape(conn, args):
+    """Scrape autospecs.org for car specs."""
+    dry_run = getattr(args, 'dry_run', False)
+    search = getattr(args, 'search', None)
+
+    # 1. Get brand list
+    home = _fetch_next_data(f"{AUTOSPECS_HOME}/")
+    if not home:
+        print("  [warn] Could not load autospecs.org homepage")
+        return 0
+
+    cars = home.get('props', {}).get('pageProps', {}).get('cars', [])
+    if not cars:
+        print("  [warn] No brands found on autospecs.org")
+        return 0
+
+    brands = [(c['name'], c['name'].lower()) for c in cars]
+    print(f"  Found {len(brands)} brands")
+
+    # Filter to search if specified
+    if search:
+        q = search.lower()
+        brands = [(n, s) for n, s in brands if q in n.lower()]
+        if not brands:
+            print(f"  No brands matching '{search}'")
+            return 0
+
+    total_indexed = 0
+    total_skipped = 0
+
+    for brand_idx, (brand_name, slug) in enumerate(brands):
+        brand_data = _fetch_next_data(f"{AUTOSPECS_HOME}/brand/{slug}")
+        if not brand_data:
+            time.sleep(1)
+            continue
+
+        models = brand_data.get('props', {}).get('pageProps', {}).get('models', [])
+        brand_trims = 0
+
+        for model_entry in models:
+            model_name = model_entry.get('name', '')
+            if _is_excluded(model_name):
+                continue
+
+            for gen in model_entry.get('generations', []):
+                year = _parse_year(gen.get('year', ''))
+                if not year or year < 1980:
+                    continue
+
+                for trim in gen.get('models', []):
+                    trim_name = trim.get('name', '')
+                    data = trim.get('data') or {}
+
+                    weight_kg = _parse_weight(data.get('weight'))
+                    if not weight_kg:
+                        continue
+
+                    # Build car dict
+                    dims = data.get('dimensions') or {}
+                    length_m = _parse_mm(dims.get('length'))
+                    width_m = _parse_mm(dims.get('width'))
+                    height_m = _parse_mm(dims.get('height'))
+                    gc_m = _parse_mm(data.get('groundClearance'))
+
+                    dimensions = {}
+                    if length_m:
+                        dimensions['length'] = length_m
+                    if width_m:
+                        dimensions['width'] = width_m
+                    if height_m:
+                        dimensions['height'] = height_m
+                    if gc_m:
+                        dimensions['ground_clearance'] = gc_m
+
+                    engine = {}
+                    disp = _parse_displacement(data.get('displacement'))
+                    if disp:
+                        engine['displacement_l'] = disp
+                    hp = _parse_hp(trim_name)
+                    if hp:
+                        engine['power_hp'] = hp
+                    fuel_sys = data.get('fuelSystem')
+                    if fuel_sys:
+                        engine['fuel_delivery'] = fuel_sys
+
+                    perf = {}
+                    top_speed = _parse_top_speed(data.get('topSpeed'))
+                    if top_speed:
+                        perf['top_speed_km_h'] = top_speed
+
+                    tires = {}
+                    tyre = data.get('tyreSize')
+                    if tyre:
+                        tires['front_size'] = tyre
+
+                    car = {
+                        'make': brand_name.title(),
+                        'model': model_name,
+                        'year': year,
+                        'trim': trim_name,
+                        'body_type': None,
+                        'dimensions': dimensions,
+                        'engine': engine,
+                        'performance': perf,
+                        'drivetrain': _parse_drive(data.get('driveType')),
+                        'transmission': {},
+                        'brakes': {},
+                        'suspension': {},
+                        'tires': tires,
+                        'aero': {},
+                        'weight_kg': weight_kg,
+                        'weight_front_pct': None,
+                        'fuel_type': None,
+                        'price': {},
+                        'confidence': 0.5,
+                        'source': 'autospecs',
+                    }
+
+                    if dry_run:
+                        brand_trims += 1
+                    else:
+                        result = upsert_car(conn, car)
+                        if result in ('inserted', 'updated'):
+                            brand_trims += 1
+
+        total_indexed += brand_trims
+        if brand_trims > 0:
+            print(f"  Brand {brand_idx+1}/{len(brands)}: {brand_name} - {brand_trims} trims indexed")
+
+        time.sleep(1)
+
+    print(f"  AutoSpecs: {total_indexed} trims indexed across {len(brands)} brands")
+    return total_indexed
+
+
+# ---------------------------------------------------------------------------
 # Reference source
 # ---------------------------------------------------------------------------
 
@@ -777,12 +1044,13 @@ SOURCES = {
     "nhtsa": nhtsa_source,
     "fueleconomy": fe_source,
     "reference": reference_source,
+    "autospecs": autospecs_scrape,
 }
 
 
 def main():
     parser = argparse.ArgumentParser(description="Car Metadata Pipeline")
-    parser.add_argument("--source", choices=list(SOURCES.keys()), help="Run specific source only")
+    parser.add_argument("--source", choices=['nhtsa','fueleconomy','reference','autospecs','all'], default='all')
     parser.add_argument("--search", help="Search filter (e.g. 'Toyota AE86' or 'Honda Civic')")
     parser.add_argument("--db", default=DEFAULT_DB, help="SQLite database path")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing to DB")
@@ -804,7 +1072,7 @@ def main():
         conn.close()
         return
 
-    sources_to_run = [args.source] if args.source else list(SOURCES.keys())
+    sources_to_run = [args.source] if args.source != 'all' else list(SOURCES.keys())
     total_inserted = 0
     total_updated = 0
 
@@ -816,6 +1084,13 @@ def main():
         print(f"{'='*60}")
 
         fetch_fn = SOURCES[src_name]
+
+        # autospecs handles its own DB writes
+        if src_name == "autospecs":
+            count = fetch_fn(conn, args)
+            total_inserted += count
+            continue
+
         cars = fetch_fn(search=args.search, dry_run=args.dry_run)
 
         if not cars:
