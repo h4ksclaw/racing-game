@@ -31,7 +31,7 @@ function detectWheels(model: THREE.Group): DetectedMarker[] {
 		// (one axis much shorter than the other two, or all similar for thin disc)
 		geo.computeBoundingBox();
 		const size = new THREE.Vector3();
-		geo.boundingBox!.getSize(size);
+		geo.boundingBox?.getSize(size);
 		const sorted = [size.x, size.y, size.z].sort((a, b) => a - b);
 		const ratio1 = sorted[0] / Math.max(sorted[1], 0.001); // thin vs medium
 		const ratio2 = sorted[1] / Math.max(sorted[2], 0.001); // medium vs long
@@ -144,15 +144,15 @@ function detectLights(model: THREE.Group): DetectedMarker[] {
 	for (const l of lights) {
 		const base = l.type.replace(/_[LR]$/, "");
 		if (!grouped.has(base)) grouped.set(base, []);
-		grouped.get(base)!.push(l);
+		grouped.get(base)?.push(l);
 	}
 
 	const paired: DetectedMarker[] = [];
 	for (const [base, items] of grouped) {
 		if (items.length === 2) {
 			items.sort((a, b) => a.position.x - b.position.x);
-			items[0].type = base + "_L";
-			items[1].type = base + "_R";
+			items[0].type = `${base}_L`;
+			items[1].type = `${base}_R`;
 			paired.push(...items);
 		} else {
 			paired.push(...items);

@@ -10,14 +10,18 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import multer from "multer";
 import { generateTrack } from "../shared/track.ts";
 import { createUploadMiddleware, processUploadedFile, promoteAsset, serveAsset } from "./assets.ts";
+import { insertCarImport } from "./db.js";
 import {
+	deleteAttribution,
 	filterCars,
+	getAllAttributions,
 	getAllCars,
 	getAssetByHash,
 	getAssetById,
@@ -27,10 +31,14 @@ import {
 	getCarConfigs,
 	getCarConfigsByAsset,
 	insertAsset,
+	insertAttribution,
 	saveCarConfig,
 	searchCars,
+	updateAttribution,
 } from "./db.ts";
 import { predict_specs } from "./predictor.ts";
+import { carModelKey, getFromS3, uploadToS3 } from "./s3.ts";
+import { downloadModel, searchModels } from "./sketchfab.ts";
 
 /** Merge predictions into a car if ?predict=true was requested. */
 /** Map flat PredictedSpecs keys into nested CarMetadata fields. */
@@ -260,172 +268,125 @@ app.get("/api/assets/:id", (req, res) => {
 /** Serve asset file by hash. */
 app.get("/api/assets/file/:hash", serveAsset);
 
-/** Proxy Sketchfab search — lets editor search without exposing API key. */
+/** Proxy Sketchfab search — CC-licensed, downloadable models only. */
 app.get("/api/sketchfab/search", async (req, res) => {
 	const q = req.query.q as string;
 	if (!q || q.length < 2) {
 		res.status(400).json({ error: "Query too short (min 2 chars)" });
 		return;
 	}
-	const limit = Math.min(Number(req.query.limit) || 24, 50);
-	const cursor = req.query.cursor as string | undefined;
-	const categories = (req.query.categories as string) || "cars-vehicles";
-
 	try {
-		const params = new URLSearchParams({
-			q,
-			downloadable: "true",
-			sort_by: "-likeCount",
-			count: String(limit),
-			categories,
-			...(cursor ? { cursor } : {}),
+		const data = await searchModels(q, {
+			limit: Number(req.query.limit) || 24,
+			cursor: req.query.cursor as string | undefined,
+			sort_by: (req.query.sort_by as string) || "-likeCount",
+			tags: req.query.tags as string | undefined,
+			categories: (req.query.categories as string) || "cars-vehicles",
 		});
-		const resp = await fetch(`https://api.sketchfab.com/v3/search?type=models&${params}`);
-		if (!resp.ok) {
-			res.status(502).json({ error: `Sketchfab API error: ${resp.status}` });
-			return;
-		}
-		const data = (await resp.json()) as {
-			results?: Array<{
-				uid?: string;
-				name?: string;
-				thumbnails?: { images?: Array<{ url?: string }> };
-				viewCount?: number;
-				likeCount?: number;
-				faceCount?: number;
-				vertexCount?: number;
-				license?: { label?: string; slug?: string };
-				user?: { displayName?: string };
-			}>;
-			totalResults?: number;
-			cursors?: { next?: string };
-		};
-		const results = (data.results || []).map((m) => ({
-			uid: m.uid,
-			name: m.name,
-			thumbnail: m.thumbnails?.images?.[0]?.url ?? null,
-			viewCount: m.viewCount ?? 0,
-			likeCount: m.likeCount ?? 0,
-			faceCount: m.faceCount ?? 0,
-			vertexCount: m.vertexCount ?? 0,
-			license: m.license?.label ?? "Unknown",
-			licenseSlug: m.license?.slug ?? "",
-			author: m.user?.displayName ?? "",
-			url: `https://sketchfab.com/3d-models/${m.uid}`,
-		}));
-		res.json({
-			results,
-			total: data.totalResults ?? results.length,
-			nextCursor: data.cursors?.next ?? null,
-		});
+		res.json(data);
 	} catch (err) {
-		res.status(502).json({ error: `Sketchfab fetch failed: ${String(err)}` });
+		res.status(502).json({ error: `Sketchfab search failed: ${String(err)}` });
 	}
 });
 
-/** Download a Sketchfab model by UID. Streams GLB to data/assets/pending/.
+/** Download a Sketchfab model by UID. Validates license, format, size.
  *
- * Requires SKETCHFAB_API_KEY env var. The flow:
- * 1. POST to Sketchfab download API to get GLB URL
- * 2. Stream-download the GLB to pending directory
- * 3. Compute SHA256 hash
- * 4. Register in assets DB
- * 5. Return asset info
+ * Uses the sketchfab module for license validation, GLB download, and attribution.
  */
 app.post("/api/sketchfab/download", async (req, res) => {
-	const { uid, name, license: licenseLabel, author, sourceUrl } = req.body;
+	const { uid } = req.body;
 	if (!uid) {
 		res.status(400).json({ error: "uid is required" });
 		return;
 	}
 
-	const apiKey = process.env.SKETCHFAB_API_KEY;
-	if (!apiKey) {
-		res.status(503).json({ error: "SKETCHFAB_API_KEY not configured" });
-		return;
-	}
-
 	try {
-		// Step 1: Get download link from Sketchfab
-		const dlResp = await fetch(`https://api.sketchfab.com/v3/models/${uid}/download`, {
-			method: "POST",
-			headers: { Authorization: `Token ${apiKey}` },
-		});
-		if (!dlResp.ok) {
-			if (dlResp.status === 403) {
-				res.status(403).json({ error: "Model download not authorized" });
-			} else {
-				res.status(502).json({ error: `Sketchfab download API error: ${dlResp.status}` });
-			}
-			return;
-		}
-		const dlData = (await dlResp.json()) as {
-			uri?: string;
-			gltf?: Array<{ format?: string; url?: string; size?: number }>;
-			files?: Array<{ format?: string; url?: string; size?: number; filename?: string }>;
-		};
+		const { buffer, filename, size, attribution } = await downloadModel(uid);
 
-		// Find GLB download URL
-		let glbUrl: string | null = null;
-		const searchFormats = dlData.files ?? dlData.gltf ?? [];
-		for (const f of searchFormats) {
-			if (f.format?.toLowerCase() === "glb") {
-				glbUrl = f.url ?? null;
-				break;
-			}
-		}
-		if (!glbUrl) {
-			glbUrl = dlData.uri ?? null;
-		}
-		if (!glbUrl) {
-			res.status(502).json({ error: "No GLB download format available" });
-			return;
-		}
-
-		// Step 2: Download to buffer, hash, write to disk
+		// Write to pending directory
 		const pendingDir = process.env.ASSET_DIR
 			? path.join(process.env.ASSET_DIR, "pending")
 			: path.join(process.cwd(), "data", "assets", "pending");
 		fs.mkdirSync(pendingDir, { recursive: true });
 
-		const safeName = (name || uid).replace(/[^a-zA-Z0-9._-]/g, "_");
-		const destPath = path.join(pendingDir, `${safeName}.glb`);
+		const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+		const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+		const destPath = path.join(pendingDir, `${safeName}`);
+		fs.writeFileSync(destPath, buffer);
 
-		const fileResp = await fetch(glbUrl);
-		if (!fileResp.ok) {
-			res.status(502).json({ error: `GLB download failed: ${fileResp.status}` });
-			return;
-		}
-
-		const arrayBuf = await fileResp.arrayBuffer();
-		const buf = Buffer.from(arrayBuf);
-		const sha256 = crypto.createHash("sha256").update(buf).digest("hex");
-		fs.writeFileSync(destPath, buf);
-
-		// Step 3: Register in DB
-		const fileSize = fs.statSync(destPath).size;
+		// Register in DB with full attribution
 		const assetId = insertAsset({
 			filepath: destPath,
 			sha256_hash: sha256,
-			source_url: sourceUrl || `https://sketchfab.com/3d-models/${uid}`,
+			source_url: attribution.sourceUrl,
 			source_type: "sketchfab",
-			license: licenseLabel || "Unknown",
-			attribution: author ? `"${name}" by ${author}` : name || uid,
+			license: attribution.license,
+			attribution: `"${attribution.name}" by ${attribution.author}`,
 			original_name: safeName,
 			status: "pending",
-			metadata_json: JSON.stringify({ uid, sketchfab_name: name }),
+			metadata_json: JSON.stringify(attribution),
+		});
+
+		// Auto-create attribution entry
+		insertAttribution({
+			asset_id: assetId,
+			source_type: "sketchfab",
+			model_name: attribution.name || uid,
+			author_name: attribution.author ?? undefined,
+			author_url: attribution.authorUrl ?? undefined,
+			license_label: attribution.license ?? undefined,
+			license_slug: attribution.licenseSlug ?? undefined,
+			source_url: attribution.sourceUrl ?? `https://sketchfab.com/3d-models/${uid}`,
+			license_url: undefined,
 		});
 
 		res.json({
 			assetId,
 			hash: sha256,
 			name: safeName,
-			size: fileSize,
+			size,
 			status: "pending",
+			attribution,
 			message: "Downloaded to pending — open in editor to classify",
 		});
 	} catch (err) {
-		res.status(500).json({ error: `Download failed: ${String(err)}` });
+		const msg = String(err);
+		const status = msg.includes("not Creative Commons")
+			? 403
+			: msg.includes("too large")
+				? 413
+				: msg.includes("not a valid GLB")
+					? 415
+					: msg.includes("not downloadable")
+						? 403
+						: msg.includes("not authorized")
+							? 403
+							: 500;
+		res.status(status).json({ error: msg });
+	}
+});
+
+/** Full car import: creates asset + config + attribution rows.
+ * GLB should already be uploaded to S3 — pass the S3 key here.
+ */
+app.post("/api/cars/import", (req, res) => {
+	const { config, modelSchema, physicsOverrides, attribution, carMetadataId, s3Key } = req.body;
+	if (!s3Key || !config) {
+		res.status(400).json({ error: "s3Key and config are required" });
+		return;
+	}
+	try {
+		const result = insertCarImport({
+			s3Key,
+			configJson: JSON.stringify(config),
+			modelSchemaJson: modelSchema ? JSON.stringify(modelSchema) : undefined,
+			physicsOverridesJson: physicsOverrides ? JSON.stringify(physicsOverrides) : undefined,
+			attribution,
+			carMetadataId: carMetadataId ? Number(carMetadataId) : undefined,
+		});
+		res.json(result);
+	} catch (err) {
+		res.status(500).json({ error: String(err) });
 	}
 });
 
@@ -600,7 +561,121 @@ app.get("/api/cars/:id", (req, res) => {
 	res.json(maybePredict(car, req.query.predict === "true"));
 });
 
+// ── S3 proxy & upload routes ──────────────────────────────────────
+
+/** Serve a private S3 object by key (e.g. cars/abc123.glb). */
+app.get("/api/s3/:key(*)", async (req, res) => {
+	const key = (req.params as Record<string, string>).key;
+	if (!key || key.includes("..")) {
+		res.status(400).json({ error: "Invalid key" });
+		return;
+	}
+	try {
+		const buf = await getFromS3(key);
+		const ct = key.endsWith(".glb") ? "model/gltf-binary" : "application/octet-stream";
+		res.setHeader("Content-Type", ct);
+		res.setHeader("Content-Length", buf.length);
+		res.send(buf);
+	} catch (err) {
+		console.error("[s3] fetch failed:", err);
+		res.status(404).json({ error: "Not found in S3" });
+	}
+});
+
+/** Upload a GLB to S3 under cars/{hash}.glb. */
+app.post("/api/s3/upload", upload.single("model"), async (req, res) => {
+	if (!req.file) {
+		res.status(400).json({ error: "No file uploaded (use field name 'model')" });
+		return;
+	}
+	try {
+		const buf = await readFile(req.file.path);
+		const key = carModelKey(buf);
+		await uploadToS3(key, buf);
+		res.json({ key, size: buf.length });
+	} catch (err) {
+		console.error("[s3] upload failed:", err);
+		res.status(500).json({ error: String(err) });
+	}
+});
+
 // ── Error handling ──────────────────────────────────────────────────
+
+// ── Attribution routes ──────────────────────────────────────────────
+
+/** List all attributions. */
+app.get("/api/attributions", (_req, res) => {
+	res.json(getAllAttributions());
+});
+
+/** Get single attribution by ID. */
+app.get("/api/attributions/:id", (req, res) => {
+	const all = getAllAttributions();
+	const attr = all.find((a) => a.id === Number(req.params.id));
+	if (!attr) {
+		res.status(404).json({ error: "Attribution not found" });
+		return;
+	}
+	res.json(attr);
+});
+
+/** Create attribution. */
+app.post("/api/attributions", (req, res) => {
+	try {
+		const id = insertAttribution(req.body);
+		res.status(201).json({ id, status: "created" });
+	} catch (err) {
+		res.status(500).json({ error: String(err) });
+	}
+});
+
+/** Update attribution. */
+app.put("/api/attributions/:id", (req, res) => {
+	try {
+		updateAttribution(Number(req.params.id), req.body);
+		res.json({ status: "updated" });
+	} catch (err) {
+		res.status(500).json({ error: String(err) });
+	}
+});
+
+/** Delete attribution. */
+app.delete("/api/attributions/:id", (req, res) => {
+	try {
+		deleteAttribution(Number(req.params.id));
+		res.json({ status: "deleted" });
+	} catch (err) {
+		res.status(500).json({ error: String(err) });
+	}
+});
+
+/** Generate plain-text attribution file. */
+app.get("/api/attribution.txt", (_req, res) => {
+	const attributions = getAllAttributions();
+	const lines: string[] = [];
+	lines.push("Racing Game - Asset Attributions");
+	lines.push(`Generated: ${new Date().toISOString().split("T")[0]}`);
+	lines.push("================================");
+	lines.push("");
+
+	attributions.forEach((a, i) => {
+		lines.push(`${i + 1}. ${a.model_name || "Unknown Model"}`);
+		if (a.author_name) lines.push(`   Author: ${a.author_name}`);
+		if (a.license_label) {
+			const licUrl = a.license_url ? ` (${a.license_url})` : "";
+			lines.push(`   License: ${a.license_label}${licUrl}`);
+		}
+		if (a.source_url) lines.push(`   Source: ${a.source_url}`);
+		if (a.description) lines.push(`   ${a.description}`);
+		if (a.notes) lines.push(`   Notes: ${a.notes}`);
+		lines.push("");
+	});
+
+	lines.push("================================");
+	lines.push(`Total: ${attributions.length} assets`);
+
+	res.type("text/plain").send(lines.join("\n"));
+});
 
 /** Multer/file upload errors. */
 app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {

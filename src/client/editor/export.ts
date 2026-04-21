@@ -2,6 +2,7 @@
  * Export car config from placed markers.
  */
 import type { CarModelSchema, ChassisSpec } from "@client/vehicle/configs.js";
+import type { PhysicsOverrides } from "./bake-export.js";
 import { API_BASE } from "./editor-main.js";
 import type { MarkerData } from "./marker-tool.js";
 
@@ -154,6 +155,10 @@ export interface ExportPayload {
 	chassis: ChassisSpec;
 	schema: CarModelSchema;
 	markers: { type: string; position: { x: number; y: number; z: number } }[];
+	physicsOverrides?: PhysicsOverrides;
+	s3Key?: string;
+	attribution?: string;
+	carMetadataId?: number;
 }
 
 export function generateExport(

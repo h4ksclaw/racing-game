@@ -170,6 +170,45 @@
 			margin-top: 6px; font-family: 'Inter', sans-serif;
 		}
 		.btn-secondary:hover { border-color: var(--accent); }
+
+		/* Object panel */
+		#object-panel { max-height: 250px; overflow-y: auto; }
+		#object-panel::-webkit-scrollbar { width: 3px; }
+		#object-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+		.obj-item {
+			display: flex; align-items: center; gap: 4px; padding: 3px 4px;
+			border-radius: 4px; font-size: 11px; cursor: default; transition: background 0.1s;
+		}
+		.obj-item:hover { background: rgba(255,255,255,0.03); }
+		.obj-item.selected { background: rgba(74,158,255,0.12); outline: 1px solid var(--accent-dim); }
+		.obj-vis-btn { background: none; border: none; cursor: pointer; font-size: 12px; padding: 0 2px; opacity: 0.5; }
+		.obj-vis-btn:hover { opacity: 1; }
+		.obj-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+		.obj-name:hover { color: var(--accent); }
+		.obj-tris { color: var(--muted); font-size: 9px; font-family: "JetBrains Mono", monospace; }
+		.obj-badge {
+			font-size: 8px; padding: 1px 4px; border-radius: 3px; font-weight: 600;
+			text-transform: uppercase; letter-spacing: 0.5px;
+		}
+		.obj-badge.wheel_FL, .obj-badge.wheel_FR, .obj-badge.wheel_RL, .obj-badge.wheel_RR { background: #1a3a1a; color: #4aff8b; }
+		.obj-badge.headlight { background: #3a3a1a; color: #ffff88; }
+		.obj-badge.taillight { background: #3a1a1a; color: #ff4444; }
+		.obj-badge.brake_disc { background: #2a2a2a; color: #ff8844; }
+		.obj-actions-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 2px; }
+		.obj-actions-btn:hover { color: var(--text); }
+
+		/* Context menu */
+		.obj-context-menu {
+			background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+			padding: 4px 0; min-width: 160px; z-index: 100; font-size: 11px;
+			box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+		}
+		.ctx-label { padding: 4px 10px; color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: 1px; }
+		.ctx-item { padding: 4px 10px; cursor: pointer; }
+		.ctx-item:hover { background: var(--accent-dim); color: var(--accent); }
+		.ctx-item.danger { color: var(--danger); }
+		.ctx-item.danger:hover { background: rgba(255,74,106,0.15); }
+		.ctx-sep { height: 1px; background: var(--border); margin: 2px 0; }
 	</style>
 </head>
 <body>
@@ -206,6 +245,12 @@
 			<div class="section-title">Sketchfab</div>
 			<div class="sf-input-row">
 				<input type="text" id="sf-search" placeholder="Search free car models..." autocomplete="off">
+				<select id="sf-sort" style="background:var(--bg-secondary);color:var(--fg);border:1px solid var(--border);padding:2px 4px;font-size:12px;border-radius:4px;">
+					<option value="-likeCount">Most liked</option>
+					<option value="-viewCount">Most viewed</option>
+					<option value="-createdAt">Newest</option>
+					<option value="-downloadCount">Most downloaded</option>
+				</select>
 				<button id="sf-search-btn">Search</button>
 			</div>
 			<div id="sf-results"></div>
@@ -237,12 +282,19 @@
 
 	<div id="toolbar">
 		<button class="tool-btn active" data-mode="orbit">🖱 Orbit</button>
+		<button class="tool-btn" data-mode="select">🔍 Select</button>
 		<button class="tool-btn" data-mode="place">📍 Place</button>
 		<button class="tool-btn" data-mode="move">✋ Move</button>
 		<button class="tool-btn" data-mode="delete">🗑 Delete</button>
 		<button class="tool-btn" id="btn-wireframe">Wire</button>
 		<button class="tool-btn" id="btn-dims">Dims</button>
 		<button class="tool-btn" id="btn-autodetect">Auto</button>
+		<button class="tool-btn" id="btn-view-front">Front</button>
+		<button class="tool-btn" id="btn-view-back">Back</button>
+		<button class="tool-btn" id="btn-view-top">Top</button>
+		<button class="tool-btn" id="btn-view-left">Left</button>
+		<button class="tool-btn" id="btn-view-right">Right</button>
+		<button class="tool-btn" id="btn-fit">Fit</button>
 	</div>
 
 	<div id="viewport"></div>

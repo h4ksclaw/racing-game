@@ -17,6 +17,11 @@ const DEFAULT_DB_PATH = path.join(PROJECT_ROOT, "data", "game_assets.db");
 
 let _db: Database.Database | null = null;
 
+/** @internal Test-only access to the raw DB handle. */
+export function _getDbForTesting(): Database.Database {
+	return getDb();
+}
+
 function getDb(): Database.Database {
 	if (_db) return _db;
 
@@ -82,6 +87,23 @@ function getDb(): Database.Database {
 			model_schema_json   TEXT,
 			created_date        TEXT NOT NULL DEFAULT (datetime('now'))
 		);
+
+		CREATE TABLE IF NOT EXISTS attributions (
+			id              INTEGER PRIMARY KEY AUTOINCREMENT,
+			asset_id        INTEGER REFERENCES assets(id),
+			car_config_id   INTEGER REFERENCES car_configs(id),
+			source_type     TEXT NOT NULL DEFAULT 'sketchfab',
+			model_name      TEXT,
+			author_name     TEXT,
+			author_url      TEXT,
+			license_label   TEXT,
+			license_slug    TEXT,
+			source_url      TEXT,
+			license_url     TEXT,
+			description     TEXT,
+			notes           TEXT,
+			created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+		);
 	`);
 
 	// Migrate: add missing columns to existing tables (idempotent)
@@ -101,6 +123,9 @@ function getDb(): Database.Database {
 	migrateColumn("car_metadata", "weight_front_pct", "REAL");
 	migrateColumn("car_metadata", "eras", "TEXT");
 	migrateColumn("car_metadata", "tags", "TEXT");
+	migrateColumn("assets", "s3_key", "TEXT");
+	migrateColumn("car_configs", "physics_overrides_json", "TEXT");
+	migrateColumn("car_configs", "attribution", "TEXT");
 
 	// Create indexes (ignore if exists)
 	db.exec(`
@@ -108,6 +133,8 @@ function getDb(): Database.Database {
 		CREATE INDEX IF NOT EXISTS idx_assets_status ON assets(status);
 		CREATE INDEX IF NOT EXISTS idx_car_metadata_asset ON car_metadata(asset_id);
 		CREATE INDEX IF NOT EXISTS idx_car_configs_asset ON car_configs(asset_id);
+		CREATE INDEX IF NOT EXISTS idx_attributions_asset ON attributions(asset_id);
+		CREATE INDEX IF NOT EXISTS idx_attributions_config ON attributions(car_config_id);
 	`);
 
 	// Create unique index for car_metadata (may fail if duplicate data exists)
@@ -682,7 +709,147 @@ export function getCarConfigsByAsset(assetId: number): CarConfigRow[] {
 	return getDb().prepare("SELECT * FROM car_configs WHERE asset_id = ?").all(assetId) as CarConfigRow[];
 }
 
+/** Full car import: creates asset + car_config + attribution rows in one transaction. */
+export function insertCarImport(data: {
+	s3Key: string;
+	configJson: string;
+	modelSchemaJson?: string;
+	physicsOverridesJson?: string;
+	attribution?: string;
+	carMetadataId?: number;
+}): { configId: number; assetId: number; s3Key: string } {
+	const db = getDb();
+	const hash = data.s3Key.replace(/^cars\//, "").replace(/\.glb$/, "");
+
+	// Create asset
+	const assetResult = db
+		.prepare(`
+		INSERT INTO assets (filepath, sha256_hash, source_url, source_type, license, attribution, original_name, status, s3_key)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`)
+		.run(
+			`s3://${data.s3Key}`,
+			hash,
+			`s3://${data.s3Key}`,
+			"s3",
+			null,
+			data.attribution ?? null,
+			data.s3Key.split("/").pop() ?? "import.glb",
+			"ready",
+			data.s3Key,
+		);
+	const assetId = assetResult.lastInsertRowid as number;
+
+	// Create car config
+	const configResult = db
+		.prepare(`
+		INSERT INTO car_configs (asset_id, car_metadata_id, config_json, model_schema_json, physics_overrides_json, attribution)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`)
+		.run(
+			assetId,
+			data.carMetadataId ?? null,
+			data.configJson,
+			data.modelSchemaJson ?? null,
+			data.physicsOverridesJson ?? null,
+			data.attribution ?? null,
+		);
+	const configId = configResult.lastInsertRowid as number;
+
+	return { configId, assetId, s3Key: data.s3Key };
+}
+
 /** Close the database connection. */
+
+// ── Attribution queries ──────────────────────────────────────────────
+
+export interface AttributionRow {
+	id: number;
+	asset_id: number | null;
+	car_config_id: number | null;
+	source_type: string;
+	model_name: string | null;
+	author_name: string | null;
+	author_url: string | null;
+	license_label: string | null;
+	license_slug: string | null;
+	source_url: string | null;
+	license_url: string | null;
+	description: string | null;
+	notes: string | null;
+	created_at: string;
+}
+
+export function insertAttribution(data: {
+	asset_id?: number;
+	car_config_id?: number;
+	source_type?: string;
+	model_name?: string;
+	author_name?: string;
+	author_url?: string;
+	license_label?: string;
+	license_slug?: string;
+	source_url?: string;
+	license_url?: string;
+	description?: string;
+	notes?: string;
+}): number {
+	const db = getDb();
+	const result = db
+		.prepare(`
+		INSERT INTO attributions (asset_id, car_config_id, source_type, model_name, author_name,
+			author_url, license_label, license_slug, source_url, license_url, description, notes)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`)
+		.run(
+			data.asset_id ?? null,
+			data.car_config_id ?? null,
+			data.source_type ?? "sketchfab",
+			data.model_name ?? null,
+			data.author_name ?? null,
+			data.author_url ?? null,
+			data.license_label ?? null,
+			data.license_slug ?? null,
+			data.source_url ?? null,
+			data.license_url ?? null,
+			data.description ?? null,
+			data.notes ?? null,
+		);
+	return result.lastInsertRowid as number;
+}
+
+export function getAttributionByAsset(assetId: number): AttributionRow | undefined {
+	return getDb().prepare("SELECT * FROM attributions WHERE asset_id = ?").get(assetId) as AttributionRow | undefined;
+}
+
+export function getAttributionByConfig(configId: number): AttributionRow | undefined {
+	return getDb().prepare("SELECT * FROM attributions WHERE car_config_id = ?").get(configId) as
+		| AttributionRow
+		| undefined;
+}
+
+export function getAllAttributions(): AttributionRow[] {
+	return getDb().prepare("SELECT * FROM attributions ORDER BY created_at DESC").all() as AttributionRow[];
+}
+
+export function updateAttribution(id: number, data: Partial<AttributionRow>): void {
+	const fields: string[] = [];
+	const values: unknown[] = [];
+	for (const [key, val] of Object.entries(data)) {
+		if (key === "id" || key === "created_at") continue;
+		fields.push(`${key} = ?`);
+		values.push(val);
+	}
+	if (fields.length === 0) return;
+	values.push(id);
+	getDb()
+		.prepare(`UPDATE attributions SET ${fields.join(", ")} WHERE id = ?`)
+		.run(...values);
+}
+
+export function deleteAttribution(id: number): void {
+	getDb().prepare("DELETE FROM attributions WHERE id = ?").run(id);
+}
 export function closeDb(): void {
 	if (_db) {
 		_db.close();

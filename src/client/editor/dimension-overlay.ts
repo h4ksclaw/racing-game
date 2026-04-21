@@ -75,7 +75,7 @@ export function updateDimensions() {
 	dimsGroup.add(wireframe);
 
 	// Dimension labels
-	const fmt = (v: number) => v.toFixed(2) + "m";
+	const fmt = (v: number) => `${v.toFixed(2)}m`;
 	dimLabels.push(createTextSprite(fmt(size.x), "#4a9eff"));
 	dimLabels[0].position.set(center.x, box.min.y - 0.15, center.z);
 	dimsGroup.add(dimLabels[0]);

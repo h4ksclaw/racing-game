@@ -6,6 +6,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
+import { highlightObject, unhighlightObject } from "./object-manager.js";
+
 export const API_BASE = "/api";
 
 let scene: THREE.Scene;
@@ -19,9 +21,11 @@ let currentModel: THREE.Group | null = null;
 let wireframe = false;
 let showDims = false;
 
-export type EditorMode = "orbit" | "place" | "move" | "delete";
+export type EditorMode = "orbit" | "select" | "place" | "move" | "delete";
 let currentMode: EditorMode = "orbit";
 let modeChangeCallback: ((mode: EditorMode) => void) | null = null;
+let selectedObjectUUID: string | null = null;
+let selectionChangeCallback: ((uuid: string | null) => void) | null = null;
 
 export function getScene() {
 	return scene;
@@ -53,10 +57,27 @@ export function isWireframe() {
 export function isShowingDims() {
 	return showDims;
 }
+export function getSelectedObjectUUID() {
+	return selectedObjectUUID;
+}
+export function setSelectedObjectUUID(uuid: string | null) {
+	const prev = selectedObjectUUID;
+	if (prev && currentModel) unhighlightObjectInternal(prev);
+	selectedObjectUUID = uuid;
+	if (uuid && currentModel) highlightObjectInternal(uuid);
+	selectionChangeCallback?.(uuid);
+}
+export function onSelectionChange(cb: (uuid: string | null) => void) {
+	selectionChangeCallback = cb;
+}
 
 export function setMode(mode: EditorMode) {
+	// Unhighlight previous selection if leaving select mode
+	if (currentMode === "select" && mode !== "select" && selectedObjectUUID && currentModel) {
+		unhighlightObjectInternal(selectedObjectUUID);
+	}
 	currentMode = mode;
-	orbitControls.enabled = mode === "orbit";
+	orbitControls.enabled = mode === "orbit" || mode === "select";
 	// TransformControls extends Object3D but TS types don't reflect that in this version
 	(transformControls as unknown as THREE.Object3D).visible = mode === "move";
 	if (mode !== "move") transformControls.detach();
@@ -132,6 +153,36 @@ export function loadGLB(url: string): Promise<THREE.Group> {
 			reject,
 		);
 	});
+}
+
+function highlightObjectInternal(uuid: string) {
+	if (currentModel) highlightObject(currentModel, uuid);
+}
+function unhighlightObjectInternal(uuid: string) {
+	if (currentModel) unhighlightObject(currentModel, uuid);
+}
+
+/** Handle raycast-based object selection in select mode. Returns true if handled. */
+export function handleSelectClick(event: MouseEvent): boolean {
+	if (currentMode !== "select" || !currentModel) return false;
+
+	const rect = renderer.domElement.getBoundingClientRect();
+	const mouse = new THREE.Vector2(
+		((event.clientX - rect.left) / rect.width) * 2 - 1,
+		-((event.clientY - rect.top) / rect.height) * 2 + 1,
+	);
+
+	const raycaster = new THREE.Raycaster();
+	raycaster.setFromCamera(mouse, camera);
+	const intersects = raycaster.intersectObject(currentModel, true);
+
+	if (intersects.length > 0) {
+		const obj = intersects[0].object;
+		setSelectedObjectUUID(obj.uuid);
+	} else {
+		setSelectedObjectUUID(null);
+	}
+	return true;
 }
 
 export function init(container: HTMLElement) {

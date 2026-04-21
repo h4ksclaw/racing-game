@@ -1,17 +1,23 @@
 /**
  * Editor UI — wires all editor modules to the DOM.
  */
+import * as THREE from "three";
 
 import { type AutoDetectResult, autoDetect } from "./auto-detect.js";
+import { bakeModel } from "./bake-export.js";
 import { clearGhost, showExpectedGhost, updateDimensions } from "./dimension-overlay.js";
 import {
 	API_BASE,
 	type EditorMode,
+	getCamera,
 	getCurrentModel,
+	getOrbitControls,
+	handleSelectClick,
 	init,
 	loadGLB,
 	setMode,
 	setModelScale,
+	setSelectedObjectUUID,
 	toggleDims,
 	toggleWireframe,
 } from "./editor-main.js";
@@ -26,6 +32,16 @@ import {
 	removeMarker,
 	setPendingType,
 } from "./marker-tool.js";
+import {
+	deleteObject as deleteModelObject,
+	duplicateMaterialForObject,
+	markObjectAs,
+	toggleObjectVisibility,
+} from "./object-manager.js";
+import { initObjectPanel, onObjectDelete, onObjectMark, onObjectSelect, refreshObjectPanel } from "./object-panel.js";
+import { createPhysicsPanel, getPhysicsOverrides, onOverridesChange } from "./physics-editor.js";
+import { hideSuspensionRange, showSuspensionRange } from "./suspension-viz.js";
+import { fitCameraToModel, setViewPreset } from "./view-controls.js";
 
 // ── Init scene ──
 const viewport = document.getElementById("viewport")!;
@@ -117,14 +133,17 @@ loadPendingAssets();
 // ── Sketchfab search ──
 const sfSearchInput = document.getElementById("sf-search") as HTMLInputElement;
 const sfSearchBtn = document.getElementById("sf-search-btn")!;
+const sfSortSelect = document.getElementById("sf-sort") as HTMLSelectElement | null;
 const sfResults = document.getElementById("sf-results")!;
 let sfNextCursor: string | null = null;
 let sfCurrentQuery = "";
+let sfCurrentSort = "-likeCount";
 
 async function sketchfabSearch(query: string, cursor?: string) {
 	if (query.length < 2) return;
 	sfCurrentQuery = query;
-	const params = new URLSearchParams({ q: query, limit: "12" });
+	sfCurrentSort = sfSortSelect?.value || "-likeCount";
+	const params = new URLSearchParams({ q: query, limit: "12", sort_by: sfCurrentSort });
 	if (cursor) params.set("cursor", cursor);
 
 	try {
@@ -137,29 +156,64 @@ async function sketchfabSearch(query: string, cursor?: string) {
 	}
 }
 
+function formatBytes(bytes: number): string {
+	if (bytes <= 0) return "";
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1048576) return `${(bytes / 1024).toFixed(0)} KB`;
+	return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+function ccBadge(isCc: boolean, license: string): string {
+	if (!isCc) return `<span style="color:#888;font-size:10px;">${license}</span>`;
+	return `<span style="background:#2d5a27;color:#a5d6a7;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:600;">CC ✓</span>`;
+}
+
 function renderSketchfabResults(results: Array<Record<string, unknown>>, append: boolean) {
 	if (!append) sfResults.innerHTML = "";
 
-	for (const r of results) {
+	// Client-side filter: only CC models, reasonable size
+	const MAX_SIZE = 50 * 1024 * 1024;
+	const filtered = results.filter((r) => {
+		if (!r.isCc) return false;
+		const est = Number(r.estimatedSize ?? 0);
+		if (est > MAX_SIZE) return false;
+		return true;
+	});
+
+	if (filtered.length === 0) {
+		sfResults.innerHTML = append
+			? sfResults.innerHTML
+			: '<div style="color:var(--muted);font-size:11px;">No CC-licensed models found. Try different keywords.</div>';
+		return;
+	}
+
+	for (const r of filtered) {
 		const div = document.createElement("div");
 		div.className = "sf-item";
 		const faces = Number(r.faceCount ?? 0);
 		const likes = Number(r.likeCount ?? 0);
 		const license = String(r.license ?? "");
+		const isCc = r.isCc === true;
 		const author = String(r.author ?? "");
 		const url = String(r.url ?? "");
 		const name = String(r.name ?? "Unnamed");
 		const thumb = String(r.thumbnail ?? "");
+		const estSize = Number(r.estimatedSize ?? 0);
 
 		const faceStr = faces > 0 ? `${(faces / 1000).toFixed(0)}k faces` : "";
 		const likeStr = likes > 0 ? `♥${likes}` : "";
-		const metaParts = [faceStr, likeStr, license].filter(Boolean);
+		const sizeStr = formatBytes(estSize);
+		const metaParts = [faceStr, likeStr, sizeStr].filter(Boolean);
 
-		div.innerHTML = thumb ? `<img class="sf-thumb" src="${thumb}" alt="" loading="lazy">` : "";
+		// Use larger thumbnail for better preview
+		const bigThumb = thumb.replace(/\/(\d+)\//, "/512/");
+
+		div.innerHTML = bigThumb ? `<img class="sf-thumb" src="${bigThumb}" alt="" loading="lazy">` : "";
 		div.innerHTML += `
 			<div class="sf-name">${name}</div>
 			<div class="sf-meta">
-				${metaParts.join(" · ")}
+				${ccBadge(isCc, license)}
+				${metaParts.length ? ` · ${metaParts.join(" · ")}` : ""}
 				${author ? ` · ${author}` : ""}
 				${url ? ` · <a href="${url}" target="_blank" rel="noopener">Sketchfab ↗</a>` : ""}
 			</div>
@@ -169,6 +223,9 @@ function renderSketchfabResults(results: Array<Record<string, unknown>>, append:
 			</div>
 			<div style="clear:both"></div>
 		`;
+
+		// Attribution tooltip on hover
+		div.title = `"${name}" by ${author}\nLicense: ${license}\nSource: ${url}`;
 
 		sfResults.appendChild(div);
 	}
@@ -186,18 +243,11 @@ function renderSketchfabResults(results: Array<Record<string, unknown>>, append:
 				const resp = await fetch(`${API_BASE}/sketchfab/download`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						uid,
-						name: btn.dataset.name,
-						license: btn.dataset.license,
-						author: btn.dataset.author,
-						sourceUrl: btn.dataset.url,
-					}),
+					body: JSON.stringify({ uid }),
 				});
 				const data = await resp.json();
 				if (resp.ok) {
-					if (statusEl) statusEl.textContent = `✓ ${data.name} (${(data.size / 1048576).toFixed(1)} MB)`;
-					// Refresh pending assets list
+					if (statusEl) statusEl.textContent = `✓ ${data.name} (${formatBytes(data.size ?? 0)})`;
 					loadPendingAssets();
 				} else {
 					if (statusEl) statusEl.textContent = `✗ ${data.error}`;
@@ -232,6 +282,11 @@ sfSearchBtn.addEventListener("click", () => sketchfabSearch(sfSearchInput.value.
 sfSearchInput.addEventListener("keydown", (e) => {
 	if (e.key === "Enter") sketchfabSearch(sfSearchInput.value.trim());
 });
+if (sfSortSelect) {
+	sfSortSelect.addEventListener("change", () => {
+		if (sfCurrentQuery) sketchfabSearch(sfCurrentQuery);
+	});
+}
 
 // ── Car search ──
 const searchInput = document.getElementById("search-input") as HTMLInputElement;
@@ -366,18 +421,18 @@ for (const btn of toolbarBtns) {
 	});
 }
 
-document.getElementById("btn-wireframe")!.addEventListener("click", function () {
+document.getElementById("btn-wireframe")?.addEventListener("click", function () {
 	this.classList.toggle("active");
 	toggleWireframe();
 });
 
-document.getElementById("btn-dims")!.addEventListener("click", function () {
+document.getElementById("btn-dims")?.addEventListener("click", function () {
 	this.classList.toggle("active");
 	toggleDims();
 	updateDimensions();
 });
 
-document.getElementById("btn-autodetect")!.addEventListener("click", () => {
+document.getElementById("btn-autodetect")?.addEventListener("click", () => {
 	const model = getCurrentModel();
 	if (!model) return;
 	const result = autoDetect(model);
@@ -393,8 +448,53 @@ function getNextMissingMarkerType(): string {
 	return "PhysicsMarker";
 }
 
+// ── Object panel ──
+initObjectPanel(document.getElementById("object-panel")!);
+onObjectSelect((uuid) => setSelectedObjectUUID(uuid));
+onObjectMark((uuid, type) => {
+	const model = getCurrentModel();
+	if (!model) return;
+	if (type === "_toggleVis") {
+		toggleObjectVisibility(model, uuid);
+	} else if (type === "_dupMat") {
+		const obj = model.getObjectByProperty("uuid", uuid);
+		if (obj) duplicateMaterialForObject(obj, `bloom_${obj.name || "material"}`);
+	} else {
+		markObjectAs(model, uuid, type);
+	}
+	refreshObjectPanel(model);
+});
+onObjectDelete((uuid) => {
+	const model = getCurrentModel();
+	if (!model) return;
+	deleteModelObject(model, uuid);
+	refreshObjectPanel(model);
+});
+
+// ── View preset buttons ──
+for (const view of ["front", "back", "top", "left", "right"] as const) {
+	const btn = document.getElementById(`btn-view-${view}`);
+	if (!btn) continue;
+	btn.addEventListener("click", () => {
+		const model = getCurrentModel();
+		if (!model) return;
+		const box = new THREE.Box3().setFromObject(model);
+		const center = box.getCenter(new THREE.Vector3());
+		setViewPreset(view, getCamera(), getOrbitControls(), center);
+	});
+}
+
+document.getElementById("btn-fit")?.addEventListener("click", () => {
+	const model = getCurrentModel();
+	if (!model) return;
+	fitCameraToModel(getCamera(), getOrbitControls(), model);
+});
+
 // ── Viewport clicks ──
-viewport.addEventListener("click", handleViewportClick);
+viewport.addEventListener("click", (e) => {
+	if (handleSelectClick(e)) return;
+	handleViewportClick(e);
+});
 
 // ── Marker list ──
 onMarkersChange(() => {
@@ -434,14 +534,14 @@ function refreshMarkerList() {
 			<button class="marker-btn" data-action="place" data-type="${m.type}">↻</button>
 			<button class="marker-btn del" data-action="delete" data-id="${m.id}">✕</button>
 		`;
-		div.querySelector("[data-action=place]")!.addEventListener("click", () => {
+		div.querySelector("[data-action=place]")?.addEventListener("click", () => {
 			setPendingType(m.type);
 			setMode("place");
 			toolbarBtns.forEach((b) => {
 				b.classList.toggle("active", b.dataset.mode === "place");
 			});
 		});
-		div.querySelector("[data-action=delete]")!.addEventListener("click", () => removeMarker(m.id));
+		div.querySelector("[data-action=delete]")?.addEventListener("click", () => removeMarker(m.id));
 		list.appendChild(div);
 	}
 }
@@ -471,7 +571,7 @@ function applyAutoDetect(result: AutoDetectResult) {
 }
 
 // ── Export ──
-document.getElementById("btn-export")!.addEventListener("click", async () => {
+document.getElementById("btn-export")?.addEventListener("click", async () => {
 	const payload = generateExport(currentCarName || "unnamed", currentModelPath, currentScale.x, getMarkers());
 	const result = await saveConfig(payload);
 	if (result.ok) {
@@ -481,7 +581,7 @@ document.getElementById("btn-export")!.addEventListener("click", async () => {
 	}
 });
 
-document.getElementById("btn-download")!.addEventListener("click", () => {
+document.getElementById("btn-download")?.addEventListener("click", () => {
 	const payload = generateExport(currentCarName || "unnamed", currentModelPath, currentScale.x, getMarkers());
 	downloadJSON(payload);
 });
@@ -489,6 +589,136 @@ document.getElementById("btn-download")!.addEventListener("click", () => {
 function refreshUI() {
 	refreshMarkerList();
 	refreshValidation();
+	refreshObjectPanel(getCurrentModel());
+}
+
+// ── Import Car Flow ──
+const importSection = document.getElementById("import-section");
+const importSteps = document.querySelectorAll(".import-step");
+let importStep = 0;
+const selectedCarMetadataId: number | null = null;
+const sketchfabAttribution = "";
+
+function setImportStep(step: number) {
+	importStep = step;
+	importSteps.forEach((el, i) => {
+		el.classList.toggle("active", i <= step);
+		el.classList.toggle("done", i < step);
+	});
+	document.querySelectorAll(".import-panel").forEach((el, i) => {
+		(el as HTMLElement).style.display = i === step ? "block" : "none";
+	});
+}
+
+if (importSection) {
+	const nextBtn = document.getElementById("import-next-btn");
+	const prevBtn = document.getElementById("import-prev-btn");
+	const bakeBtn = document.getElementById("import-bake-btn") as HTMLButtonElement | null;
+
+	if (nextBtn) nextBtn.addEventListener("click", () => setImportStep(importStep + 1));
+	if (prevBtn) prevBtn.addEventListener("click", () => setImportStep(Math.max(0, importStep - 1)));
+
+	// Initialize physics panel
+	const physicsContainer = document.getElementById("physics-panel-container");
+	if (physicsContainer) createPhysicsPanel(physicsContainer);
+
+	// Suspension viz toggle
+	const suspToggle = document.getElementById("susp-viz-toggle") as HTMLInputElement | null;
+	if (suspToggle) {
+		suspToggle.addEventListener("change", () => {
+			if (suspToggle.checked) {
+				const model = getCurrentModel();
+				if (model) showSuspensionRange(model, getMarkers(), getPhysicsOverrides());
+			} else {
+				hideSuspensionRange();
+			}
+		});
+	}
+
+	onOverridesChange((overrides) => {
+		const t = document.getElementById("susp-viz-toggle") as HTMLInputElement | null;
+		if (t?.checked) {
+			const model = getCurrentModel();
+			if (model) showSuspensionRange(model, getMarkers(), overrides);
+		}
+	});
+
+	// Bake & Submit
+	if (bakeBtn) {
+		bakeBtn.addEventListener("click", async () => {
+			const model = getCurrentModel();
+			if (!model) {
+				alert("No model loaded");
+				return;
+			}
+			const markers = getMarkers();
+			const issues = validateMarkers(markers);
+			if (issues.some((i) => i.type === "error")) {
+				alert(
+					"Fix errors: " +
+						issues
+							.filter((i) => i.type === "error")
+							.map((i) => i.message)
+							.join(", "),
+				);
+				return;
+			}
+
+			bakeBtn.disabled = true;
+			bakeBtn.textContent = "Baking...";
+
+			try {
+				const bakeResult = await bakeModel(model, markers, { includeMarkers: true, applyObjectMarks: true });
+
+				bakeBtn.textContent = "Uploading to S3...";
+
+				const formData = new FormData();
+				formData.append(
+					"model",
+					new Blob([bakeResult.glbBuffer], { type: "model/gltf-binary" }),
+					`${currentCarName || "car"}.glb`,
+				);
+				const s3Resp = await fetch(`${API_BASE}/s3/upload`, { method: "POST", body: formData });
+				if (!s3Resp.ok) throw new Error(`S3 upload failed: ${s3Resp.status}`);
+				const { key: s3Key } = await s3Resp.json();
+
+				bakeBtn.textContent = "Saving config...";
+
+				const physics = getPhysicsOverrides();
+				const exportPayload = generateExport(currentCarName || "unnamed", `s3:${s3Key}`, currentScale.x, markers);
+				const attribution =
+					(document.getElementById("import-attribution") as HTMLTextAreaElement)?.value || sketchfabAttribution || "";
+
+				const importResp = await fetch(`${API_BASE}/cars/import`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						config: exportPayload.chassis,
+						modelSchema: exportPayload.schema,
+						physicsOverrides: physics,
+						attribution,
+						s3Key,
+						carMetadataId: selectedCarMetadataId ?? undefined,
+					}),
+				});
+
+				if (!importResp.ok) throw new Error(`Import failed: ${importResp.status}`);
+				const result = await importResp.json();
+				bakeBtn.textContent = `✓ Imported (ID: ${result.configId})`;
+				setTimeout(() => {
+					bakeBtn.textContent = "Bake & Submit";
+					bakeBtn.disabled = false;
+				}, 3000);
+			} catch (err) {
+				bakeBtn.textContent = "✕ Error";
+				alert(`Import failed: ${err}`);
+				setTimeout(() => {
+					bakeBtn.textContent = "Bake & Submit";
+					bakeBtn.disabled = false;
+				}, 3000);
+			}
+		});
+	}
 }
 
 // Initial UI state
