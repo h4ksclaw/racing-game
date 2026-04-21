@@ -20,7 +20,7 @@
 
 import RAPIER from "@dimforge/rapier3d-compat";
 import { DragModel } from "./aero/DragModel.ts";
-import type { CarConfig } from "./configs.ts";
+import type { CarConfig, ChassisSpec } from "./configs.ts";
 import { buildDebugInfo } from "./DebugInfoBuilder.ts";
 import { BurnoutState, type BurnoutStateResult } from "./drive/BurnoutState.ts";
 import { DriveState } from "./drive/DriveState.ts";
@@ -86,6 +86,7 @@ export class RapierVehicleController {
 	// Deferred rebuilds (applied AFTER world.step() to avoid WASM aliasing)
 	private pendingGroundRebuild: { x: number; z: number } | null = null;
 	private pendingGuardrailUpdate: { x: number; z: number } | null = null;
+	private _lastOffRoadForce = 0;
 
 	state: VehicleState;
 	telemetry: EngineTelemetry;
@@ -370,26 +371,7 @@ export class RapierVehicleController {
 			dt,
 		);
 
-		// Apply engine force to driven wheels based on drivetrain config
-		const drivetrain = this._config.drivetrain ?? "RWD";
-		const engForce = -fc.engF;
-		if (drivetrain === "FWD") {
-			this.vehicle.setWheelEngineForce(this.wheelFL, engForce);
-			this.vehicle.setWheelEngineForce(this.wheelFR, engForce);
-			this.vehicle.setWheelEngineForce(this.wheelRL, 0);
-			this.vehicle.setWheelEngineForce(this.wheelRR, 0);
-		} else if (drivetrain === "AWD") {
-			this.vehicle.setWheelEngineForce(this.wheelFL, engForce);
-			this.vehicle.setWheelEngineForce(this.wheelFR, engForce);
-			this.vehicle.setWheelEngineForce(this.wheelRL, engForce);
-			this.vehicle.setWheelEngineForce(this.wheelRR, engForce);
-		} else {
-			// RWD
-			this.vehicle.setWheelEngineForce(this.wheelFL, 0);
-			this.vehicle.setWheelEngineForce(this.wheelFR, 0);
-			this.vehicle.setWheelEngineForce(this.wheelRL, engForce);
-			this.vehicle.setWheelEngineForce(this.wheelRR, engForce);
-		}
+		this.applyEngineForce(fc.engF);
 
 		// ── Apply wheel brakes (front-biased for normal braking) ──
 		this.vehicle.setWheelBrake(this.wheelFL, fc.rapierBrakeForce * 1.2);
@@ -400,31 +382,25 @@ export class RapierVehicleController {
 			this.carBody.applyImpulse({ x: fc.retardFx, y: 0, z: fc.retardFz }, true);
 		}
 
-		// ── Off-road drag ──
-		// Check each wheel's world position against road boundary.
-		// Wheels off the road surface create extra drag (grass/gravel resistance).
-		let wheelsOffRoad = 0;
-		const offRoadCfg = this.config.offRoad;
-		if (offRoadCfg && speedMs > offRoadCfg.minSpeed) {
-			const cosH = Math.cos(heading);
-			const sinH = Math.sin(heading);
-			for (let i = 0; i < chassis.wheelPositions.length; i++) {
-				const lp = chassis.wheelPositions[i];
-				const wx = pos.x + lp.x * cosH - lp.z * sinH;
-				const wz = pos.z + lp.x * sinH + lp.z * cosH;
-				const wRb = this._terrain?.getRoadBoundary?.(wx, wz);
-				if (wRb && !wRb.onRoad) wheelsOffRoad++;
-			}
-		}
-		const offRoadDragCoeff = wheelsOffRoad > 0 && offRoadCfg ? offRoadCfg.dragPerWheel * wheelsOffRoad : 0;
-		const offRoadForce = offRoadDragCoeff * speedMs * speedMs;
-		if (offRoadForce > 0) {
-			if (speedMs > 0.01) {
-				const dragImpulseX = -(vx / speedMs) * offRoadForce * dt;
-				const dragImpulseZ = -(vz / speedMs) * offRoadForce * dt;
-				this.carBody.applyImpulse({ x: dragImpulseX, y: 0, z: dragImpulseZ }, true);
-			}
-		}
+		this._lastOffRoadForce = this.applyOffRoadDrag(vx, vz, pos.x, pos.z, heading, speedMs, dt);
+
+		// ── Tire dynamics: handbrake → rear grip reduction ──
+		const rearGripMul = this.tireDynamics.updateHandbrake(!!input.handbrake, absSpeedMs, dt);
+		const bodyAngVel = this.carBody.angvel();
+		const rawLatG = Math.abs(bodyAngVel.y * localVelX) / 9.81;
+
+		// ── Steering → front wheels ──
+		this.vehicle.setWheelSteering(this.wheelFL, this.steerAngle);
+		this.vehicle.setWheelSteering(this.wheelFR, this.steerAngle);
+
+		this.applyTireFriction(rearGripMul, rawLatG, bs);
+		this.applyHandbrakeBrakes(fc.rapierBrakeForce, !!input.handbrake);
+
+		// ── Step physics (substeps for stability) ──
+		this.stepPhysics(dt, localVelX, fc, chassis, bodyAngVel);
+
+		// ── Post-step forces ──
+		this.applyPostStepForces(absSpeedMs, this.steerAngle, dt);
 
 		// Record forces for debug visualization
 		this.forces.engine = fc.engF;
@@ -434,7 +410,7 @@ export class RapierVehicleController {
 		this.forces.aero = fc.forcesDebug.aero;
 		this.forces.engineBrake = fc.forcesDebug.engineBrake;
 		this.forces.coast = fc.forcesDebug.coast;
-		this.forces.offRoad = offRoadForce;
+		this.forces.offRoad = this._lastOffRoadForce;
 		this.forces.total =
 			this.forces.engine +
 			this.forces.brake +
@@ -443,115 +419,13 @@ export class RapierVehicleController {
 			this.forces.aero +
 			this.forces.engineBrake +
 			this.forces.coast +
-			offRoadForce;
-
-		// prevReverse is tracked inside DriveState
-
-		// ── Steering → front wheels ──
-		this.vehicle.setWheelSteering(this.wheelFL, this.steerAngle);
-		this.vehicle.setWheelSteering(this.wheelFR, this.steerAngle);
-
-		// ── Tire dynamics: handbrake → rear grip reduction ──
-		// WHY: Rapier's native friction model can't distinguish locked vs rolling wheels.
-		// By reducing rear side friction stiffness before the step, locked rear wheels
-		// slide sideways with less resistance — creating the drift effect.
-		// Update handbrake state (ramps grip up/down smoothly)
-		const rearGripMul = this.tireDynamics.updateHandbrake(!!input.handbrake, absSpeedMs, dt);
-
-		// Apply per-wheel side friction: rear wheels get reduced grip during handbrake
-		// Front wheels always keep full grip for directional stability
-		const baseSideFriction = WHEEL_SIDE_FRICTION;
-
-		// Lateral grip falloff: tires lose grip progressively under high lateral load.
-		// Real tires peak at ~6-8° slip angle then fall off (Pacejka curve).
-		// Rapier uses linear friction, so we simulate the falloff by reducing side
-		// friction stiffness as lateral G increases. This creates natural understeer
-		// at high cornering speeds instead of infinite grip.
-		const bodyAngVel = this.carBody.angvel();
-		const rawLatG = Math.abs(bodyAngVel.y * localVelX) / 9.81;
-		const latGripMul =
-			rawLatG < LAT_GRIP_THRESHOLD
-				? 1.0
-				: 1.0 - LAT_GRIP_FALLOFF * Math.min(1, (rawLatG - LAT_GRIP_THRESHOLD) / LAT_GRIP_RANGE);
-
-		this.vehicle.setWheelSideFrictionStiffness(this.wheelFL, baseSideFriction * latGripMul);
-		this.vehicle.setWheelSideFrictionStiffness(this.wheelFR, baseSideFriction * latGripMul);
-		this.vehicle.setWheelSideFrictionStiffness(this.wheelRL, baseSideFriction * rearGripMul * latGripMul);
-		this.vehicle.setWheelSideFrictionStiffness(this.wheelRR, baseSideFriction * rearGripMul * latGripMul);
-
-		// Burnout: reduce friction slip on driven wheels so tires spin instead of gripping.
-		// Lower slip = more wheel spin, less force transmitted to body.
-		for (let i = 0; i < 4; i++) {
-			const slip = bs.tractionMul[i] < 1 ? WHEEL_FRICTION_SLIP * bs.tractionMul[i] : WHEEL_FRICTION_SLIP;
-			this.vehicle.setWheelFrictionSlip(i, slip);
-		}
-
-		// Handbrake also applies Rapier brake to rear wheels only (longitudinal lock)
-		if (input.handbrake) {
-			this.vehicle.setWheelBrake(this.wheelRL, 50.0);
-			this.vehicle.setWheelBrake(this.wheelRR, 50.0);
-		} else {
-			this.vehicle.setWheelBrake(this.wheelRL, fc.rapierBrakeForce * 0.8);
-			this.vehicle.setWheelBrake(this.wheelRR, fc.rapierBrakeForce * 0.8);
-		}
-
-		// ── Step physics (substeps for stability) ──
-		const substepDt = dt / PHYSICS_SUBSTEPS;
-
-		// Compute accelerations for weight transfer suspension
-		const trackWidth = Math.abs(chassis.wheelPositions[0].x - chassis.wheelPositions[1].x);
-		// Longitudinal accel: rate of change of forward speed (approximated from forces)
-		// Clamp to realistic range — beyond ~1.2g the tires would have lost grip anyway
-		const longAccel = Math.max(-12, Math.min(12, chassis.mass > 0 ? (fc.engF - fc.totalRetard) / chassis.mass : 0));
-		// Lateral accel from yaw rate × forward speed (use local angVel.y)
-		const latAccel = Math.max(-12, Math.min(12, bodyAngVel.y * localVelX));
-
-		for (let i = 0; i < PHYSICS_SUBSTEPS; i++) {
-			this.vehicle.updateVehicle(substepDt);
-			this.world.step();
-			this.customSuspension.applyWeightTransfer(
-				this.carBody,
-				longAccel,
-				latAccel,
-				chassis.mass,
-				chassis.cgHeight,
-				chassis.wheelBase,
-				trackWidth,
-				substepDt,
-			);
-		}
-
-		// ── Post-step tire dynamics ──
-		// WHY: Forces that depend on contact state must be applied AFTER step()
-		// because Rapier resolves contacts during step() — pre-step would use stale data.
-		this.tireDynamics.readWheelStates(this.vehicle);
-
-		// Read current yaw rate from body angular velocity
-		const yawRate = bodyAngVel.y;
-
-		// Compute drift yaw torque: when rear grip is reduced, front lateral
-		// forces create a net yaw moment → the car rotates (oversteer)
-		const driftTorque = this.tireDynamics.computeDriftYawTorque(absSpeedMs, yawRate, this.steerAngle);
-		if (Math.abs(driftTorque) > 0.01) {
-			// Apply as torque impulse: τ = I * α, applied over dt
-			this.carBody.applyTorqueImpulse({ x: 0, y: driftTorque * dt, z: 0 }, true);
-		}
-
-		// Store tire dynamics state for debug/telemetry
-		this.tireDynState = this.tireDynamics.state;
+			this._lastOffRoadForce;
 
 		// ── Post-step world rebuilds ──
 		// WHY: Rapier forbids modifying the physics world during step().
 		// Terrain trimesh patches and guardrail cuboids are rebuilt here
 		// when the car moves to a new region.
-		if (this.pendingGroundRebuild) {
-			this.rebuildGroundPatch(this.pendingGroundRebuild.x, this.pendingGroundRebuild.z);
-			this.pendingGroundRebuild = null;
-		}
-		if (this.pendingGuardrailUpdate) {
-			this.updateGuardrails(this.pendingGuardrailUpdate.x, this.pendingGuardrailUpdate.z);
-			this.pendingGuardrailUpdate = null;
-		}
+		this.flushPendingRebuilds();
 
 		// Suppress micro-yaw from tire solver noise when not steering
 		if (Math.abs(this.steerAngle) < 0.01) {
@@ -588,6 +462,141 @@ export class RapierVehicleController {
 			grade: 0,
 			clutchEngaged: !gearbox.isShifting,
 		};
+	}
+
+	// ── Extracted update() sub-methods ──
+
+	/** Route engine force to driven wheels based on drivetrain config. */
+	private applyEngineForce(engForce: number): void {
+		const negF = -engForce;
+		const dt = this._config.drivetrain ?? "RWD";
+		if (dt === "FWD") {
+			this.vehicle.setWheelEngineForce(this.wheelFL, negF);
+			this.vehicle.setWheelEngineForce(this.wheelFR, negF);
+			this.vehicle.setWheelEngineForce(this.wheelRL, 0);
+			this.vehicle.setWheelEngineForce(this.wheelRR, 0);
+		} else if (dt === "AWD") {
+			for (let i = 0; i < 4; i++) this.vehicle.setWheelEngineForce(i, negF);
+		} else {
+			// RWD
+			this.vehicle.setWheelEngineForce(this.wheelFL, 0);
+			this.vehicle.setWheelEngineForce(this.wheelFR, 0);
+			this.vehicle.setWheelEngineForce(this.wheelRL, negF);
+			this.vehicle.setWheelEngineForce(this.wheelRR, negF);
+		}
+	}
+
+	/** Check wheels against road boundary; apply drag impulse for off-road wheels. */
+	private applyOffRoadDrag(
+		vx: number,
+		vz: number,
+		px: number,
+		pz: number,
+		heading: number,
+		speedMs: number,
+		dt: number,
+	): number {
+		let wheelsOffRoad = 0;
+		const cfg = this.config.offRoad;
+		if (!cfg || speedMs <= cfg.minSpeed) return 0;
+
+		const cosH = Math.cos(heading);
+		const sinH = Math.sin(heading);
+		for (const lp of this._config.chassis.wheelPositions) {
+			const wx = px + lp.x * cosH - lp.z * sinH;
+			const wz = pz + lp.x * sinH + lp.z * cosH;
+			const rb = this._terrain?.getRoadBoundary?.(wx, wz);
+			if (rb && !rb.onRoad) wheelsOffRoad++;
+		}
+
+		const force = cfg.dragPerWheel * wheelsOffRoad * speedMs * speedMs;
+		if (force > 0 && speedMs > 0.01) {
+			const ix = -(vx / speedMs) * force * dt;
+			const iz = -(vz / speedMs) * force * dt;
+			this.carBody.applyImpulse({ x: ix, y: 0, z: iz }, true);
+		}
+		return force;
+	}
+
+	/** Set per-wheel side friction (grip falloff) and burnout traction slip. */
+	private applyTireFriction(rearGripMul: number, rawLatG: number, bs: BurnoutStateResult): void {
+		const latGripMul =
+			rawLatG < LAT_GRIP_THRESHOLD
+				? 1.0
+				: 1.0 - LAT_GRIP_FALLOFF * Math.min(1, (rawLatG - LAT_GRIP_THRESHOLD) / LAT_GRIP_RANGE);
+
+		this.vehicle.setWheelSideFrictionStiffness(this.wheelFL, WHEEL_SIDE_FRICTION * latGripMul);
+		this.vehicle.setWheelSideFrictionStiffness(this.wheelFR, WHEEL_SIDE_FRICTION * latGripMul);
+		this.vehicle.setWheelSideFrictionStiffness(this.wheelRL, WHEEL_SIDE_FRICTION * rearGripMul * latGripMul);
+		this.vehicle.setWheelSideFrictionStiffness(this.wheelRR, WHEEL_SIDE_FRICTION * rearGripMul * latGripMul);
+
+		for (let i = 0; i < 4; i++) {
+			const slip = bs.tractionMul[i] < 1 ? WHEEL_FRICTION_SLIP * bs.tractionMul[i] : WHEEL_FRICTION_SLIP;
+			this.vehicle.setWheelFrictionSlip(i, slip);
+		}
+	}
+
+	/** Apply handbrake rear brake override or normal rear brake force. */
+	private applyHandbrakeBrakes(normalBrakeForce: number, isHandbrake: boolean): void {
+		if (isHandbrake) {
+			this.vehicle.setWheelBrake(this.wheelRL, 50.0);
+			this.vehicle.setWheelBrake(this.wheelRR, 50.0);
+		} else {
+			this.vehicle.setWheelBrake(this.wheelRL, normalBrakeForce * 0.8);
+			this.vehicle.setWheelBrake(this.wheelRR, normalBrakeForce * 0.8);
+		}
+	}
+
+	/** Run physics substeps with weight transfer suspension. */
+	private stepPhysics(
+		dt: number,
+		localVelX: number,
+		fc: ReturnType<typeof computeForces>,
+		chassis: ChassisSpec,
+		bodyAngVel: { x: number; y: number; z: number },
+	): void {
+		const substepDt = dt / PHYSICS_SUBSTEPS;
+		const trackWidth = Math.abs(chassis.wheelPositions[0].x - chassis.wheelPositions[1].x);
+		const longAccel = Math.max(-12, Math.min(12, chassis.mass > 0 ? (fc.engF - fc.totalRetard) / chassis.mass : 0));
+		const latAccel = Math.max(-12, Math.min(12, bodyAngVel.y * localVelX));
+
+		for (let i = 0; i < PHYSICS_SUBSTEPS; i++) {
+			this.vehicle.updateVehicle(substepDt);
+			this.world.step();
+			this.customSuspension.applyWeightTransfer(
+				this.carBody,
+				longAccel,
+				latAccel,
+				chassis.mass,
+				chassis.cgHeight,
+				chassis.wheelBase,
+				trackWidth,
+				substepDt,
+			);
+		}
+	}
+
+	/** Apply post-step forces: drift torque, yaw damping, rebuilds. */
+	private applyPostStepForces(absSpeedMs: number, steerAngle: number, dt: number): void {
+		this.tireDynamics.readWheelStates(this.vehicle);
+		const yawRate = this.carBody.angvel().y;
+		const driftTorque = this.tireDynamics.computeDriftYawTorque(absSpeedMs, yawRate, steerAngle);
+		if (Math.abs(driftTorque) > 0.01) {
+			this.carBody.applyTorqueImpulse({ x: 0, y: driftTorque * dt, z: 0 }, true);
+		}
+		this.tireDynState = this.tireDynamics.state;
+	}
+
+	/** Flush deferred terrain/guardrail rebuilds after physics step. */
+	private flushPendingRebuilds(): void {
+		if (this.pendingGroundRebuild) {
+			this.rebuildGroundPatch(this.pendingGroundRebuild.x, this.pendingGroundRebuild.z);
+			this.pendingGroundRebuild = null;
+		}
+		if (this.pendingGuardrailUpdate) {
+			this.updateGuardrails(this.pendingGuardrailUpdate.x, this.pendingGuardrailUpdate.z);
+			this.pendingGuardrailUpdate = null;
+		}
 	}
 
 	private countContacts(): number {

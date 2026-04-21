@@ -189,6 +189,33 @@ app.get("/api/assets", (req, res) => {
 	res.json(assets);
 });
 
+/** Get pending (untracked) assets. Must be before /:id route. */
+app.get("/api/assets/pending", (_req, res) => {
+	try {
+		const pendingDir = path.join(PROJECT_ROOT, "data", "assets", "pending");
+		if (!fs.existsSync(pendingDir)) {
+			res.json([]);
+			return;
+		}
+		const files = fs.readdirSync(pendingDir).filter((f) => f.endsWith(".glb"));
+		const result = files.map((f) => {
+			const hash = path.basename(f, ".glb");
+			const dbAsset = getAssetByHash(hash);
+			const stat = fs.statSync(path.join(pendingDir, f));
+			return {
+				hash,
+				originalName: dbAsset?.original_name ?? f,
+				status: dbAsset?.status ?? "untracked",
+				sourceUrl: dbAsset?.source_url ?? null,
+				size: stat.size,
+			};
+		});
+		res.json(result);
+	} catch (err) {
+		res.status(500).json({ error: String(err) });
+	}
+});
+
 /** Get single asset by ID. */
 app.get("/api/assets/:id", (req, res) => {
 	const asset = getAssetById(Number(req.params.id));
@@ -262,33 +289,6 @@ app.get("/api/sketchfab/search", async (req, res) => {
 		});
 	} catch (err) {
 		res.status(502).json({ error: `Sketchfab fetch failed: ${String(err)}` });
-	}
-});
-
-/** List pending GLB files from filesystem, enriched with DB info. */
-app.get("/api/assets/pending", (_req, res) => {
-	try {
-		const pendingDir = path.join(PROJECT_ROOT, "data", "assets", "pending");
-		if (!fs.existsSync(pendingDir)) {
-			res.json([]);
-			return;
-		}
-		const files = fs.readdirSync(pendingDir).filter((f) => f.endsWith(".glb"));
-		const result = files.map((f) => {
-			const hash = path.basename(f, ".glb");
-			const dbAsset = getAssetByHash(hash);
-			const stat = fs.statSync(path.join(pendingDir, f));
-			return {
-				hash,
-				originalName: dbAsset?.original_name ?? f,
-				status: dbAsset?.status ?? "untracked",
-				sourceUrl: dbAsset?.source_url ?? null,
-				size: stat.size,
-			};
-		});
-		res.json(result);
-	} catch (err) {
-		res.status(500).json({ error: String(err) });
 	}
 });
 
