@@ -30,7 +30,6 @@ export class VehicleRenderer {
 	// headlights accessed via this.lights.headlights
 	private _modelGroundOffset = 0;
 	private _suspRestLength = 0;
-	private _diagCount = 0;
 	/** Per-wheel visual radius measured from world-space AABB at load time. */
 	private _visualWheelRadii = [0, 0, 0, 0];
 	/** Full local positions of wheel pivots (set at load time). Used for pitch/roll visual compensation. */
@@ -562,36 +561,6 @@ export class VehicleRenderer {
 			}
 
 			pivot.position.y = basePos.y + suspOffset;
-
-			// ── Wheel-ground alignment diagnostic (fires 3 times) ──
-			if (this._diagCount < 3 && i === 0 && suspLengths?.[0]) {
-				const pivotWorld = new THREE.Vector3(0, pivot.position.y, 0);
-				pivotWorld.applyMatrix4(this.model.matrixWorld);
-				// Compute visual radius from world-space AABB of the wheel pivot.
-				// After baked rotation, axle is along X — use max(Y,Z)/2 as radius.
-				let visualWheelRadius = wheelRadius;
-				pivot.updateMatrixWorld(true);
-				const visBb = new THREE.Box3().setFromObject(pivot);
-				const visSize = new THREE.Vector3();
-				visBb.getSize(visSize);
-				visualWheelRadius = Math.max(visSize.y, visSize.z) / 2;
-				const visualBotY = pivotWorld.y - visualWheelRadius;
-				const halfH = this.config.chassis.halfExtents[1];
-				const susLen = suspLengths[0] as number;
-				const physicsBotY = pos.y - halfH - susLen - wheelRadius;
-				console.log(
-					`[WHEEL-DIAG] frame=${this._diagCount} ` +
-						`bodyY=${pos.y.toFixed(3)} modelGroundOff=${this._modelGroundOffset.toFixed(3)} ` +
-						`halfH=${halfH} anchorY=${(-halfH).toFixed(3)} ` +
-						`susLen=${susLen.toFixed(4)} suspRest=${this._suspRestLength.toFixed(3)} ` +
-						`basePos.y=${basePos.y.toFixed(3)} suspOffset=${suspOffset.toFixed(4)} ` +
-						`pivotWorld.y=${pivotWorld.y.toFixed(3)} ` +
-						`visualWheelRadius=${visualWheelRadius.toFixed(3)} physicsWheelRadius=${wheelRadius.toFixed(3)} ` +
-						`visualBotY=${visualBotY.toFixed(3)} physicsBotY=${physicsBotY.toFixed(3)} ` +
-						`delta=${(visualBotY - physicsBotY).toFixed(4)}`,
-				);
-				this._diagCount++;
-			}
 
 			// Inner wheel clone rotation is baked at load time (Y rotation for axle alignment).
 			// Pivot: spin around X (axle), steer around Y.

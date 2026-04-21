@@ -98,7 +98,6 @@ export class RapierVehicleController {
 	/** Whether revving in neutral (space+W, stopped) */
 	revvingInNeutral = false;
 	private initialized = false;
-	private _diagTimer = 0; // throttle diagnostic log output
 	private readonly driveState = new DriveState();
 	private readonly burnoutState = new BurnoutState();
 	private _wheelSpinAngles = [0, 0, 0, 0];
@@ -446,18 +445,6 @@ export class RapierVehicleController {
 			this.forces.coast +
 			offRoadForce;
 
-		// DIAG
-		if (!this._diagTimer) this._diagTimer = 0;
-		this._diagTimer += dt * 1000;
-		if (this._diagTimer >= 200) {
-			this._diagTimer = 0;
-			if (wantsBackward || isReverse) {
-				console.log(
-					`[DRIVE] vel=${localVelX.toFixed(3)} state=${isReverse ? "REV" : isBraking ? "BRK" : wantsForward ? "FWD" : "---"} ` +
-						`engF=${fc.engF.toFixed(0)}N wheelBrk=${fc.rapierBrakeForce.toFixed(1)} bodyRetard=${fc.totalRetard.toFixed(0)}N trac=${tractionPerWheel.toFixed(0)} contacts=${this.countContacts()}`,
-				);
-			}
-		}
 		// prevReverse is tracked inside DriveState
 
 		// ── Steering → front wheels ──
