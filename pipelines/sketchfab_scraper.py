@@ -11,7 +11,8 @@ Usage:
     SKETCHFAB_API_KEY=xxx python sketchfab_scraper.py --query "jdm sports car" --limit 50
 
 Environment:
-    SKETCHFAB_API_KEY  - Required. Get from https://sketchfab.com/settings/oauth
+    SKETCHFAB_API_KEY  - Optional. Required for downloads. Get from https://sketchfab.com/settings/oauth
+                         Search/browse works without a key.
     ASSET_DIR          - Directory for GLB downloads (default: ./assets/glb)
     DB_PATH            - SQLite database path (default: ./data/game_assets.db)
 """
@@ -25,7 +26,6 @@ import sqlite3
 import sys
 import time
 from pathlib import Path
-from urllib.parse import urljoin
 
 import requests
 
@@ -36,7 +36,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-SKETCHFAB_API = "https://api.sketchfab.com/v3"
+SKETCHFAB_API = "https://api.sketchfab.com/v3/"
 DEFAULT_ASSET_DIR = Path("./assets/glb")
 DEFAULT_DB_PATH = Path("./data/game_assets.db")
 
@@ -49,9 +49,11 @@ RETRY_BACKOFF = 2  # exponential backoff base
 class SketchfabClient:
     """Thin wrapper around the Sketchfab REST API."""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str | None = None):
         self.session = requests.Session()
-        self.session.headers["Authorization"] = f"Token {api_key}"
+        self.api_key = api_key
+        if api_key:
+            self.session.headers["Authorization"] = f"Token {api_key}"
         self.last_request_time = 0.0
 
     def _rate_limit(self):
@@ -61,12 +63,15 @@ class SketchfabClient:
         self.last_request_time = time.monotonic()
 
     def _request(self, method: str, path: str, **kwargs) -> dict:
-        url = urljoin(SKETCHFAB_API, path)
+        url = f"{SKETCHFAB_API.rstrip('/')}{path}"
         for attempt in range(MAX_RETRIES):
             self._rate_limit()
             try:
                 resp = self.session.request(method, url, timeout=30, **kwargs)
                 resp.raise_for_status()
+                text = resp.text
+                if not text.strip():
+                    raise requests.exceptions.HTTPError("Empty response")
                 return resp.json()
             except requests.exceptions.HTTPError as e:
                 if resp.status_code == 429:
@@ -89,10 +94,11 @@ class SketchfabClient:
         self,
         query: str = "car",
         downloadable: bool = True,
-        license_filter: str = "cc0",
+        license_filter: str = "",
         sort_by: str = "-likeCount",
         count: int = 24,
         cursor: str | None = None,
+        categories: str = "",
     ) -> dict:
         """Search for models. Returns paginated results."""
         params = {
@@ -106,6 +112,8 @@ class SketchfabClient:
             params["license"] = license_filter
         if cursor:
             params["cursor"] = cursor
+        if categories:
+            params["categories"] = categories
         return self._request("GET", "/search", params=params)
 
     def get_model(self, uid: str) -> dict:
@@ -113,7 +121,13 @@ class SketchfabClient:
         return self._request("GET", f"/models/{uid}")
 
     def get_download_link(self, uid: str) -> dict | None:
-        """Get the download link for a model. Returns None if not downloadable."""
+        """Get the download link for a model. Returns None if not downloadable.
+
+        Requires SKETCHFAB_API_KEY. Returns None if no key configured.
+        """
+        if not self.api_key:
+            log.warning("No SKETCHFAB_API_KEY set — cannot download model %s", uid)
+            return None
         try:
             result = self._request(
                 "POST", f"/models/{uid}/download"
@@ -263,6 +277,8 @@ def search_and_collect(
     query: str,
     max_results: int,
     dry_run: bool = False,
+    license_filter: str = "",
+    categories: str = "",
 ) -> list[dict]:
     """Search Sketchfab, collect results, optionally download."""
     collected = []
@@ -273,6 +289,8 @@ def search_and_collect(
         count = min(24, max_results - seen)
         data = client.search_models(
             query=query, count=count, cursor=cursor,
+            license_filter=license_filter,
+            categories=categories,
         )
 
         results = data.get("results", [])
@@ -305,11 +323,12 @@ def search_and_collect(
             license_label = license_info.get("label", "")
             license_slug = license_info.get("slug", "")
 
-            # Only keep CC/public domain licenses
-            if license_slug and license_slug not in (
-                "cc0", "cc-by", "cc-by-sa", "cc-by-nd", "cc-by-nc", "cc-by-nc-sa", "cc-by-nc-nd",
-            ):
-                log.info("  Skipping: license=%s", license_label)
+            # Sketchfab uses short slugs: by, by-sa, by-nd, by-nc, by-nc-sa, by-nc-nd, cc0
+            ACCEPTED_SLUGS = (
+                "cc0", "by", "by-sa", "by-nd", "by-nc", "by-nc-sa", "by-nc-nd",
+            )
+            if license_slug and license_slug not in ACCEPTED_SLUGS:
+                log.info("  Skipping: license=%s (%s)", license_label, license_slug)
                 continue
 
             attribution = build_attribution(detail)
@@ -418,36 +437,57 @@ def main():
     parser.add_argument("--query", default="car", help="Search query (default: car)")
     parser.add_argument("--limit", type=int, default=24, help="Max models to process (default: 24)")
     parser.add_argument("--dry-run", action="store_true", help="Search and log without downloading")
-    parser.add_argument("--license", default="cc0", help="License filter (default: cc0, empty=any)")
+    parser.add_argument("--license", default="", help="License filter (default: any, e.g. cc0, by)")
+    parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite database path")
+    parser.add_argument("--list", action="store_true", help="List assets already in DB")
+    parser.add_argument("--categories", default="cars-vehicles", help="Sketchfab category filter (default: cars-vehicles)")
     args = parser.parse_args()
 
     api_key = os.environ.get("SKETCHFAB_API_KEY")
     if not api_key:
-        log.error("Set SKETCHFAB_API_KEY environment variable")
-        sys.exit(1)
+        log.warning("No SKETCHFAB_API_KEY set — search/browse only (no downloads)")
 
     asset_dir = Path(os.environ.get("ASSET_DIR", DEFAULT_ASSET_DIR))
-    db_path = Path(os.environ.get("DB_PATH", DEFAULT_DB_PATH))
+    db_path = Path(args.db)
 
     client = SketchfabClient(api_key)
     db = AssetDB(db_path)
 
     try:
-        results = search_and_collect(
-            client=client,
-            db=db,
-            asset_dir=asset_dir,
-            query=args.query,
-            max_results=args.limit,
-            dry_run=args.dry_run,
-        )
+        if args.list:
+            rows = db.conn.execute(
+                "SELECT id, original_name, source_type, license, status, sha256_hash "
+                "FROM assets ORDER BY id"
+            ).fetchall()
+            if not rows:
+                log.info("No assets in database")
+            else:
+                log.info("%d assets in database:", len(rows))
+                for r in rows:
+                    h = r["sha256_hash"][:12] + "..." if r["sha256_hash"] else "(none)"
+                    log.info(
+                        "  #%d %-45s [%s] %s hash=%s",
+                        r["id"], r["original_name"][:45], r["status"],
+                        r["license"] or "?", h,
+                    )
+        else:
+            results = search_and_collect(
+                client=client,
+                db=db,
+                asset_dir=asset_dir,
+                query=args.query,
+                max_results=args.limit,
+                dry_run=args.dry_run,
+                license_filter=args.license,
+                categories=args.categories,
+            )
 
-        # Summary
-        statuses = {}
-        for r in results:
-            s = r["status"]
-            statuses[s] = statuses.get(s, 0) + 1
-        log.info("Done. %d models processed: %s", len(results), dict(statuses))
+            # Summary
+            statuses = {}
+            for r in results:
+                s = r["status"]
+                statuses[s] = statuses.get(s, 0) + 1
+            log.info("Done. %d models processed: %s", len(results), dict(statuses))
     finally:
         db.close()
 
