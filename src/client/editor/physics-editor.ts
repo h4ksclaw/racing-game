@@ -2,6 +2,7 @@
  * Physics override panel — sliders/inputs for chassis physics params.
  */
 import type { PhysicsOverrides } from "./bake-export.js";
+import { getCompressionPercent, setCompressionPercent } from "./suspension-viz.js";
 
 interface ParamDef {
 	key: keyof PhysicsOverrides;
@@ -47,6 +48,12 @@ const PARAMS: ParamDef[] = [
 
 let currentOverrides: PhysicsOverrides;
 const changeCallbacks: ((overrides: PhysicsOverrides) => void)[] = [];
+
+let suspPreviewCallback: ((percent: number) => void) | null = null;
+
+export function onSuspPreviewChange(cb: (percent: number) => void): void {
+	suspPreviewCallback = cb;
+}
 
 export function createPhysicsPanel(container: HTMLElement): void {
 	currentOverrides = getDefaultOverrides();
@@ -98,6 +105,40 @@ export function createPhysicsPanel(container: HTMLElement): void {
 	}
 
 	container.appendChild(panel);
+
+	// Suspension preview slider
+	const previewRow = document.createElement("div");
+	previewRow.className = "physics-row";
+	previewRow.style.borderTop = "1px solid var(--border, #333)";
+	previewRow.style.paddingTop = "6px";
+	previewRow.style.marginTop = "4px";
+
+	const previewLabel = document.createElement("label");
+	previewLabel.textContent = "Susp. Preview";
+	previewLabel.title = "Suspension Preview (0% = full droop, 100% = full compression)";
+
+	const previewSlider = document.createElement("input");
+	previewSlider.type = "range";
+	previewSlider.min = "0";
+	previewSlider.max = "100";
+	previewSlider.step = "1";
+	previewSlider.value = String(getCompressionPercent());
+
+	const previewVal = document.createElement("span");
+	previewVal.className = "val";
+	previewVal.textContent = `${getCompressionPercent()}%`;
+
+	previewSlider.addEventListener("input", () => {
+		const v = parseInt(previewSlider.value, 10);
+		previewVal.textContent = `${v}%`;
+		setCompressionPercent(v);
+		suspPreviewCallback?.(v);
+	});
+
+	previewRow.appendChild(previewLabel);
+	previewRow.appendChild(previewSlider);
+	previewRow.appendChild(previewVal);
+	panel.appendChild(previewRow);
 }
 
 export function getDefaultOverrides(): PhysicsOverrides {
