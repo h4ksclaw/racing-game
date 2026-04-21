@@ -24,7 +24,9 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.11",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
+    "@types/multer": "^2.1.0",
     "@types/node": "^25.6.0",
     "@types/three": "^0.183.1",
     "husky": "^9.1.7",
@@ -38,8 +40,11 @@
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",
+    "better-sqlite3": "^12.9.0",
     "express": "^5.2.1",
+    "fuse.js": "^7.3.0",
     "lit": "^3.3.2",
+    "multer": "^2.1.1",
     "simplex-noise": "^4.0.3",
     "three": "^0.183.2"
   }
