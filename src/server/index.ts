@@ -13,6 +13,7 @@ import fs from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { config } from "dotenv";
 import express from "express";
 import multer from "multer";
 import { generateTrack } from "../shared/track.ts";
@@ -68,6 +69,9 @@ function maybePredictList(cars: ReturnType<typeof getAllCars>, predict: boolean)
 	if (!predict) return cars;
 	return cars.map((car) => applyPredictions(car, predict_specs(car)));
 }
+
+// Load .env (before creating Express app)
+config();
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
