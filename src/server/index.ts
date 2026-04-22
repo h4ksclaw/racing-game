@@ -711,40 +711,23 @@ app.use((err: unknown, _req: express.Request, res: express.Response, next: expre
 	next(err);
 });
 
-// ── Serve frontend (production) ──────────────────────────────────────
+// ── Frontend serving & start ────────────────────────────────────────
 
-const projectRoot = PROJECT_ROOT;
-const distPath = path.join(projectRoot, "dist");
+const distPath = path.join(PROJECT_ROOT, "dist");
 
-// In dev, Vite proxies /api here and serves frontend itself.
-// In production, Express serves both.
-if (fs.existsSync(distPath)) {
-	app.use(express.static(distPath));
-}
+async function main() {
+	// Frontend: Vite middleware (dev) or static files (prod)
+	const { setupFrontend } = await import("./frontend.ts");
+	await setupFrontend(app, PROJECT_ROOT, distPath);
 
-// Clean URL routing: /world → world.html, /practice → practice.html
-// Only in production (dist/ exists)
-if (fs.existsSync(distPath)) {
-	app.get("/world", (_req, res) => {
-		res.sendFile(path.join(distPath, "world.html"));
+	// Fallback 404 (registered last so all routes get a chance to match)
+	app.use((_req, res) => {
+		res.status(404).json({ error: "Not found" });
 	});
-	app.get("/practice", (_req, res) => {
-		res.sendFile(path.join(distPath, "practice.html"));
-	});
-	app.get("/garage", (_req, res) => {
-		res.sendFile(path.join(distPath, "garage.html"));
-	});
-	app.get("/physics-debug", (_req, res) => {
-		res.sendFile(path.join(distPath, "physics-debug.html"));
+
+	const PORT = Number(process.env.PORT ?? 3000);
+	app.listen(PORT, () => {
+		console.log(`Server running on http://localhost:${PORT}`);
 	});
 }
-
-// Fallback 404 (registered last so all routes get a chance to match)
-app.use((_req, res) => {
-	res.status(404).json({ error: "Not found" });
-});
-
-const PORT = Number(process.env.PORT ?? 3001);
-app.listen(PORT, () => {
-	console.log(`Server running on http://localhost:${PORT}`);
-});
+main().catch(console.error);

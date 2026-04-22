@@ -13,10 +13,15 @@ export default defineConfig({
 		sourcemap: true,
 		rollupOptions: {
 			input: {
-				world: resolve(__dirname, "world.html"),
-				practice: resolve(__dirname, "practice.html"),
-				garage: resolve(__dirname, "garage.html"),
-			editor: resolve(__dirname, "editor.html"),
+				world: resolve(__dirname, "pages/world.html"),
+				practice: resolve(__dirname, "pages/practice.html"),
+				garage: resolve(__dirname, "pages/garage.html"),
+				editor: resolve(__dirname, "pages/editor.html"),
+			},
+			output: {
+				entryFileNames: "assets/[name]-[hash].js",
+				chunkFileNames: "assets/[name]-[hash].js",
+				assetFileNames: "assets/[name]-[hash][extname]",
 			},
 		},
 	},
@@ -25,6 +30,8 @@ export default defineConfig({
 		host: "0.0.0.0",
 		allowedHosts: [".trycloudflare.com"],
 		watch: {
+			usePolling: true,
+			interval: 1000,
 			ignored: [
 				"**/node_modules/**",
 				"**/.venv/**",
@@ -36,7 +43,7 @@ export default defineConfig({
 		},
 		proxy: {
 			"/api": {
-				target: "http://localhost:3001",
+				target: "http://localhost:3000",
 				changeOrigin: true,
 			},
 		},

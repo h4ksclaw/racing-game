@@ -1,16 +1,19 @@
-FROM oven/bun:1 AS base
+FROM node:22-alpine AS builder
 WORKDIR /app
-
-FROM base AS install
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile || bun install
-
-FROM base AS build
-COPY --from=install /app/node_modules ./node_modules
+COPY package*.json ./
+RUN npm ci
 COPY . .
-RUN bun run build
+RUN npm run build
 
-FROM nginx:alpine AS production
-COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+FROM node:22-alpine
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/pages ./pages
+COPY --from=builder /app/src ./src
+EXPOSE 3000
+ENV NODE_ENV=production
+ENV PORT=3000
+CMD ["npx", "tsx", "src/server/index.ts"]
