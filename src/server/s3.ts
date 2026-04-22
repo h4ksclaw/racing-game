@@ -7,6 +7,7 @@
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { Agent as HttpsAgent } from "node:https";
 import {
 	DeleteObjectCommand,
 	GetObjectCommand,
@@ -16,6 +17,7 @@ import {
 	S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl as s3GetSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 
 // ── Client singleton ────────────────────────────────────────────────────
 
@@ -33,7 +35,7 @@ export function initS3Client(): S3Client {
 	const endpoint = process.env.S3_ENDPOINT;
 	if (!endpoint) throw new Error("S3_ENDPOINT not set");
 
-	client = new S3Client({
+	const opts: ConstructorParameters<typeof S3Client>[0] = {
 		endpoint,
 		region: process.env.S3_REGION || "us-east-1",
 		credentials: {
@@ -41,8 +43,16 @@ export function initS3Client(): S3Client {
 			secretAccessKey: process.env.S3_SECRET_KEY || "",
 		},
 		forcePathStyle: process.env.S3_USE_PATH_STYLE !== "false",
-	});
+	};
 
+	// Allow self-signed certs (common for tunneled/local MinIO)
+	if (process.env.S3_SKIP_TLS_VERIFY !== "false") {
+		opts.requestHandler = new NodeHttpHandler({
+			httpsAgent: new HttpsAgent({ rejectUnauthorized: false }),
+		});
+	}
+
+	client = new S3Client(opts);
 	return client;
 }
 

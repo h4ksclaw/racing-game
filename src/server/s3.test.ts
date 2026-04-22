@@ -5,8 +5,18 @@
  * S3-dependent tests require S3_INTEGRATION=1 or are skipped.
  */
 
-import { describe, expect, it } from "vitest";
-import { carModelKey } from "./s3.ts";
+import { config } from "dotenv";
+import { beforeAll, describe, expect, it } from "vitest";
+import { _resetClient, carModelKey } from "./s3.ts";
+
+const S3_INTEGRATION = process.env.S3_INTEGRATION === "1";
+
+beforeAll(() => {
+	if (S3_INTEGRATION) {
+		config();
+		_resetClient();
+	}
+});
 
 describe("carModelKey", () => {
 	it("generates deterministic key from buffer", () => {
@@ -28,8 +38,6 @@ describe("carModelKey", () => {
 });
 
 // Integration tests — only run when S3 is configured
-const S3_INTEGRATION = process.env.S3_INTEGRATION === "1";
-
 describe.skipIf(!S3_INTEGRATION)("S3 integration", () => {
 	it("bucketExists returns true", async () => {
 		const { bucketExists } = await import("./s3.ts");
