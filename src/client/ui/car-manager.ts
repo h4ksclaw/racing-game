@@ -268,6 +268,14 @@ export class CarManager extends LitElement {
 					(c as unknown as Record<string, unknown>).attribuption ??
 					null) as string | null,
 			}));
+			// Client-side name fallback: if name looks like a hash, parse from attribution
+			this._cars = this._cars.map((c) => {
+				if (/^[a-f0-9]{12,}$/.test(c.name) && c.attribution) {
+					const parsed = c.attribution.replace(/^"|"$/g, "").split(" by ")[0]?.trim();
+					if (parsed && parsed.length > 3) return { ...c, name: parsed };
+				}
+				return c;
+			});
 		} catch {
 			this._cars = [];
 		} finally {

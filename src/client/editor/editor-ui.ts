@@ -304,8 +304,9 @@ if (suspSlider) {
 		const newOffset = parseFloat(suspSlider.value);
 		const delta = newOffset - lastSuspOffset;
 		lastSuspOffset = newOffset;
+		const model = getCurrentModel();
 		import("./marker-tool.js").then(({ applySuspensionOffset }) => {
-			applySuspensionOffset(delta);
+			applySuspensionOffset(delta, model ?? undefined);
 		});
 		if (suspValue) suspValue.textContent = `${newOffset >= 0 ? "+" : ""}${newOffset.toFixed(2)}m`;
 	});
@@ -314,7 +315,8 @@ if (suspSlider) {
 		const delta = -lastSuspOffset;
 		lastSuspOffset = 0;
 		if (suspValue) suspValue.textContent = "0.00m";
-		import("./marker-tool.js").then(({ applySuspensionOffset }) => applySuspensionOffset(delta));
+		const model = getCurrentModel();
+		import("./marker-tool.js").then(({ applySuspensionOffset }) => applySuspensionOffset(delta, model ?? undefined));
 	});
 }
 

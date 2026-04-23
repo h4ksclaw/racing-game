@@ -340,10 +340,18 @@ export function getMarkerTypes() {
 	return MARKER_TYPES;
 }
 
-/** Apply suspension offset to all wheel markers (move Y up/down). */
-export function applySuspensionOffset(offsetY: number): void {
+/** Apply suspension offset to all wheel markers and their associated 3D meshes. */
+export function applySuspensionOffset(offsetY: number, model?: THREE.Object3D): void {
 	for (const m of markers) {
 		if (!m.type.startsWith("Wheel_")) continue;
 		m.mesh.position.y += offsetY;
+		// Also move all 3D meshes assigned to this wheel position
+		if (model) {
+			model.traverse((child) => {
+				if ((child as THREE.Mesh).isMesh && child.userData.markedAs === m.type) {
+					child.position.y += offsetY;
+				}
+			});
+		}
 	}
 }
