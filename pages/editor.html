@@ -24,6 +24,7 @@
 			--ui-green: rgba(163, 230, 53, 0.85);
 			--ui-green-dim: rgba(163, 230, 53, 0.15);
 			--ui-text: rgba(240, 244, 255, 0.55);
+			--ui-text-dim: rgba(240, 244, 255, 0.35);
 			--ui-text-bright: rgba(240, 244, 255, 0.85);
 			--ui-text-white: #f0f4ff;
 			--ui-mono: 'JetBrains Mono', monospace;
@@ -341,9 +342,9 @@
 		<editor-panel title="Suspension">
 			<div id="suspension-section">
 				<input type="range" id="suspension-slider" min="-0.3" max="0.3" step="0.01" value="0" style="width:100%;accent-color:var(--ui-accent);">
-				<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--ui-text-dim);margin-top:2px;">
+				<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--ui-text);margin-top:4px;">
 					<span>Compress</span>
-					<span id="suspension-value">0.00m</span>
+					<span id="suspension-value" style="color:var(--ui-accent);">0.00m</span>
 					<span>Extend</span>
 				</div>
 			</div>
@@ -404,7 +405,7 @@
 
 		<div class="import-panel" data-panel="4" style="display:none;">
 			<p class="import-hint">Hit <strong>Bake & Submit</strong> in the sidebar → exports GLB with markers baked in, uploads to S3, saves car config. Done!</p>
-			<p class="import-hint" style="margin-top:6px;border-top:1px solid var(--ui-border);padding-top:6px;color:var(--ui-text-dim);">
+			<p class="import-hint" style="margin-top:6px;border-top:1px solid var(--ui-border);padding-top:6px;color:var(--ui-text);">
 				<strong style="color:var(--ui-text);">Shortcuts:</strong>
 				<kbd>Q</kbd> orbit · <kbd>Shift+Q</kbd> select · <kbd>R</kbd> place marker · <kbd>A</kbd> assign · <kbd>W</kbd> move · <kbd>E</kbd> explode · <kbd>X</kbd> wireframe · <kbd>H</kbd> highlights · <kbd>0</kbd> fit · <kbd>Esc</kbd> cancel
 			</p>

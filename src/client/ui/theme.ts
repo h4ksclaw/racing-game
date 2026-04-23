@@ -18,6 +18,7 @@ export const themeStyles = css`
     --ui-green: rgba(163, 230, 53, 0.85);
     --ui-green-dim: rgba(163, 230, 53, 0.15);
     --ui-text: rgba(240, 244, 255, 0.55);
+    --ui-text-dim: rgba(240, 244, 255, 0.35);
     --ui-text-bright: rgba(240, 244, 255, 0.85);
     --ui-text-white: #f0f4ff;
     --ui-mono: "JetBrains Mono", monospace;
