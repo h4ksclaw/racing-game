@@ -567,6 +567,14 @@ export class RapierVehicleController {
 		for (let i = 0; i < PHYSICS_SUBSTEPS; i++) {
 			this.vehicle.updateVehicle(substepDt);
 			this.world.step();
+
+			// Copy body transform to plain objects BEFORE passing to suspension —
+			// avoids Rapier WASM aliasing error ("recursive use of an object")
+			const bodyPos = this.carBody.translation();
+			const bodyRot = this.carBody.rotation();
+			const posSnap = { x: bodyPos.x, y: bodyPos.y, z: bodyPos.z };
+			const rotSnap = { x: bodyRot.x, y: bodyRot.y, z: bodyRot.z, w: bodyRot.w };
+
 			this.customSuspension.applyWeightTransfer(
 				this.carBody,
 				longAccel,
@@ -576,6 +584,8 @@ export class RapierVehicleController {
 				chassis.wheelBase,
 				trackWidth,
 				substepDt,
+				posSnap,
+				rotSnap,
 			);
 		}
 	}
@@ -583,7 +593,7 @@ export class RapierVehicleController {
 	/** Apply post-step forces: drift torque, yaw damping, rebuilds. */
 	private applyPostStepForces(absSpeedMs: number, steerAngle: number, dt: number): void {
 		this.tireDynamics.readWheelStates(this.vehicle);
-		const yawRate = this.carBody.angvel().y;
+		const yawRate = this.carBody.angvel().y; // single scalar read — safe
 		const driftTorque = this.tireDynamics.computeDriftYawTorque(absSpeedMs, yawRate, steerAngle);
 		if (Math.abs(driftTorque) > 0.01) {
 			this.carBody.applyTorqueImpulse({ x: 0, y: driftTorque * dt, z: 0 }, true);

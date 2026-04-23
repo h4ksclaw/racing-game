@@ -466,10 +466,13 @@ function animate(): void {
 			const body = vehicle.physicsBody;
 			const p = body.translation();
 			const r = body.rotation();
+			// Snapshot to plain objects — Rapier WASM vectors are recycled
+			const posSnap = { x: p.x, y: p.y, z: p.z };
+			const rotSnap = { x: r.x, y: r.y, z: r.z, w: r.w };
 
 			renderer.sync(
-				{ x: p.x, y: p.y, z: p.z },
-				{ x: r.x, y: r.y, z: r.z, w: r.w },
+				posSnap,
+				rotSnap,
 				vehicle.getSteerAngle(),
 				vehicle.state.speed,
 				vehicle.config.chassis.wheelRadius,

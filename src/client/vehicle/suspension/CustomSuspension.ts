@@ -143,7 +143,14 @@ export class CustomSuspension {
 
 			if (Math.abs(force) < 0.5) continue;
 
-			const worldAnchor = localToWorld(body, this.anchors[i]);
+			// Snapshot body transform to avoid Rapier WASM aliasing
+			const p1 = body.translation();
+			const r1 = body.rotation();
+			const worldAnchor = localToWorld(
+				{ x: p1.x, y: p1.y, z: p1.z },
+				{ x: r1.x, y: r1.y, z: r1.z, w: r1.w },
+				this.anchors[i],
+			);
 			body.applyImpulseAtPoint({ x: 0, y: force * dt, z: 0 }, worldAnchor, true);
 		}
 	}
@@ -178,6 +185,8 @@ export class CustomSuspension {
 		wheelbase: number,
 		trackWidth: number,
 		dt: number,
+		posSnap?: { x: number; y: number; z: number },
+		rotSnap?: { x: number; y: number; z: number; w: number },
 	): void {
 		if (!this.enabled || this.anchors.length < 4) return;
 
@@ -224,7 +233,19 @@ export class CustomSuspension {
 			force = Math.max(-maxForce, Math.min(maxForce, force));
 			if (Math.abs(force) < 0.5) continue;
 
-			const worldAnchor = localToWorld(body, this.anchors[i]);
+			const wp =
+				posSnap ??
+				((): { x: number; y: number; z: number } => {
+					const p = body.translation();
+					return { x: p.x, y: p.y, z: p.z };
+				})();
+			const wr =
+				rotSnap ??
+				((): { x: number; y: number; z: number; w: number } => {
+					const r = body.rotation();
+					return { x: r.x, y: r.y, z: r.z, w: r.w };
+				})();
+			const worldAnchor = localToWorld(wp, wr, this.anchors[i]);
 			body.applyImpulseAtPoint({ x: 0, y: force * dt, z: 0 }, worldAnchor, true);
 		}
 	}
@@ -235,15 +256,14 @@ export class CustomSuspension {
  * Uses the full rotation matrix from the quaternion — no approximation.
  */
 function localToWorld(
-	body: RAPIER.RigidBody,
+	pos: { x: number; y: number; z: number },
+	rot: { x: number; y: number; z: number; w: number },
 	local: { x: number; y: number; z: number },
 ): { x: number; y: number; z: number } {
-	const pos = body.translation();
-	const r = body.rotation();
-	const ix = r.x,
-		iy = r.y,
-		iz = r.z,
-		iw = r.w;
+	const ix = rot.x,
+		iy = rot.y,
+		iz = rot.z,
+		iw = rot.w;
 	const xx = ix * ix,
 		yy = iy * iy,
 		z2 = iz * iz;
