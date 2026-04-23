@@ -32,8 +32,28 @@ const validationEl = document.querySelector("validation-display");
 const statusLine = document.querySelector("status-line");
 const sidebarAttribution = document.getElementById("sidebar-attribution") as HTMLTextAreaElement | null;
 const sidebarSubmitBtn = document.getElementById("btn-submit") as HTMLButtonElement | null;
-const suspSlider = document.getElementById("suspension-slider") as HTMLInputElement | null;
+// Travel slider state (module-level so resetTravelSlider is accessible from loadModelAndReset)
+let travelValue = 0;
+let travelMaxCompress = 0.3;
+let travelMaxExtend = 0.3;
+let updateTravelUIFn: (() => void) | null = null;
+
+function resetTravelSlider(): void {
+	travelValue = 0;
+	updateTravelUIFn?.();
+	wheelAnimator.setSuspensionOffset(0);
+}
 const suspValue = document.getElementById("suspension-value");
+const suspTrack = document.getElementById("susp-track") as HTMLElement | null;
+const suspThumb = document.getElementById("susp-thumb") as HTMLElement | null;
+const suspFillBottom = document.getElementById("susp-fill-bottom") as HTMLElement | null;
+const suspFillTop = document.getElementById("susp-fill-top") as HTMLElement | null;
+const suspRestSlider = document.getElementById("susp-rest") as HTMLInputElement | null;
+const suspRestVal = document.getElementById("susp-rest-val");
+const suspCompressSlider = document.getElementById("susp-compress") as HTMLInputElement | null;
+const suspCompressVal = document.getElementById("susp-compress-val");
+const suspStiffnessSlider = document.getElementById("susp-stiffness") as HTMLInputElement | null;
+const suspStiffnessVal = document.getElementById("susp-stiffness-val");
 const spinBtn = document.getElementById("btn-wheel-spin") as HTMLButtonElement | null;
 const spinStatus = document.getElementById("wheel-spin-status");
 const spinSpeedSlider = document.getElementById("spin-speed-slider") as HTMLInputElement | null;
@@ -108,8 +128,7 @@ export async function loadModelAndReset(path: string, name: string, attribution?
 		spinBtn.classList.remove("active");
 	}
 	if (spinStatus) spinStatus.textContent = "Off";
-	if (suspSlider) suspSlider.value = "0";
-	if (suspValue) suspValue.textContent = "0.00m";
+	resetTravelSlider();
 	setCarSelection({ modelPath: path, name });
 	if (statusLine) statusLine.message = `Loading ${name}...`;
 
@@ -340,41 +359,98 @@ function refreshUI() {
 		refreshObjectPanel(getCurrentModel());
 	}
 
-	// ── Suspension Test Slider ──
-	if (suspSlider) {
-		// Set range from physics overrides (maxSuspensionTravel)
+	// ── Custom Travel Slider ──
+	let travelDragging = false;
+
+	function updateTravelUI(): void {
+		if (!suspTrack || !suspThumb || !suspFillBottom || !suspFillTop || !suspValue) return;
+		const totalRange = travelMaxCompress + travelMaxExtend;
+		const ratio = totalRange > 0 ? travelMaxCompress / totalRange : 0.5;
+		const thumbPct = ratio + (travelValue / totalRange) * 100;
+		const clampedPct = Math.max(0, Math.min(100, thumbPct));
+		suspThumb.style.left = `${clampedPct}%`;
+		suspFillBottom.style.width = `${ratio * 100}%`;
+		suspFillTop.style.width = `${(1 - ratio) * 100}%`;
+		if (suspValue) suspValue.textContent = `${travelValue >= 0 ? "+" : ""}${travelValue.toFixed(2)}m`;
+	}
+	updateTravelUIFn = updateTravelUI;
+
+	function setTravelFromPointer(clientX: number): void {
+		if (!suspTrack) return;
+		const rect = suspTrack.getBoundingClientRect();
+		const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+		const totalRange = travelMaxCompress + travelMaxExtend;
+		const ratio = totalRange > 0 ? travelMaxCompress / totalRange : 0.5;
+		travelValue = (pct - ratio) * totalRange;
+		travelValue = Math.max(-travelMaxExtend, Math.min(travelMaxCompress, travelValue));
+		updateTravelUI();
+		wheelAnimator.setSuspensionOffset(travelValue);
+	}
+
+	if (suspTrack && suspThumb) {
 		const physics = getPhysicsOverrides();
-		const maxTravel = physics.maxSuspensionTravel ?? 0.3;
-		suspSlider.min = `${-maxTravel}`;
-		suspSlider.max = `${maxTravel}`;
-		suspSlider.value = "0";
+		travelMaxCompress = physics.maxSuspensionTravel ?? 0.3;
+		travelMaxExtend = physics.suspensionRestLength ?? 0.3;
+		updateTravelUI();
 
-		suspSlider.addEventListener("input", () => {
-			const newOffset = parseFloat(suspSlider.value);
-			wheelAnimator.setSuspensionOffset(newOffset);
-			if (suspValue) suspValue.textContent = `${newOffset >= 0 ? "+" : ""}${newOffset.toFixed(2)}m`;
+		suspThumb.addEventListener("pointerdown", (e) => {
+			e.preventDefault();
+			travelDragging = true;
+			suspThumb.setPointerCapture(e.pointerId);
 		});
-		suspSlider.addEventListener("dblclick", () => {
-			suspSlider.value = "0";
-			wheelAnimator.setSuspensionOffset(0);
-			if (suspValue) suspValue.textContent = "0.00m";
+		suspTrack.addEventListener("pointerdown", (e) => {
+			if (e.target === suspThumb) return;
+			setTravelFromPointer(e.clientX);
+			travelDragging = true;
+			suspTrack.setPointerCapture(e.pointerId);
 		});
+		window.addEventListener("pointermove", (e) => {
+			if (!travelDragging) return;
+			setTravelFromPointer(e.clientX);
+		});
+		window.addEventListener("pointerup", () => {
+			travelDragging = false;
+		});
+		suspTrack.addEventListener("dblclick", resetTravelSlider);
 
-		// Update range when physics overrides change
+		// Update limits when physics change
 		const physicsModal = document.querySelector("physics-modal");
 		if (physicsModal) {
 			physicsModal.addEventListener("physics-changed", () => {
 				const p = getPhysicsOverrides();
-				const mt = p.maxSuspensionTravel ?? 0.3;
-				suspSlider.min = `${-mt}`;
-				suspSlider.max = `${mt}`;
-				// Clamp current value
-				const cur = parseFloat(suspSlider.value);
-				if (cur < -mt) suspSlider.value = `${-mt}`;
-				else if (cur > mt) suspSlider.value = `${mt}`;
+				travelMaxCompress = p.maxSuspensionTravel ?? 0.3;
+				travelMaxExtend = p.suspensionRestLength ?? 0.3;
+				travelValue = Math.max(-travelMaxExtend, Math.min(travelMaxCompress, travelValue));
+				updateTravelUI();
 			});
 		}
 	}
+
+	// ── Suspension param sliders (Rest, Compress, Stiffness) ──
+	function wireSuspParam(
+		slider: HTMLInputElement | null,
+		valEl: HTMLElement | null,
+		key: "suspensionRestLength" | "maxSuspensionTravel" | "suspensionStiffness",
+		unit: string,
+		decimals: number,
+	): void {
+		if (!slider || !valEl) return;
+		const physics = getPhysicsOverrides();
+		slider.value = `${physics[key] ?? slider.value}`;
+		valEl.textContent = `${Number(slider.value).toFixed(decimals)}${unit}`;
+		slider.addEventListener("input", async () => {
+			const v = Number(slider.value);
+			valEl.textContent = `${v.toFixed(decimals)}${unit}`;
+			const { setPhysicsOverrides } = await import("./physics-editor.js");
+			const cur = getPhysicsOverrides();
+			setPhysicsOverrides({ ...cur, [key]: v });
+			// Dispatch physics-changed so travel slider updates
+			document.querySelector("physics-modal")?.dispatchEvent(new CustomEvent("physics-changed"));
+		});
+	}
+	wireSuspParam(suspRestSlider, suspRestVal, "suspensionRestLength", "m", 2);
+	wireSuspParam(suspCompressSlider, suspCompressVal, "maxSuspensionTravel", "m", 2);
+	wireSuspParam(suspStiffnessSlider, suspStiffnessVal, "suspensionStiffness", "", 0);
 
 	// ── Wheel Spin Test ──
 	console.log(`[Editor] spinBtn=${!!spinBtn}, spinSpeedSlider=${!!spinSpeedSlider}`);

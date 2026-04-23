@@ -61,6 +61,33 @@
 		}
 		#sidebar::-webkit-scrollbar { width: 3px; }
 		#sidebar::-webkit-scrollbar-thumb { background: var(--ui-accent-ghost); border-radius: 2px; }
+		/* ── Suspension widget ── */
+		.susp-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+		.susp-row:last-child { margin-bottom: 0; }
+		.susp-label { font-size: 10px; color: var(--ui-text-dim); width: 52px; flex-shrink: 0; text-align: right; }
+		.susp-val { font-size: 10px; color: var(--ui-accent); width: 48px; flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
+		.susp-param { flex: 1; height: 4px; -webkit-appearance: none; appearance: none; background: var(--ui-border); border-radius: 2px; outline: none; cursor: pointer; }
+		.susp-param::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--ui-accent); cursor: pointer; border: 2px solid var(--ui-bg); box-shadow: 0 0 4px rgba(92,158,255,0.4); }
+		.susp-param::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--ui-accent); cursor: pointer; border: 2px solid var(--ui-bg); box-shadow: 0 0 4px rgba(92,158,255,0.4); }
+
+		/* Custom travel slider (bidirectional) */
+		.susp-slider-wrap { flex: 1; position: relative; height: 24px; display: flex; align-items: center; }
+		.susp-track { position: relative; width: 100%; height: 4px; background: var(--ui-border); border-radius: 2px; cursor: pointer; }
+		.susp-fill-bottom { position: absolute; bottom: 0; left: 0; height: 100%; background: var(--ui-accent); border-radius: 2px; pointer-events: none; opacity: 0.3; }
+		.susp-fill-top { position: absolute; bottom: 0; right: 0; height: 100%; background: var(--ui-accent); border-radius: 2px; pointer-events: none; opacity: 0.3; }
+		.susp-thumb { position: absolute; top: 50%; left: 50%; width: 14px; height: 14px; border-radius: 50%; background: var(--ui-accent); border: 2px solid var(--ui-bg); transform: translate(-50%, -50%); cursor: grab; box-shadow: 0 0 6px rgba(92,158,255,0.5); transition: box-shadow 0.15s; }
+		.susp-thumb:hover { box-shadow: 0 0 10px rgba(92,158,255,0.7); }
+		.susp-thumb:active { cursor: grabbing; }
+
+		/* Limit markers on the track */
+		.susp-limit { position: absolute; top: -3px; width: 2px; height: 10px; background: var(--ui-text-dim); border-radius: 1px; pointer-events: none; }
+		.susp-limit-label { position: absolute; top: -14px; font-size: 8px; color: var(--ui-text-dim); transform: translateX(-50%); pointer-events: none; white-space: nowrap; }
+
+		/* Spin button inline */
+		.susp-spin-btn { padding: 3px 8px; font-size: 10px; flex-shrink: 0; }
+		.susp-spin-status { font-size: 10px; color: var(--ui-text-dim); flex-shrink: 0; width: 20px; }
+		.susp-speed-slider { max-width: 80px; }
+
 		.editor-btn {
 			background: var(--ui-accent-ghost);
 			border: 1px solid var(--ui-border);
@@ -352,24 +379,46 @@
 
 		<editor-panel title="Suspension">
 			<div id="suspension-section">
-				<input type="range" id="suspension-slider" min="-0.3" max="0.3" step="0.01" value="0" style="width:100%;accent-color:var(--ui-accent);">
-				<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--ui-text);margin-top:4px;">
-					<span>Compress</span>
-					<span id="suspension-value" style="color:var(--ui-accent);">0.00m</span>
-					<span>Extend</span>
+				<!-- Live preview: drag to test travel -->
+				<div class="susp-row">
+					<div class="susp-label">Travel</div>
+					<div class="susp-slider-wrap">
+						<div class="susp-track" id="susp-track">
+							<div class="susp-fill-bottom" id="susp-fill-bottom"></div>
+							<div class="susp-fill-top" id="susp-fill-top"></div>
+							<div class="susp-thumb" id="susp-thumb"></div>
+						</div>
+					</div>
+					<div class="susp-val" id="suspension-value">0.00m</div>
 				</div>
-			</div>
-			<!-- Wheel spin test -->
-			<div id="wheel-spin-section" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--ui-border);">
-				<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-					<button id="btn-wheel-spin" class="editor-btn" style="flex:0;padding:4px 10px;font-size:10px;" title="Toggle wheel spin">Spin Wheels</button>
-					<span id="wheel-spin-status" style="font-size:10px;color:var(--ui-text-dim);">Off</span>
+
+				<!-- Rest length -->
+				<div class="susp-row">
+					<div class="susp-label">Rest</div>
+					<input type="range" class="susp-param" id="susp-rest" min="0.05" max="0.8" step="0.01" value="0.3">
+					<div class="susp-val" id="susp-rest-val">0.30m</div>
 				</div>
-				<input type="range" id="spin-speed-slider" min="1" max="80" step="1" value="15" style="width:100%;accent-color:var(--ui-accent);">
-				<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--ui-text);margin-top:4px;">
-					<span>Slow</span>
-					<span id="spin-speed-value" style="color:var(--ui-accent);">15 rad/s</span>
-					<span>Fast</span>
+
+				<!-- Max compression (bottom limit) -->
+				<div class="susp-row">
+					<div class="susp-label">Compress</div>
+					<input type="range" class="susp-param" id="susp-compress" min="0.05" max="0.5" step="0.01" value="0.3">
+					<div class="susp-val" id="susp-compress-val">0.30m</div>
+				</div>
+
+				<!-- Stiffness -->
+				<div class="susp-row">
+					<div class="susp-label">Stiffness</div>
+					<input type="range" class="susp-param" id="susp-stiffness" min="5" max="200" step="1" value="50">
+					<div class="susp-val" id="susp-stiffness-val">50</div>
+				</div>
+
+				<!-- Wheel spin test -->
+				<div class="susp-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--ui-border);">
+					<button id="btn-wheel-spin" class="editor-btn susp-spin-btn" title="Toggle wheel spin">Spin Wheels</button>
+					<span id="wheel-spin-status" class="susp-spin-status">Off</span>
+					<input type="range" class="susp-param susp-speed-slider" id="spin-speed-slider" min="1" max="80" step="1" value="15">
+					<div class="susp-val" id="spin-speed-value">15 rad/s</div>
 				</div>
 			</div>
 		</editor-panel>
