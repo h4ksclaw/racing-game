@@ -2,6 +2,7 @@
  * Editor UI — wires Lit components and editor modules together.
  */
 import type { DropZone } from "../ui/drop-zone.js";
+import "../ui/car-manager.js";
 import { bakeModel } from "./bake-export.js";
 import { clearGhost, updateDimensions } from "./dimension-overlay.js";
 import { API_BASE, getCurrentModel, handleSelectClick, init, loadGLB } from "./editor-main.js";
