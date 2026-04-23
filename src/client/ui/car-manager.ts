@@ -14,6 +14,7 @@ interface CarEntry {
 	s3Key?: string;
 	createdAt: string;
 	attribution: string | null;
+	carName: string | null;
 }
 
 export class CarManager extends LitElement {
@@ -252,7 +253,14 @@ export class CarManager extends LitElement {
 			const url = `${API_BASE}/cars/imported${this.query ? `?q=${encodeURIComponent(this.query)}` : ""}`;
 			const resp = await fetch(url);
 			if (!resp.ok) return;
-			this.cars = (await resp.json()) as CarEntry[];
+			const raw = (await resp.json()) as CarEntry[];
+			// Normalize field name typo (old server returned "attribuption")
+			this.cars = raw.map((c) => ({
+				...c,
+				attribution: ((c as unknown as Record<string, unknown>).attribution ??
+					(c as unknown as Record<string, unknown>).attribuption ??
+					null) as string | null,
+			}));
 		} catch {
 			this.cars = [];
 		} finally {
