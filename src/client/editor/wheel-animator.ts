@@ -40,6 +40,7 @@ export class WheelAnimator {
 
 	/** Initialize with the current model. Call after model load + marker placement. */
 	init(model: THREE.Group): void {
+		console.log("[WheelAnimator] init called");
 		this.model = model;
 		this.reset();
 		this.scanWheels();
@@ -61,6 +62,15 @@ export class WheelAnimator {
 
 		const wheelTypes = ["wheel_FL", "wheel_FR", "wheel_RL", "wheel_RR"];
 		const brakeTypes = ["brake_disc_FL", "brake_disc_FR", "brake_disc_RL", "brake_disc_RR"];
+
+		let totalMarked = 0;
+		this.model.traverse((child) => {
+			if (child.userData.markedAs) {
+				totalMarked++;
+				console.log(`[WheelAnimator] Found marked object: ${child.name} -> ${child.userData.markedAs}`);
+			}
+		});
+		console.log(`[WheelAnimator] Total marked objects in model: ${totalMarked}`);
 
 		for (let i = 0; i < 4; i++) {
 			const meshes: THREE.Object3D[] = [];
@@ -100,13 +110,21 @@ export class WheelAnimator {
 		}
 
 		// If we found wheels, enable the frame callback
-		if (this.wheelMeshes.some((m) => m.length > 0)) {
+		const wheelCount = this.wheelMeshes.reduce((sum, m) => sum + m.length, 0);
+		console.log(
+			`[WheelAnimator] scanWheels done: ${wheelCount} wheel meshes, ${this.brakeDiscs.flat().length} brake discs`,
+		);
+		if (wheelCount > 0) {
 			this.onFrame = () => this.tick(performance.now() / 1000);
+			console.log(`[WheelAnimator] Frame callback registered`);
+		} else {
+			console.warn(`[WheelAnimator] No wheel meshes found — spinner will do nothing. Mark wheels first, then re-init.`);
 		}
 	}
 
 	/** Toggle wheel spinning on/off. */
 	setSpinning(on: boolean): void {
+		console.log(`[WheelAnimator] setSpinning(${on})`);
 		this.state.spinning = on;
 		if (on && !this.running) {
 			this.lastTime = performance.now() / 1000;
@@ -122,6 +140,9 @@ export class WheelAnimator {
 	setSuspensionOffset(offset: number): void {
 		const delta = offset - this.state.suspOffset;
 		this.state.suspOffset = offset;
+		console.log(
+			`[WheelAnimator] setSuspensionOffset(${offset.toFixed(3)}), delta=${delta.toFixed(3)}, wheels=${this.wheelMeshes.flat().length}`,
+		);
 
 		// Immediately apply Y offset to all wheel meshes
 		for (let i = 0; i < 4; i++) {

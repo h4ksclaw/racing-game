@@ -37,9 +37,11 @@ const sidebarSubmitBtn = document.getElementById("btn-submit") as HTMLButtonElem
 const wheelAnimator = new WheelAnimator();
 
 function initWheelAnimator(model: import("three").Group | null): void {
+	console.log(`[Editor] initWheelAnimator called, model=${!!model}`);
 	if (model) {
 		wheelAnimator.init(model);
 		const cb = wheelAnimator.getFrameCallback();
+		console.log(`[Editor] wheelAnimator frameCallback=${!!cb}`);
 		if (cb) onRenderFrame(cb);
 	}
 }
@@ -366,6 +368,7 @@ const spinBtn = document.getElementById("btn-wheel-spin") as HTMLButtonElement |
 const spinStatus = document.getElementById("wheel-spin-status");
 const spinSpeedSlider = document.getElementById("spin-speed-slider") as HTMLInputElement | null;
 const spinSpeedValue = document.getElementById("spin-speed-value");
+console.log(`[Editor] spinBtn=${!!spinBtn}, spinSpeedSlider=${!!spinSpeedSlider}`);
 if (spinBtn) {
 	spinBtn.addEventListener("click", () => {
 		const spinning = !wheelAnimator.isSpinning();
