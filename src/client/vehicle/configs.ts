@@ -149,6 +149,8 @@ export interface CarModelSchema {
 	readonly wheelTemplateNode: string;
 	/** Material names in wheel GLB that identify brake discs (non-spinning). */
 	readonly brakeDiscMaterials: readonly string[];
+	/** Editor-only: stored marker positions for re-editing. Not used at runtime. */
+	readonly markerPositions?: Record<string, { x: number; y: number; z: number }>;
 }
 
 /** Default off-road behavior when CarConfig.offRoad is omitted. */

@@ -141,6 +141,12 @@ export function generateModelSchema(markers: MarkerData[]): CarModelSchema {
 	if (exL) escapePipes.left = "Exhaust_L";
 	if (exR) escapePipes.right = "Exhaust_R";
 
+	// Store all marker positions for editor re-load
+	const markerPositions: Record<string, { x: number; y: number; z: number }> = {};
+	for (const m of markers) {
+		markerPositions[m.type] = { x: m.position.x, y: m.position.y, z: m.position.z };
+	}
+
 	return {
 		wheelModelPath: "/assets/new-car/car.glb",
 		markers: {
@@ -148,6 +154,7 @@ export function generateModelSchema(markers: MarkerData[]): CarModelSchema {
 			wheels,
 			...(Object.keys(escapePipes).length > 0 ? { escapePipes } : {}),
 		},
+		markerPositions,
 		materials: {
 			headlight: "front_light_1",
 			taillight: "back_light",

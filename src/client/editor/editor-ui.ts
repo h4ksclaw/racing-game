@@ -67,6 +67,8 @@ function setupDropZone(dz: DropZone): void {
 
 /** Load a model, clear markers, and refresh the UI. */
 export async function loadModelAndReset(path: string, name: string, attribution?: string): Promise<void> {
+	currentConfigId = null; // reset — new model, not editing existing
+	if (sidebarSubmitBtn) sidebarSubmitBtn.textContent = "Bake & Submit";
 	setCarSelection({ modelPath: path, name });
 	if (statusLine) statusLine.message = `Loading ${name}...`;
 
@@ -180,7 +182,7 @@ function setSubmitState(state: SubmitState, extra?: string): void {
 	if (validEl) {
 		validEl.className = "export-validation";
 	}
-	if (state === "success" || state === "error") setTimeout(() => setSubmitState("idle"), 4000);
+	if (state === "error") setTimeout(() => setSubmitState("idle"), 4000);
 }
 
 sidebarSubmitBtn?.addEventListener("click", async () => {
@@ -381,12 +383,13 @@ async function loadExistingCars(): Promise<void> {
 					clearGhost();
 					updateDimensions();
 
-					// Restore markers from schema if available
-					if (data.schema?.markers) {
+					// Restore markers from schema markerPositions
+					if (data.schema?.markerPositions) {
 						const { placeMarker } = await import("./marker-tool.js");
-						for (const [type, pos] of Object.entries(data.schema.markers)) {
+						const { Vector3 } = await import("three");
+						for (const [type, pos] of Object.entries(data.schema.markerPositions)) {
 							const p = pos as { x: number; y: number; z: number };
-							placeMarker(type, new (await import("three")).Vector3(p.x, p.y, p.z));
+							placeMarker(type, new Vector3(p.x, p.y, p.z));
 						}
 					}
 
