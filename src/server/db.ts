@@ -748,6 +748,23 @@ export function getCarConfigsByAsset(assetId: number): CarConfigRow[] {
 	return getDb().prepare("SELECT * FROM car_configs WHERE asset_id = ?").all(assetId) as CarConfigRow[];
 }
 
+/** Delete a car config by ID. Returns the associated asset for S3 cleanup. */
+export function deleteCarConfig(configId: number): { s3Key: string | null; assetId: number } | null {
+	const db = getDb();
+	const config = getCarConfigById(configId);
+	if (!config) return null;
+	const asset = getAssetById(config.asset_id);
+	const s3Key = asset?.s3_key ?? null;
+	// Delete config row
+	db.prepare("DELETE FROM car_configs WHERE id = ?").run(configId);
+	// Also delete the asset if no other configs reference it
+	const remaining = getCarConfigsByAsset(config.asset_id);
+	if (remaining.length === 0 && config.asset_id) {
+		deleteAsset(config.asset_id);
+	}
+	return { s3Key, assetId: config.asset_id };
+}
+
 /** Full car import: creates asset + car_config + attribution rows in one transaction. */
 export function insertCarImport(data: {
 	s3Key: string;

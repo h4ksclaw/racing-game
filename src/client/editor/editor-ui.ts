@@ -264,7 +264,6 @@ sidebarSubmitBtn?.addEventListener("click", async () => {
 		setSubmitState("success");
 		if (sidebarSubmitBtn) sidebarSubmitBtn.textContent = "Bake & Overwrite";
 		if (statusLine) statusLine.message = `Imported: ${state.car.name} (config #${result.configId})`;
-		loadExistingCars(); // refresh the list
 	} catch (err) {
 		setSubmitState("error", `Submit failed: ${err}`);
 	}
@@ -318,137 +317,96 @@ if (suspSlider) {
 	});
 }
 
-// ── Load Existing Cars ──
-const existingCarsList = document.getElementById("existing-cars-list");
-async function loadExistingCars(): Promise<void> {
-	if (!existingCarsList) return;
+// ── Car Manager Modal ──
+async function loadCarForEditing(configId: number, s3Key: string, carName: string): Promise<void> {
+	if (!configId || !s3Key) return;
+
 	try {
-		const resp = await fetch(`${API_BASE}/cars/imported`);
-		if (!resp.ok) return;
-		const cars: {
-			id: number;
-			name: string;
-			status: string;
-			s3Key?: string;
-			createdAt: string;
-			attribution: string | null;
-		}[] = await resp.json();
-		if (cars.length === 0) {
-			existingCarsList.innerHTML = '<div style="color:var(--ui-text-dim);padding:4px 0;">No imported cars yet</div>';
-			return;
-		}
-		existingCarsList.innerHTML = cars
-			.map(
-				(c) =>
-					`<div class="existing-car-item" data-config-id="${c.id}" data-s3-key="${c.s3Key ?? ""}" style="padding:4px 6px;cursor:pointer;border-radius:3px;border:1px solid var(--ui-border);margin-bottom:3px;transition:background 0.1s;">
-						<div style="color:var(--ui-text-bright);font-weight:500;">${c.name}</div>
-						<div style="color:var(--ui-text-dim);font-size:9px;">#${c.id} · ${c.createdAt?.slice(0, 10)}${c.attribution ? ` · ${c.attribution.slice(0, 40)}` : ""}</div>
-					</div>`,
-			)
-			.join("");
+		const configResp = await fetch(`${API_BASE}/cars/imported/${configId}`);
+		if (!configResp.ok) throw new Error(`HTTP ${configResp.status}`);
+		const data = await configResp.json();
 
-		// Wire click handlers
-		existingCarsList.querySelectorAll(".existing-car-item").forEach((el) => {
-			const item = el as HTMLElement;
-			item.addEventListener("mouseenter", () => (item.style.background = "var(--ui-accent-ghost)"));
-			item.addEventListener("mouseleave", () => (item.style.background = ""));
-			el.addEventListener("click", async () => {
-				const configId = parseInt((el as HTMLElement).dataset.configId ?? "0");
-				const s3Key = (el as HTMLElement).dataset.s3Key ?? "";
-				if (!configId || !s3Key) return;
+		currentConfigId = configId;
 
-				// Load the car config for editing
-				try {
-					const configResp = await fetch(`${API_BASE}/cars/imported/${configId}`);
-					if (!configResp.ok) throw new Error(`HTTP ${configResp.status}`);
-					const data = await configResp.json();
-
-					currentConfigId = configId;
-					// Resolve display name: metadata > attribution > fallback
-					const carName =
-						data.carName || data.attribution?.replace(/^"|"$/g, "").split(" by ")[0]?.trim() || `Car #${configId}`;
-
-					setCarSelection({
-						modelPath: `/api/assets/s3/${s3Key}`,
-						name: carName,
-					});
-
-					if (statusLine) statusLine.message = `Loading ${carName} for editing (#${configId})...`;
-
-					// Load the GLB
-					await loadGLB(`/api/assets/s3/${s3Key}`);
-					const { clearMarkers } = await import("./marker-tool.js");
-					clearMarkers();
-					clearGhost();
-					updateDimensions();
-
-					// Restore markers from schema markerPositions, or reconstruct from config
-					if (data.schema?.markerPositions) {
-						const { placeMarker } = await import("./marker-tool.js");
-						const { Vector3 } = await import("three");
-						for (const [type, pos] of Object.entries(data.schema.markerPositions)) {
-							const p = pos as { x: number; y: number; z: number };
-							placeMarker(type, new Vector3(p.x, p.y, p.z));
-						}
-					} else if (data.config?.wheelPositions && data.schema?.markers) {
-						// Fallback: reconstruct from saved wheel positions + marker names
-						const { placeMarker } = await import("./marker-tool.js");
-						const { Vector3 } = await import("three");
-						const { markers: markerNames } = data.schema;
-						// PhysicsMarker at center of bounding box (estimated)
-						const wheelPos = data.config.wheelPositions as Array<{ x: number; y: number; z: number }>;
-						if (wheelPos.length >= 4) {
-							const cx = (wheelPos[0].x + wheelPos[1].x) / 2;
-							const cy = wheelPos[0].y;
-							const cz = (wheelPos[0].z + wheelPos[2].z) / 2;
-							placeMarker("PhysicsMarker", new Vector3(cx, cy, cz));
-						}
-						// Wheels from saved positions
-						const wheelNames = markerNames.wheels as string[];
-						wheelNames.forEach((name: string, i: number) => {
-							if (wheelPos[i]) {
-								placeMarker(name, new Vector3(wheelPos[i].x, wheelPos[i].y, wheelPos[i].z));
-							}
-						});
-						// Exhaust pipes
-						if (markerNames.escapePipes) {
-							const ep = markerNames.escapePipes as { left?: string; right?: string };
-							// Estimate exhaust positions: rear of car, below, offset left/right
-							const rearZ = Math.min(...wheelPos.map((w) => w.z));
-							const exY = wheelPos[0].y - 0.15;
-							if (ep.left) placeMarker(ep.left, new Vector3(0.25, exY, rearZ - 0.1));
-							if (ep.right) placeMarker(ep.right, new Vector3(-0.25, exY, rearZ - 0.1));
-						}
-					}
-
-					// Restore physics overrides if available
-					if (data.physicsOverrides) {
-						const { setPhysicsOverrides } = await import("./physics-editor.js");
-						setPhysicsOverrides(data.physicsOverrides);
-					}
-
-					// Restore attribution
-					if (data.attribution && sidebarAttribution) sidebarAttribution.value = data.attribution;
-
-					// Update submit button to show overwrite
-					if (sidebarSubmitBtn) sidebarSubmitBtn.textContent = "Bake & Overwrite";
-					if (statusLine) statusLine.message = `Editing: ${carName} (#${configId})`;
-
-					refreshUI();
-				} catch (err) {
-					console.error("[editor] Failed to load car for editing:", err);
-					if (statusLine) statusLine.message = `Failed to load car #${configId}`;
-				}
-			});
+		setCarSelection({
+			modelPath: `/api/assets/s3/${s3Key}`,
+			name: carName,
 		});
-	} catch {
-		existingCarsList.innerHTML = '<div style="color:var(--ui-text-dim);padding:4px 0;">Failed to load</div>';
+
+		if (statusLine) statusLine.message = `Loading ${carName} for editing (#${configId})...`;
+
+		// Load the GLB
+		await loadGLB(`/api/assets/s3/${s3Key}`);
+		const { clearMarkers } = await import("./marker-tool.js");
+		clearMarkers();
+		clearGhost();
+		updateDimensions();
+
+		// Restore markers from schema markerPositions, or reconstruct from config
+		if (data.schema?.markerPositions) {
+			const { placeMarker } = await import("./marker-tool.js");
+			const { Vector3 } = await import("three");
+			for (const [type, pos] of Object.entries(data.schema.markerPositions)) {
+				const p = pos as { x: number; y: number; z: number };
+				placeMarker(type, new Vector3(p.x, p.y, p.z));
+			}
+		} else if (data.config?.wheelPositions && data.schema?.markers) {
+			const { placeMarker } = await import("./marker-tool.js");
+			const { Vector3 } = await import("three");
+			const { markers: markerNames } = data.schema;
+			const wheelPos = data.config.wheelPositions as Array<{ x: number; y: number; z: number }>;
+			if (wheelPos.length >= 4) {
+				const cx = (wheelPos[0].x + wheelPos[1].x) / 2;
+				const cy = wheelPos[0].y;
+				const cz = (wheelPos[0].z + wheelPos[2].z) / 2;
+				placeMarker("PhysicsMarker", new Vector3(cx, cy, cz));
+			}
+			const wheelNames = markerNames.wheels as string[];
+			wheelNames.forEach((name: string, i: number) => {
+				if (wheelPos[i]) placeMarker(name, new Vector3(wheelPos[i].x, wheelPos[i].y, wheelPos[i].z));
+			});
+			if (markerNames.escapePipes) {
+				const ep = markerNames.escapePipes as { left?: string; right?: string };
+				const rearZ = Math.min(...wheelPos.map((w) => w.z));
+				const exY = wheelPos[0].y - 0.15;
+				if (ep.left) placeMarker(ep.left, new Vector3(0.25, exY, rearZ - 0.1));
+				if (ep.right) placeMarker(ep.right, new Vector3(-0.25, exY, rearZ - 0.1));
+			}
+		}
+
+		// Restore physics overrides if available
+		if (data.physicsOverrides) {
+			const { setPhysicsOverrides } = await import("./physics-editor.js");
+			setPhysicsOverrides(data.physicsOverrides);
+		}
+
+		// Restore attribution
+		if (data.attribution && sidebarAttribution) sidebarAttribution.value = data.attribution;
+
+		// Update submit button to show overwrite
+		if (sidebarSubmitBtn) sidebarSubmitBtn.textContent = "Bake & Overwrite";
+		if (statusLine) statusLine.message = `Editing: ${carName} (#${configId})`;
+
+		refreshUI();
+	} catch (err) {
+		console.error("[editor] Failed to load car for editing:", err);
+		if (statusLine) statusLine.message = `Failed to load car #${configId}`;
 	}
 }
-loadExistingCars();
 
-// Reload existing cars list after successful submit
-// ── Test in Practice ──
+const carManager = document.getElementById("car-manager");
+const manageCarsBtn = document.getElementById("btn-manage-cars");
+if (carManager && manageCarsBtn) {
+	manageCarsBtn.addEventListener("click", () => {
+		(carManager as any).show();
+	});
+	carManager.addEventListener("car-load", ((e: CustomEvent) => {
+		const { id, s3Key, name } = e.detail;
+		loadCarForEditing(id, s3Key, name);
+	}) as EventListener);
+}
+
+// ── Test in Practice ──// ── Test in Practice ──
 const testPracticeBtn = document.getElementById("btn-test-practice");
 testPracticeBtn?.addEventListener("click", () => {
 	// TODO: Admin-only guard — only allow testing for admin users

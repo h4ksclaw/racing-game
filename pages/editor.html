@@ -289,7 +289,7 @@
 		<div class="sidebar-header">Car <span class="accent">Editor</span></div>
 
 		<editor-panel title="Open Existing">
-			<div id="existing-cars-list" style="max-height: 100px; overflow-y: auto; font-size: 10px;"></div>
+			<button class="btn-secondary" id="btn-manage-cars" style="width:100%;">Manage Saved Cars</button>
 		</editor-panel>
 
 		<editor-panel title="Load Model">
@@ -427,6 +427,8 @@
 	<status-line id="status-line" message=""></status></status-line>
 
 	<div id="viewport"></div>
+
+	<car-manager id="car-manager"></car-manager>
 
 	<script type="module" src="/src/client/editor/editor-ui.ts"></script>
 </body>

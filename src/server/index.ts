@@ -17,7 +17,7 @@ import express from "express";
 import multer from "multer";
 import { generateTrack } from "../shared/track.ts";
 import { createUploadMiddleware, processUploadedFile, promoteAsset, serveAsset } from "./assets.ts";
-import { _getDbForTesting, insertCarImport } from "./db.js";
+import { _getDbForTesting, deleteCarConfig, insertCarImport } from "./db.js";
 import {
 	deleteAsset,
 	deleteAttribution,
@@ -474,8 +474,20 @@ app.post("/api/cars/import", (req, res) => {
 // TODO: Admin-only guard — restrict these endpoints to authenticated admin users
 
 /** List all imported car configs (for editor re-open). */
-app.get("/api/cars/imported", (_req, res) => {
-	const configs = getCarConfigs();
+app.get("/api/cars/imported", (req, res) => {
+	let configs = getCarConfigs();
+	// Server-side search filter
+	const q = (req.query.q as string)?.trim().toLowerCase();
+	if (q) {
+		configs = configs.filter((c) => {
+			const meta = c.car_metadata_id ? getCarById(c.car_metadata_id) : null;
+			const asset = getAssetById(c.asset_id);
+			const haystack = [meta ? `${meta.make} ${meta.model}` : "", c.attribution ?? "", asset?.original_name ?? ""]
+				.join(" ")
+				.toLowerCase();
+			return haystack.includes(q);
+		});
+	}
 	const enriched = configs.map((c) => {
 		const asset = getAssetById(c.asset_id);
 		let meta = null;
@@ -504,6 +516,22 @@ app.get("/api/cars/imported", (_req, res) => {
 		};
 	});
 	res.json(enriched);
+});
+
+/** Delete a car config (and its S3 object if no other configs share the asset). */
+app.delete("/api/cars/imported/:id", (req, res) => {
+	const result = deleteCarConfig(Number(req.params.id));
+	if (!result) {
+		res.status(404).json({ error: "Car config not found" });
+		return;
+	}
+	// Fire-and-forget S3 cleanup
+	if (result.s3Key) {
+		import("./s3.js")
+			.then(({ deleteFromS3 }) => deleteFromS3(result.s3Key!))
+			.catch((err) => console.error(`[s3] Failed to delete ${result.s3Key}:`, err));
+	}
+	res.json({ status: "deleted", id: Number(req.params.id) });
 });
 
 /** Get a car config for editing (returns full schema + physics overrides). */
