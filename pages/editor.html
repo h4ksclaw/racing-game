@@ -61,6 +61,17 @@
 		}
 		#sidebar::-webkit-scrollbar { width: 3px; }
 		#sidebar::-webkit-scrollbar-thumb { background: var(--ui-accent-ghost); border-radius: 2px; }
+		.editor-btn {
+			background: var(--ui-accent-ghost);
+			border: 1px solid var(--ui-border);
+			color: var(--ui-text);
+			border-radius: 4px;
+			cursor: pointer;
+			font-family: var(--ui-sans);
+			transition: all 0.15s;
+		}
+		.editor-btn:hover { background: var(--ui-accent); color: var(--ui-text-bright); }
+		.editor-btn.active { background: var(--ui-accent); color: var(--ui-text-bright); border-color: var(--ui-accent); }
 
 		/* Sidebar header */
 		.sidebar-header {
@@ -346,6 +357,19 @@
 					<span>Compress</span>
 					<span id="suspension-value" style="color:var(--ui-accent);">0.00m</span>
 					<span>Extend</span>
+				</div>
+			</div>
+			<!-- Wheel spin test -->
+			<div id="wheel-spin-section" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--ui-border);">
+				<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+					<button id="btn-wheel-spin" class="editor-btn" style="flex:0;padding:4px 10px;font-size:10px;" title="Toggle wheel spin">Spin Wheels</button>
+					<span id="wheel-spin-status" style="font-size:10px;color:var(--ui-text-dim);">Off</span>
+				</div>
+				<input type="range" id="spin-speed-slider" min="1" max="80" step="1" value="15" style="width:100%;accent-color:var(--ui-accent);">
+				<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--ui-text);margin-top:4px;">
+					<span>Slow</span>
+					<span id="spin-speed-value" style="color:var(--ui-accent);">15 rad/s</span>
+					<span>Fast</span>
 				</div>
 			</div>
 		</editor-panel>

@@ -271,6 +271,16 @@ export function handleSelectClick(event: MouseEvent): boolean {
 	return true;
 }
 
+let _renderCallbacks: Array<() => void> = [];
+
+/** Register a callback to run every frame in the render loop. */
+export function onRenderFrame(cb: () => void): () => void {
+	_renderCallbacks.push(cb);
+	return () => {
+		_renderCallbacks = _renderCallbacks.filter((f) => f !== cb);
+	};
+}
+
 export function init(container: HTMLElement) {
 	scene = new THREE.Scene();
 	scene.background = new THREE.Color(0x11131c);
@@ -387,6 +397,7 @@ export function init(container: HTMLElement) {
 	// Render loop
 	(function animate() {
 		requestAnimationFrame(animate);
+		for (const cb of _renderCallbacks) cb();
 		orbitControls.update();
 		renderer.render(scene, camera);
 	})();

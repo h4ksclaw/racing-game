@@ -5,7 +5,7 @@ import type { DropZone } from "../ui/drop-zone.js";
 import "../ui/car-manager.js";
 import { bakeModel } from "./bake-export.js";
 import { clearGhost, updateDimensions } from "./dimension-overlay.js";
-import { API_BASE, getCurrentModel, handleSelectClick, init, loadGLB } from "./editor-main.js";
+import { API_BASE, getCurrentModel, handleSelectClick, init, loadGLB, onRenderFrame } from "./editor-main.js";
 import { getEditorState, setCarSelection } from "./editor-state.js";
 import { generateExport, validateMarkers } from "./export.js";
 import { initImportFlow } from "./import-flow.js";
@@ -15,6 +15,7 @@ import { getPhysicsOverrides } from "./physics-editor.js";
 import type { PhysicsModal } from "./physics-modal.js";
 import { getCurrentScale, initScaleControls, setScaleFromCar } from "./scale-controls.js";
 import { collapseSketchfabPanel, initSketchfabPanel, loadPendingAssets } from "./sketchfab-panel.js";
+import { WheelAnimator } from "./wheel-animator.js";
 import { initExportWiring } from "./wire-export.js";
 import { initKeyboardWiring } from "./wire-keyboard.js";
 import { initMarkerWiring } from "./wire-markers.js";
@@ -31,6 +32,22 @@ const validationEl = document.querySelector("validation-display");
 const statusLine = document.querySelector("status-line");
 const sidebarAttribution = document.getElementById("sidebar-attribution") as HTMLTextAreaElement | null;
 const sidebarSubmitBtn = document.getElementById("btn-submit") as HTMLButtonElement | null;
+
+// ── Wheel Animator ──
+const wheelAnimator = new WheelAnimator();
+
+function initWheelAnimator(model: import("three").Group | null): void {
+	if (model) {
+		wheelAnimator.init(model);
+		const cb = wheelAnimator.getFrameCallback();
+		if (cb) onRenderFrame(cb);
+	}
+}
+
+/** Get the wheel animator for other modules (e.g. toolbar). */
+export function getWheelAnimator(): WheelAnimator {
+	return wheelAnimator;
+}
 
 // ── Init scene ──
 if (!viewport || !dropZone) {
@@ -70,6 +87,14 @@ function setupDropZone(dz: DropZone): void {
 export async function loadModelAndReset(path: string, name: string, attribution?: string): Promise<void> {
 	currentConfigId = null; // reset — new model, not editing existing
 	if (sidebarSubmitBtn) sidebarSubmitBtn.textContent = "Bake & Submit";
+	// Reset wheel animator state
+	wheelAnimator.setSpinning(false);
+	if (spinBtn) {
+		spinBtn.classList.remove("active");
+	}
+	if (spinStatus) spinStatus.textContent = "Off";
+	if (suspSlider) suspSlider.value = "0";
+	if (suspValue) suspValue.textContent = "0.00m";
 	setCarSelection({ modelPath: path, name });
 	if (statusLine) statusLine.message = `Loading ${name}...`;
 
@@ -92,6 +117,9 @@ export async function loadModelAndReset(path: string, name: string, attribution?
 	if (attribution && sidebarAttribution) {
 		sidebarAttribution.value = attribution;
 	}
+
+	// Initialize wheel animator
+	initWheelAnimator(model);
 
 	if (statusLine) statusLine.message = `Loaded: ${name}`;
 
@@ -298,25 +326,59 @@ let currentConfigId: number | null = null;
 // ── Suspension Test Slider ──
 const suspSlider = document.getElementById("suspension-slider") as HTMLInputElement | null;
 const suspValue = document.getElementById("suspension-value");
-let lastSuspOffset = 0;
 if (suspSlider) {
+	// Set range from physics overrides (maxSuspensionTravel)
+	const physics = getPhysicsOverrides();
+	const maxTravel = physics.maxSuspensionTravel ?? 0.3;
+	suspSlider.min = `${-maxTravel}`;
+	suspSlider.max = `${maxTravel}`;
+	suspSlider.value = "0";
+
 	suspSlider.addEventListener("input", () => {
 		const newOffset = parseFloat(suspSlider.value);
-		const delta = newOffset - lastSuspOffset;
-		lastSuspOffset = newOffset;
-		const model = getCurrentModel();
-		import("./marker-tool.js").then(({ applySuspensionOffset }) => {
-			applySuspensionOffset(delta, model ?? undefined);
-		});
+		wheelAnimator.setSuspensionOffset(newOffset);
 		if (suspValue) suspValue.textContent = `${newOffset >= 0 ? "+" : ""}${newOffset.toFixed(2)}m`;
 	});
 	suspSlider.addEventListener("dblclick", () => {
 		suspSlider.value = "0";
-		const delta = -lastSuspOffset;
-		lastSuspOffset = 0;
+		wheelAnimator.setSuspensionOffset(0);
 		if (suspValue) suspValue.textContent = "0.00m";
-		const model = getCurrentModel();
-		import("./marker-tool.js").then(({ applySuspensionOffset }) => applySuspensionOffset(delta, model ?? undefined));
+	});
+
+	// Update range when physics overrides change
+	const physicsModal = document.querySelector("physics-modal");
+	if (physicsModal) {
+		physicsModal.addEventListener("physics-changed", () => {
+			const p = getPhysicsOverrides();
+			const mt = p.maxSuspensionTravel ?? 0.3;
+			suspSlider.min = `${-mt}`;
+			suspSlider.max = `${mt}`;
+			// Clamp current value
+			const cur = parseFloat(suspSlider.value);
+			if (cur < -mt) suspSlider.value = `${-mt}`;
+			else if (cur > mt) suspSlider.value = `${mt}`;
+		});
+	}
+}
+
+// ── Wheel Spin Test ──
+const spinBtn = document.getElementById("btn-wheel-spin") as HTMLButtonElement | null;
+const spinStatus = document.getElementById("wheel-spin-status");
+const spinSpeedSlider = document.getElementById("spin-speed-slider") as HTMLInputElement | null;
+const spinSpeedValue = document.getElementById("spin-speed-value");
+if (spinBtn) {
+	spinBtn.addEventListener("click", () => {
+		const spinning = !wheelAnimator.isSpinning();
+		wheelAnimator.setSpinning(spinning);
+		if (spinStatus) spinStatus.textContent = spinning ? "Spinning" : "Off";
+		spinBtn.classList.toggle("active", spinning);
+	});
+}
+if (spinSpeedSlider) {
+	spinSpeedSlider.addEventListener("input", () => {
+		const speed = parseFloat(spinSpeedSlider.value);
+		wheelAnimator.setSpinSpeed(speed);
+		if (spinSpeedValue) spinSpeedValue.textContent = `${speed.toFixed(0)} rad/s`;
 	});
 }
 
