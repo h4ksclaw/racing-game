@@ -286,6 +286,24 @@ app.get("/api/assets/pending", (_req, res) => {
 	}
 });
 
+/** Serve a baked car GLB from S3 (or local fallback). MUST be before /:id wildcard. */
+app.get("/api/assets/s3/{*key}", async (req: express.Request, res: express.Response) => {
+	const key = (Array.isArray(req.params.key) ? req.params.key.join("/") : req.params.key) as string;
+	try {
+		const { getFromS3 } = await import("./s3.js");
+		const buffer = await getFromS3(key);
+		res.setHeader("Content-Type", "model/gltf-binary");
+		res.setHeader("Cache-Control", "public, max-age=31536000");
+		res.send(buffer);
+	} catch (err) {
+		console.error(`[s3] Failed to fetch ${key}:`, err);
+		res.status(404).json({ error: `S3 object not found: ${key}` });
+	}
+});
+
+/** Serve asset file by hash. */
+app.get("/api/assets/file/:hash", serveAsset);
+
 /** Get single asset by ID. */
 app.get("/api/assets/:id", (req, res) => {
 	const asset = getAssetById(Number(req.params.id));
@@ -320,23 +338,6 @@ app.delete("/api/assets/:hash", (req, res) => {
 		res.json({ status: "deleted", hash });
 	} catch (err) {
 		res.status(500).json({ error: String(err) });
-	}
-});
-
-/** Serve asset file by hash. */
-app.get("/api/assets/file/:hash", serveAsset);
-
-/** Serve a baked car GLB from S3 (or local fallback). */
-app.get("/api/assets/s3/:key", async (req: express.Request, res: express.Response) => {
-	const key = req.params.key as string;
-	try {
-		const { getFromS3 } = await import("./s3.js");
-		const buffer = await getFromS3(key);
-		res.setHeader("Content-Type", "model/gltf-binary");
-		res.setHeader("Cache-Control", "public, max-age=31536000");
-		res.send(buffer);
-	} catch (err) {
-		res.status(404).json({ error: `S3 object not found: ${key}` });
 	}
 });
 

@@ -290,11 +290,6 @@ function refreshUI() {
 	}
 	if (validationEl) validationEl.issues = validateMarkers(getMarkers());
 	refreshObjectPanel(getCurrentModel());
-
-	// Show/hide suspension section based on wheel markers
-	const wheelCount = getMarkers().filter((m) => m.type.startsWith("Wheel_") && m.enabled).length;
-	const suspSection = document.getElementById("suspension-section");
-	if (suspSection) suspSection.style.display = wheelCount >= 1 ? "block" : "none";
 }
 
 // ── Current car config ID (for re-submit overwrite) ──
