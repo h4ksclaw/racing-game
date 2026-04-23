@@ -5,7 +5,7 @@ import type { DropZone } from "../ui/drop-zone.js";
 import "../ui/car-manager.js";
 import { bakeModel } from "./bake-export.js";
 import { clearGhost, updateDimensions } from "./dimension-overlay.js";
-import { API_BASE, getCurrentModel, getScene, handleSelectClick, init, loadGLB, onRenderFrame } from "./editor-main.js";
+import { API_BASE, getCurrentModel, handleSelectClick, init, loadGLB, onRenderFrame } from "./editor-main.js";
 import { getEditorState, setCarSelection } from "./editor-state.js";
 import { generateExport, validateMarkers } from "./export.js";
 import { initImportFlow } from "./import-flow.js";
@@ -52,7 +52,7 @@ function initWheelAnimator(model: import("three").Group | null): void {
 		_animatorFrameUnsub = null;
 	}
 	if (model) {
-		wheelAnimator.init(model, getScene());
+		wheelAnimator.init(model);
 		const cb = wheelAnimator.getFrameCallback();
 		console.log(`[Editor] wheelAnimator frameCallback=${!!cb}`);
 		if (cb) _animatorFrameUnsub = onRenderFrame(cb);
