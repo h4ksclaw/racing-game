@@ -1,9 +1,9 @@
 /**
- * WheelAnimator — drives wheel spin + suspension offset in the editor,
- * reusing the same pivot-based math as VehicleRenderer.sync() for visual accuracy.
+ * WheelAnimator — drives wheel spin + suspension offset in the editor.
  *
  * Handles GLB models where meshes have baked geometry (position [0,0,0] but vertices
- * at world positions) by centering geometry before reparenting under pivot groups.
+ * at world positions) by computing per-mesh position offsets to align geometry centers
+ * with pivot origins — no geometry mutation needed.
  */
 import * as THREE from "three";
 
@@ -29,8 +29,8 @@ interface BrakeDiscData {
 
 interface WheelPivotData {
 	pivot: THREE.Group;
-	/** Original parents of meshes (for cleanup/reparenting) */
-	originalParents: { mesh: THREE.Object3D; parent: THREE.Object3D; geoTranslate: THREE.Vector3 }[];
+	/** For cleanup: restore each mesh to its original parent + position */
+	originalParents: { mesh: THREE.Object3D; parent: THREE.Object3D; originalPos: THREE.Vector3 }[];
 	brakeDiscs: BrakeDiscData[];
 	baseY: number;
 }
@@ -54,7 +54,7 @@ export class WheelAnimator {
 
 	/** Initialize with the current model. Call after model load + marker placement. */
 	init(model: THREE.Group): void {
-		console.log("[WheelAnimator v3] init called");
+		console.log("[WheelAnimator v4] init called");
 		this.cleanup();
 		this.model = model;
 		this.scanWheels();
@@ -65,16 +65,10 @@ export class WheelAnimator {
 		for (let i = 0; i < 4; i++) {
 			const pd = this.pivots[i];
 			if (!pd) continue;
-			for (const { mesh, parent, geoTranslate } of pd.originalParents) {
-				// Reverse the geometry translation
-				const g = (mesh as THREE.Mesh).geometry;
-				g.translate(-geoTranslate.x, -geoTranslate.y, -geoTranslate.z);
-
-				// Remove from pivot, add back to original parent
+			for (const { mesh, parent, originalPos } of pd.originalParents) {
 				pd.pivot.remove(mesh);
 				parent.add(mesh);
-				// Position was set to [0,0,0] during init, restore it
-				mesh.position.set(0, 0, 0);
+				mesh.position.copy(originalPos);
 			}
 			pd.pivot.parent?.remove(pd.pivot);
 			this.pivots[i] = null;
@@ -84,7 +78,8 @@ export class WheelAnimator {
 
 	/**
 	 * Scan the model for marked wheel meshes and brake discs.
-	 * Creates pivot groups and reparents meshes with centered geometry.
+	 * Creates pivot groups at wheel centers and offsets mesh positions so
+	 * geometry centers align with pivot origins — no geometry mutation.
 	 */
 	private scanWheels(): void {
 		if (!this.model) return;
@@ -124,8 +119,9 @@ export class WheelAnimator {
 			if (meshes.length === 0) continue;
 			wheelCount += meshes.length;
 
-			// Compute wheel center from actual geometry bounding boxes
-			// (handles models where meshes have position [0,0,0] but vertices baked at world positions)
+			// Compute wheel center from actual geometry bounding boxes.
+			// Box3.setFromObject accounts for the full transform chain (model scale, position, etc.)
+			// so this gives us the true world-space center of each mesh's vertices.
 			const center = new THREE.Vector3();
 			const allMeshes = [...meshes, ...discs.map((d) => d.mesh)];
 			for (const m of allMeshes) {
@@ -136,60 +132,88 @@ export class WheelAnimator {
 			}
 			center.divideScalar(allMeshes.length);
 
-			// Convert to model-local space
+			// Convert wheel center to model-local space (the pivot will be a child of model)
+			this.model.updateMatrixWorld(true);
 			const localCenter = this.model.worldToLocal(center.clone());
 
-			// Detect axle direction from wheel bounding box (shortest dimension = axle axis)
+			// Log wheel bbox dimensions
 			const wheelBox = new THREE.Box3();
 			for (const m of meshes) wheelBox.union(new THREE.Box3().setFromObject(m));
 			const wheelSize = new THREE.Vector3();
 			wheelBox.getSize(wheelSize);
+
+			// Detect axle axis: shortest dimension of wheel bbox
+			let axleAxisName = "X";
+			if (wheelSize.y < wheelSize.x && wheelSize.y < wheelSize.z) axleAxisName = "Y";
+			else if (wheelSize.z < wheelSize.x && wheelSize.z < wheelSize.y) axleAxisName = "Z";
+
 			console.log(
-				`[WheelAnimator] Wheel ${i} bbox size: (${wheelSize.x.toFixed(3)}, ${wheelSize.y.toFixed(3)}, ${wheelSize.z.toFixed(3)})`,
+				`[WheelAnimator] Wheel ${i}: center_world=(${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)}) ` +
+					`local=(${localCenter.x.toFixed(3)}, ${localCenter.y.toFixed(3)}, ${localCenter.z.toFixed(3)}) ` +
+					`bbox=(${wheelSize.x.toFixed(3)}, ${wheelSize.y.toFixed(3)}, ${wheelSize.z.toFixed(3)}) axle=${axleAxisName}`,
 			);
 
-			// The axle is the shortest dimension — find which axis
-			const axleAxis = new THREE.Vector3(1, 0, 0); // default X
-			if (wheelSize.y < wheelSize.x && wheelSize.y < wheelSize.z) axleAxis.set(0, 1, 0);
-			else if (wheelSize.z < wheelSize.x && wheelSize.z < wheelSize.y) axleAxis.set(0, 0, 1);
-			console.log(`[WheelAnimator] Wheel ${i} axle axis: (${axleAxis.x}, ${axleAxis.y}, ${axleAxis.z})`);
-
-			// Create pivot at wheel center
+			// Create pivot group at wheel center (model-local space)
 			const pivot = new THREE.Group();
 			pivot.name = `editor_wheel_pivot_${i}`;
 			pivot.position.copy(localCenter);
 			this.model.add(pivot);
 
-			// Reparent meshes: center geometry at origin, set position to offset from pivot
-			const originalParents: { mesh: THREE.Object3D; parent: THREE.Object3D; geoTranslate: THREE.Vector3 }[] = [];
+			// Reparent meshes under pivot, adjusting position so geometry stays in place.
+			// Key insight: mesh.position is [0,0,0] but vertices are at some offset.
+			// After reparenting, mesh.position must be set so that:
+			//   pivot.worldPosition + model.scale * mesh.position = original worldPosition
+			// Since geometry is at (meshWorldPos + vertexOffset), and pivot is at (meshWorldPos),
+			// we need mesh.position such that the vertex center lands at pivot origin.
+			//   model.position + model.scale * (pivot.position + mesh.position) + vertexOffset = original
+			//   pivot.position + mesh.position = 0  (in model-local space)
+			//   mesh.position = -pivot.position... NO, that's wrong for multiple meshes at different positions.
+			//
+			// Actually: each mesh's vertices render at meshWorldPos (which is model.position since mesh.position=0).
+			// After reparenting under pivot at localCenter:
+			//   new meshWorldPos = model.position + model.scale * (localCenter + mesh.position)
+			// We want this to equal the original model.position (so vertices don't move):
+			//   model.position + scale * (localCenter + mesh.position) = model.position
+			//   localCenter + mesh.position = 0
+			//   mesh.position = -localCenter
+			// But this only works if ALL meshes for this wheel had the same bbox center (localCenter).
+			// For different meshes (tire + rim at slightly different positions), we compute per-mesh offset.
+
+			const originalParents: { mesh: THREE.Object3D; parent: THREE.Object3D; originalPos: THREE.Vector3 }[] = [];
 
 			const reparentMesh = (mesh: THREE.Mesh) => {
 				const parent = mesh.parent!;
+				const originalPos = mesh.position.clone();
 
-				// Get the mesh's bounding box center in world space
+				// Get this specific mesh's bbox center in model-local space
 				const box = new THREE.Box3().setFromObject(mesh);
-				const bc = new THREE.Vector3();
-				box.getCenter(bc);
-				const localBc = this.model!.worldToLocal(bc.clone());
+				const meshWorldCenter = new THREE.Vector3();
+				box.getCenter(meshWorldCenter);
+				const meshLocalCenter = this.model!.worldToLocal(meshWorldCenter.clone());
 
-				// Translate geometry so center is at local origin
-				const geoTranslate = localBc.clone();
-				(mesh as THREE.Mesh).geometry.translate(geoTranslate.x, geoTranslate.y, geoTranslate.z);
+				// After reparenting under pivot, we need:
+				//   model.scale * (localCenter + mesh.position) = meshLocalCenter
+				//   mesh.position = meshLocalCenter/scale - localCenter
+				// But since scale is uniform and already baked into Box3 via setFromObject...
+				// Actually Box3.setFromObject gives world-space coords that include scale.
+				// worldToLocal reverses scale. So meshLocalCenter is already in unscaled model space.
+				// The pivot is also in unscaled model space.
+				// The mesh position under pivot is also in unscaled model space.
+				// When rendering: worldPos = model.position + model.scale * (pivot.position + mesh.position)
+				// We want: model.position + model.scale * (pivot.position + mesh.position) = model.position + model.scale * meshLocalCenter
+				// So: pivot.position + mesh.position = meshLocalCenter
+				// mesh.position = meshLocalCenter - pivot.position = meshLocalCenter - localCenter
+				mesh.position.copy(meshLocalCenter).sub(localCenter);
 
-				originalParents.push({ mesh, parent, geoTranslate });
-
-				// Reparent under pivot at [0,0,0] (geometry is now centered)
+				originalParents.push({ mesh, parent, originalPos });
 				parent.remove(mesh);
 				pivot.add(mesh);
-				mesh.position.set(0, 0, 0);
 			};
 
 			for (const m of meshes) reparentMesh(m);
 			for (const d of discs) {
 				reparentMesh(d.mesh);
-				// Recompute baseQuat and axleDir after reparenting
 				d.baseQuat = d.mesh.quaternion.clone();
-				// Recompute axle direction: project world X into disc's local frame
 				const wq = new THREE.Quaternion();
 				d.mesh.getWorldQuaternion(wq);
 				d.axleDir = new THREE.Vector3(1, 0, 0).applyQuaternion(wq.clone().invert());
@@ -202,9 +226,7 @@ export class WheelAnimator {
 				baseY: localCenter.y,
 			};
 
-			console.log(
-				`[WheelAnimator] Wheel ${i}: ${meshes.length} meshes, ${discs.length} discs, pivot=(${localCenter.x.toFixed(3)}, ${localCenter.y.toFixed(3)}, ${localCenter.z.toFixed(3)})`,
-			);
+			console.log(`[WheelAnimator] Wheel ${i}: ${meshes.length} meshes, ${discs.length} discs, pivot set up`);
 		}
 
 		console.log(`[WheelAnimator] scanWheels done: ${wheelCount} wheel meshes total`);
@@ -232,9 +254,7 @@ export class WheelAnimator {
 
 	/** Set suspension offset (meters). Negative = compress, positive = extend. */
 	setSuspensionOffset(offset: number): void {
-		const delta = offset - this.state.suspOffset;
 		this.state.suspOffset = offset;
-		console.log(`[WheelAnimator] setSuspensionOffset(${offset.toFixed(3)}), delta=${delta.toFixed(3)}`);
 
 		for (let i = 0; i < 4; i++) {
 			const pd = this.pivots[i];
@@ -259,8 +279,8 @@ export class WheelAnimator {
 	}
 
 	/**
-	 * Per-frame update — same math as VehicleRenderer.sync().
-	 * Rotates pivot around detected axle axis using quaternion.
+	 * Per-frame update — rotates pivot around X axis (axle direction for most car models).
+	 * Counter-rotates brake discs so they stay visually fixed.
 	 */
 	private tick(now: number): void {
 		if (!this.state.spinning) return;
@@ -274,10 +294,8 @@ export class WheelAnimator {
 
 			this.state.spinAngles[i] += this.state.spinSpeed * dt;
 
-			// Detect axle axis from the first wheel's bounding box
-			// (cached would be better but this runs once per frame, 4 wheels — cheap)
-			// Use X axis as default — works for most car models where X = axle
-			// VehicleRenderer uses Euler(spinX, steerY, 0, "YXZ") which assumes X = axle
+			// Rotate pivot around X axis (standard axle direction for car models)
+			// Same as VehicleRenderer: Euler(spinX, steerY, 0, "YXZ")
 			const spinQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), this.state.spinAngles[i]);
 			pd.pivot.quaternion.copy(spinQuat);
 
