@@ -258,8 +258,11 @@ sidebarSubmitBtn?.addEventListener("click", async () => {
 			throw new Error(errMsg);
 		}
 		const result = await importResp.json();
+		currentConfigId = result.configId;
 		setSubmitState("success");
+		if (sidebarSubmitBtn) sidebarSubmitBtn.textContent = "Bake & Overwrite";
 		if (statusLine) statusLine.message = `Imported: ${state.car.name} (config #${result.configId})`;
+		loadExistingCars(); // refresh the list
 	} catch (err) {
 		setSubmitState("error", `Submit failed: ${err}`);
 	}
@@ -285,4 +288,143 @@ function refreshUI() {
 	}
 	if (validationEl) validationEl.issues = validateMarkers(getMarkers());
 	refreshObjectPanel(getCurrentModel());
+
+	// Show/hide suspension section based on wheel markers
+	const wheelCount = getMarkers().filter((m) => m.type.startsWith("Wheel_") && m.enabled).length;
+	const suspSection = document.getElementById("suspension-section");
+	if (suspSection) suspSection.style.display = wheelCount >= 1 ? "block" : "none";
 }
+
+// ── Current car config ID (for re-submit overwrite) ──
+let currentConfigId: number | null = null;
+
+// ── Suspension Test Slider ──
+const suspSlider = document.getElementById("suspension-slider") as HTMLInputElement | null;
+const suspValue = document.getElementById("suspension-value");
+let lastSuspOffset = 0;
+if (suspSlider) {
+	suspSlider.addEventListener("input", () => {
+		const newOffset = parseFloat(suspSlider.value);
+		const delta = newOffset - lastSuspOffset;
+		lastSuspOffset = newOffset;
+		import("./marker-tool.js").then(({ applySuspensionOffset }) => {
+			applySuspensionOffset(delta);
+		});
+		if (suspValue) suspValue.textContent = `${newOffset >= 0 ? "+" : ""}${newOffset.toFixed(2)}m`;
+	});
+	suspSlider.addEventListener("dblclick", () => {
+		suspSlider.value = "0";
+		const delta = -lastSuspOffset;
+		lastSuspOffset = 0;
+		if (suspValue) suspValue.textContent = "0.00m";
+		import("./marker-tool.js").then(({ applySuspensionOffset }) => applySuspensionOffset(delta));
+	});
+}
+
+// ── Load Existing Cars ──
+const existingCarsList = document.getElementById("existing-cars-list");
+async function loadExistingCars(): Promise<void> {
+	if (!existingCarsList) return;
+	try {
+		const resp = await fetch(`${API_BASE}/cars/imported`);
+		if (!resp.ok) return;
+		const cars: {
+			id: number;
+			name: string;
+			status: string;
+			s3Key?: string;
+			createdAt: string;
+			attribution: string | null;
+		}[] = await resp.json();
+		if (cars.length === 0) {
+			existingCarsList.innerHTML = '<div style="color:var(--ui-text-dim);padding:4px 0;">No imported cars yet</div>';
+			return;
+		}
+		existingCarsList.innerHTML = cars
+			.map(
+				(c) =>
+					`<div class="existing-car-item" data-config-id="${c.id}" data-s3-key="${c.s3Key ?? ""}" style="padding:4px 6px;cursor:pointer;border-radius:3px;border:1px solid var(--ui-border);margin-bottom:3px;transition:background 0.1s;">
+						<div style="color:var(--ui-text-bright);font-weight:500;">${c.name}</div>
+						<div style="color:var(--ui-text-dim);font-size:9px;">#${c.id} · ${c.createdAt?.slice(0, 10)}${c.attribution ? ` · ${c.attribution.slice(0, 40)}` : ""}</div>
+					</div>`,
+			)
+			.join("");
+
+		// Wire click handlers
+		existingCarsList.querySelectorAll(".existing-car-item").forEach((el) => {
+			const item = el as HTMLElement;
+			item.addEventListener("mouseenter", () => (item.style.background = "var(--ui-accent-ghost)"));
+			item.addEventListener("mouseleave", () => (item.style.background = ""));
+			el.addEventListener("click", async () => {
+				const configId = parseInt((el as HTMLElement).dataset.configId ?? "0");
+				const s3Key = (el as HTMLElement).dataset.s3Key ?? "";
+				if (!configId || !s3Key) return;
+
+				// Load the car config for editing
+				try {
+					const configResp = await fetch(`${API_BASE}/cars/imported/${configId}`);
+					if (!configResp.ok) throw new Error(`HTTP ${configResp.status}`);
+					const data = await configResp.json();
+
+					currentConfigId = configId;
+					setCarSelection({
+						modelPath: `/api/assets/s3/${s3Key}`,
+						name: data.carName || data.config?.name || `Car #${configId}`,
+					});
+
+					if (statusLine) statusLine.message = `Loading ${data.carName || "car"} for editing (#${configId})...`;
+
+					// Load the GLB
+					await loadGLB(`/api/assets/s3/${s3Key}`);
+					const { clearMarkers } = await import("./marker-tool.js");
+					clearMarkers();
+					clearGhost();
+					updateDimensions();
+
+					// Restore markers from schema if available
+					if (data.schema?.markers) {
+						const { placeMarker } = await import("./marker-tool.js");
+						for (const [type, pos] of Object.entries(data.schema.markers)) {
+							const p = pos as { x: number; y: number; z: number };
+							placeMarker(type, new (await import("three")).Vector3(p.x, p.y, p.z));
+						}
+					}
+
+					// Restore physics overrides if available
+					if (data.physicsOverrides) {
+						const { setPhysicsOverrides } = await import("./physics-editor.js");
+						setPhysicsOverrides(data.physicsOverrides);
+					}
+
+					// Restore attribution
+					if (data.attribution && sidebarAttribution) sidebarAttribution.value = data.attribution;
+
+					// Update submit button to show overwrite
+					if (sidebarSubmitBtn) sidebarSubmitBtn.textContent = "Bake & Overwrite";
+					if (statusLine) statusLine.message = `Editing: ${data.carName || "car"} (#${configId})`;
+
+					refreshUI();
+				} catch (err) {
+					console.error("[editor] Failed to load car for editing:", err);
+					if (statusLine) statusLine.message = `Failed to load car #${configId}`;
+				}
+			});
+		});
+	} catch {
+		existingCarsList.innerHTML = '<div style="color:var(--ui-text-dim);padding:4px 0;">Failed to load</div>';
+	}
+}
+loadExistingCars();
+
+// Reload existing cars list after successful submit
+// ── Test in Practice ──
+const testPracticeBtn = document.getElementById("btn-test-practice");
+testPracticeBtn?.addEventListener("click", () => {
+	// TODO: Admin-only guard — only allow testing for admin users
+	if (currentConfigId) {
+		window.open(`/practice?car=${currentConfigId}`, "_blank");
+	} else {
+		// No config ID yet — prompt to submit first
+		if (statusLine) statusLine.message = "Submit the car first, then test in practice.";
+	}
+});

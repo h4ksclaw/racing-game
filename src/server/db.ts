@@ -799,6 +799,9 @@ export function insertCarImport(data: {
 		);
 	const configId = configResult.lastInsertRowid as number;
 
+	// Mark any existing asset with the same hash as "imported" (no longer pending)
+	db.prepare("UPDATE assets SET status = 'imported' WHERE sha256_hash = ? AND status = 'pending'").run(hash);
+
 	return { configId, assetId, s3Key: data.s3Key };
 }
 

@@ -345,6 +345,32 @@
 			<div class="export-validation" id="export-validation"></div>
 			<button class="btn-secondary" id="btn-download">Download JSON</button>
 		</div>
+
+		<!-- Suspension Test -->
+		<div id="suspension-section" style="padding: 8px; border-top: 1px solid var(--ui-border); display: none;">
+			<label style="font-size:10px;color:var(--ui-accent);display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+				<span style="font-size:12px;">🔧</span> Suspension Travel Test
+			</label>
+			<input type="range" id="suspension-slider" min="-0.3" max="0.3" step="0.01" value="0" style="width:100%;accent-color:var(--ui-accent);">
+			<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--ui-text-dim);">
+				<span>Compress</span>
+				<span id="suspension-value">0.00m</span>
+				<span>Extend</span>
+			</div>
+		</div>
+
+		<!-- Open Existing Cars -->
+		<div style="padding: 8px; border-top: 1px solid var(--ui-border);">
+			<label style="font-size:10px;color:var(--ui-accent);display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+				<span style="font-size:12px;">📂</span> Open Existing
+			</label>
+			<div id="existing-cars-list" style="max-height: 120px; overflow-y: auto; font-size: 10px;"></div>
+		</div>
+
+		<!-- Test in Practice -->
+		<div style="padding: 0 8px 8px; border-top: 1px solid var(--ui-border);">
+			<button class="btn-secondary" id="btn-test-practice" style="width:100%;margin-top:8px;">▶ Test in Practice</button>
+		</div>
 	</div>
 
 	<!-- Quick Tutorial (disposable overlay) -->

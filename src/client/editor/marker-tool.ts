@@ -339,3 +339,11 @@ export function handleViewportClick(event: MouseEvent) {
 export function getMarkerTypes() {
 	return MARKER_TYPES;
 }
+
+/** Apply suspension offset to all wheel markers (move Y up/down). */
+export function applySuspensionOffset(offsetY: number): void {
+	for (const m of markers) {
+		if (!m.type.startsWith("Wheel_")) continue;
+		m.mesh.position.y += offsetY;
+	}
+}

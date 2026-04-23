@@ -248,6 +248,8 @@ app.get("/api/assets/pending", (_req, res) => {
 		const result = files.map((f) => {
 			const hash = path.basename(f, ".glb");
 			const dbAsset = getAssetByHash(hash);
+			// Skip assets that have been imported (status = 'ready' or 'imported')
+			if (dbAsset && (dbAsset.status === "ready" || dbAsset.status === "imported")) return null;
 			const stat = fs.statSync(path.join(pendingDir, f));
 			// Parse attribution from metadata_json
 			let attribution: string | null = null;
@@ -278,7 +280,7 @@ app.get("/api/assets/pending", (_req, res) => {
 				size: stat.size,
 			};
 		});
-		res.json(result);
+		res.json(result.filter(Boolean));
 	} catch (err) {
 		res.status(500).json({ error: String(err) });
 	}
@@ -466,6 +468,50 @@ app.post("/api/cars/import", (req, res) => {
 	} catch (err) {
 		res.status(500).json({ error: String(err) });
 	}
+});
+
+// TODO: Admin-only guard — restrict these endpoints to authenticated admin users
+
+/** List all imported car configs (for editor re-open). */
+app.get("/api/cars/imported", (_req, res) => {
+	const configs = getCarConfigs();
+	const enriched = configs.map((c) => {
+		const asset = getAssetById(c.asset_id);
+		let meta = null;
+		if (c.car_metadata_id) meta = getCarById(c.car_metadata_id);
+		return {
+			id: c.id,
+			name: meta ? `${meta.make} ${meta.model}` : (asset?.original_name?.replace(/\.glb$/, "") ?? `Car #${c.id}`),
+			status: asset?.status ?? "unknown",
+			s3Key: asset?.s3_key,
+			createdAt: c.created_date,
+			carName: meta ? `${meta.make} ${meta.model}` : null,
+			attribuption: c.attribution ?? asset?.attribution ?? null,
+		};
+	});
+	res.json(enriched);
+});
+
+/** Get a car config for editing (returns full schema + physics overrides). */
+app.get("/api/cars/imported/:id", (req, res) => {
+	const config = getCarConfigById(Number(req.params.id));
+	if (!config) {
+		res.status(404).json({ error: "Car config not found" });
+		return;
+	}
+	const asset = getAssetById(config.asset_id);
+	let meta = null;
+	if (config.car_metadata_id) meta = getCarById(config.car_metadata_id);
+	res.json({
+		id: config.id,
+		config: JSON.parse(config.config_json),
+		schema: config.model_schema_json ? JSON.parse(config.model_schema_json) : null,
+		physicsOverrides: config.physics_overrides_json ? JSON.parse(config.physics_overrides_json) : null,
+		attribution: config.attribution ?? asset?.attribution ?? null,
+		s3Key: asset?.s3_key,
+		carName: meta ? `${meta.make} ${meta.model}` : null,
+		carMetadataId: config.car_metadata_id,
+	});
 });
 
 /** Get a full playable CarConfig assembled from saved import data. */
