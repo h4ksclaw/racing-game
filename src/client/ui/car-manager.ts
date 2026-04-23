@@ -225,10 +225,12 @@ export class CarManager extends LitElement {
 		hidden: { type: Boolean, reflect: true },
 	};
 
-	cars: CarEntry[] = [];
-	query = "";
-	loading = false;
-	confirmDeleteId: number | null = null;
+	// Internal reactive state — mutated directly, requestUpdate() called manually
+	_cars: CarEntry[] = [];
+	_loading = false;
+	_confirmDeleteId: number | null = null;
+	_query = "";
+	_searchTimer = 0;
 
 	override connectedCallback() {
 		super.connectedCallback();
@@ -237,47 +239,51 @@ export class CarManager extends LitElement {
 
 	show() {
 		this.hidden = false;
-		this.query = "";
-		this.confirmDeleteId = null;
-		this.fetchCars();
+		this._query = "";
+		this._confirmDeleteId = null;
+		this._fetchCars();
+		this.requestUpdate();
 	}
 
 	hide() {
 		this.hidden = true;
-		this.confirmDeleteId = null;
+		this._confirmDeleteId = null;
 	}
 
-	async fetchCars() {
-		this.loading = true;
+	async _fetchCars() {
+		this._loading = true;
+		this.requestUpdate();
 		try {
-			const url = `${API_BASE}/cars/imported${this.query ? `?q=${encodeURIComponent(this.query)}` : ""}`;
+			const url = `${API_BASE}/cars/imported${this._query ? `?q=${encodeURIComponent(this._query)}` : ""}`;
 			const resp = await fetch(url);
-			if (!resp.ok) return;
+			if (!resp.ok) {
+				this._cars = [];
+				return;
+			}
 			const raw = (await resp.json()) as CarEntry[];
 			// Normalize field name typo (old server returned "attribuption")
-			this.cars = raw.map((c) => ({
+			this._cars = raw.map((c) => ({
 				...c,
 				attribution: ((c as unknown as Record<string, unknown>).attribution ??
 					(c as unknown as Record<string, unknown>).attribuption ??
 					null) as string | null,
 			}));
 		} catch {
-			this.cars = [];
+			this._cars = [];
 		} finally {
-			this.loading = false;
+			this._loading = false;
+			this.requestUpdate();
 		}
 	}
 
 	private _onSearch(e: InputEvent) {
-		this.query = (e.target as HTMLInputElement).value;
-		// Debounce
+		this._query = (e.target as HTMLInputElement).value;
 		clearTimeout(this._searchTimer);
-		this._searchTimer = window.setTimeout(() => this.fetchCars(), 250);
+		this._searchTimer = window.setTimeout(() => this._fetchCars(), 250);
 	}
-	private _searchTimer = 0;
 
 	private _onLoad(car: CarEntry) {
-		if (this.confirmDeleteId !== null) return;
+		if (this._confirmDeleteId !== null) return;
 		this.dispatchEvent(
 			new CustomEvent("car-load", {
 				detail: { id: car.id, s3Key: car.s3Key ?? "", name: car.name },
@@ -290,17 +296,20 @@ export class CarManager extends LitElement {
 
 	private _onDeleteClick(car: CarEntry, e: Event) {
 		e.stopPropagation();
-		this.confirmDeleteId = car.id;
+		this._confirmDeleteId = car.id;
+		this.requestUpdate();
 	}
 
 	private _cancelDelete() {
-		this.confirmDeleteId = null;
+		this._confirmDeleteId = null;
+		this.requestUpdate();
 	}
 
 	private async _confirmDelete() {
-		if (this.confirmDeleteId === null) return;
-		const id = this.confirmDeleteId;
-		this.confirmDeleteId = null;
+		if (this._confirmDeleteId === null) return;
+		const id = this._confirmDeleteId;
+		this._confirmDeleteId = null;
+		this.requestUpdate();
 		try {
 			const resp = await fetch(`${API_BASE}/cars/imported/${id}`, { method: "DELETE" });
 			if (!resp.ok) {
@@ -313,7 +322,7 @@ export class CarManager extends LitElement {
 				);
 				return;
 			}
-			this.cars = this.cars.filter((c) => c.id !== id);
+			this._cars = this._cars.filter((c) => c.id !== id);
 			this.dispatchEvent(new CustomEvent("car-deleted", { detail: { id }, bubbles: true, composed: true }));
 		} catch {
 			this.dispatchEvent(
@@ -353,7 +362,7 @@ export class CarManager extends LitElement {
 							class="search-input"
 							type="text"
 							placeholder="Search by name, attribution..."
-							.value=${this.query}
+							.value=${this._query}
 							@input=${this._onSearch}
 							aria-label="Search cars"
 						/>
@@ -361,11 +370,11 @@ export class CarManager extends LitElement {
 
 					<div class="list">
 						${
-							this.loading
+							this._loading
 								? html`<div class="empty">Loading...</div>`
-								: this.cars.length === 0
-									? html`<div class="empty">${this.query ? "No cars match your search" : "No saved cars yet"}</div>`
-									: this.cars.map(
+								: this._cars.length === 0
+									? html`<div class="empty">${this._query ? "No cars match your search" : "No saved cars yet"}</div>`
+									: this._cars.map(
 											(car) => html`
 											<div class="car-item" @click=${() => this._onLoad(car)}>
 												${svgIcon(["M6 4l14 8-14 8V4"], 16)}
@@ -373,10 +382,10 @@ export class CarManager extends LitElement {
 													<div class="car-name">${car.name}</div>
 													<div class="car-meta">#${car.id} · ${car.createdAt?.slice(0, 10)}</div>
 													${
-														this.confirmDeleteId === car.id
+														this._confirmDeleteId === car.id
 															? html`
 															<div class="confirm-delete">
-																<span>Delete this car permanently?</span>
+																<span>Delete permanently?</span>
 																<button class="yes" @click=${(e: Event) => {
 																	e.stopPropagation();
 																	this._confirmDelete();
