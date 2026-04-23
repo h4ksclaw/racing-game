@@ -54,7 +54,7 @@ export class WheelAnimator {
 
 	/** Initialize with the current model. Call after model load + marker placement. */
 	init(model: THREE.Group): void {
-		console.log("[WheelAnimator] init called");
+		console.log("[WheelAnimator v3] init called");
 		this.cleanup();
 		this.model = model;
 		this.scanWheels();
