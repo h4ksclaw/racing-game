@@ -364,12 +364,16 @@ async function loadExistingCars(): Promise<void> {
 					const data = await configResp.json();
 
 					currentConfigId = configId;
+					// Resolve display name: metadata > attribution > fallback
+					const carName =
+						data.carName || data.attribution?.replace(/^"|"$/g, "").split(" by ")[0]?.trim() || `Car #${configId}`;
+
 					setCarSelection({
 						modelPath: `/api/assets/s3/${s3Key}`,
-						name: data.carName || data.config?.name || `Car #${configId}`,
+						name: carName,
 					});
 
-					if (statusLine) statusLine.message = `Loading ${data.carName || "car"} for editing (#${configId})...`;
+					if (statusLine) statusLine.message = `Loading ${carName} for editing (#${configId})...`;
 
 					// Load the GLB
 					await loadGLB(`/api/assets/s3/${s3Key}`);
@@ -378,13 +382,42 @@ async function loadExistingCars(): Promise<void> {
 					clearGhost();
 					updateDimensions();
 
-					// Restore markers from schema markerPositions
+					// Restore markers from schema markerPositions, or reconstruct from config
 					if (data.schema?.markerPositions) {
 						const { placeMarker } = await import("./marker-tool.js");
 						const { Vector3 } = await import("three");
 						for (const [type, pos] of Object.entries(data.schema.markerPositions)) {
 							const p = pos as { x: number; y: number; z: number };
 							placeMarker(type, new Vector3(p.x, p.y, p.z));
+						}
+					} else if (data.config?.wheelPositions && data.schema?.markers) {
+						// Fallback: reconstruct from saved wheel positions + marker names
+						const { placeMarker } = await import("./marker-tool.js");
+						const { Vector3 } = await import("three");
+						const { markers: markerNames } = data.schema;
+						// PhysicsMarker at center of bounding box (estimated)
+						const wheelPos = data.config.wheelPositions as Array<{ x: number; y: number; z: number }>;
+						if (wheelPos.length >= 4) {
+							const cx = (wheelPos[0].x + wheelPos[1].x) / 2;
+							const cy = wheelPos[0].y;
+							const cz = (wheelPos[0].z + wheelPos[2].z) / 2;
+							placeMarker("PhysicsMarker", new Vector3(cx, cy, cz));
+						}
+						// Wheels from saved positions
+						const wheelNames = markerNames.wheels as string[];
+						wheelNames.forEach((name: string, i: number) => {
+							if (wheelPos[i]) {
+								placeMarker(name, new Vector3(wheelPos[i].x, wheelPos[i].y, wheelPos[i].z));
+							}
+						});
+						// Exhaust pipes
+						if (markerNames.escapePipes) {
+							const ep = markerNames.escapePipes as { left?: string; right?: string };
+							// Estimate exhaust positions: rear of car, below, offset left/right
+							const rearZ = Math.min(...wheelPos.map((w) => w.z));
+							const exY = wheelPos[0].y - 0.15;
+							if (ep.left) placeMarker(ep.left, new Vector3(0.25, exY, rearZ - 0.1));
+							if (ep.right) placeMarker(ep.right, new Vector3(-0.25, exY, rearZ - 0.1));
 						}
 					}
 
@@ -399,7 +432,7 @@ async function loadExistingCars(): Promise<void> {
 
 					// Update submit button to show overwrite
 					if (sidebarSubmitBtn) sidebarSubmitBtn.textContent = "Bake & Overwrite";
-					if (statusLine) statusLine.message = `Editing: ${data.carName || "car"} (#${configId})`;
+					if (statusLine) statusLine.message = `Editing: ${carName} (#${configId})`;
 
 					refreshUI();
 				} catch (err) {

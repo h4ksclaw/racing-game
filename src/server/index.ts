@@ -480,14 +480,27 @@ app.get("/api/cars/imported", (_req, res) => {
 		const asset = getAssetById(c.asset_id);
 		let meta = null;
 		if (c.car_metadata_id) meta = getCarById(c.car_metadata_id);
+		// Resolve display name: metadata > attribution parse > original_name > fallback
+		let name: string;
+		if (meta) {
+			name = `${meta.make} ${meta.model}`;
+		} else {
+			const attr = c.attribution ?? asset?.attribution ?? "";
+			const parsed = attr.replace(/^"|"$/g, "").split(" by ")[0]?.trim();
+			if (parsed && parsed.length > 3) {
+				name = parsed;
+			} else {
+				name = asset?.original_name?.replace(/\.glb$/, "") ?? `Car #${c.id}`;
+			}
+		}
 		return {
 			id: c.id,
-			name: meta ? `${meta.make} ${meta.model}` : (asset?.original_name?.replace(/\.glb$/, "") ?? `Car #${c.id}`),
+			name,
 			status: asset?.status ?? "unknown",
 			s3Key: asset?.s3_key,
 			createdAt: c.created_date,
 			carName: meta ? `${meta.make} ${meta.model}` : null,
-			attribuption: c.attribution ?? asset?.attribution ?? null,
+			attribution: c.attribution ?? asset?.attribution ?? null,
 		};
 	});
 	res.json(enriched);
