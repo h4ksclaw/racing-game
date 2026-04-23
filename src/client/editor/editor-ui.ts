@@ -32,17 +32,30 @@ const validationEl = document.querySelector("validation-display");
 const statusLine = document.querySelector("status-line");
 const sidebarAttribution = document.getElementById("sidebar-attribution") as HTMLTextAreaElement | null;
 const sidebarSubmitBtn = document.getElementById("btn-submit") as HTMLButtonElement | null;
+const suspSlider = document.getElementById("suspension-slider") as HTMLInputElement | null;
+const suspValue = document.getElementById("suspension-value");
+const spinBtn = document.getElementById("btn-wheel-spin") as HTMLButtonElement | null;
+const spinStatus = document.getElementById("wheel-spin-status");
+const spinSpeedSlider = document.getElementById("spin-speed-slider") as HTMLInputElement | null;
+const spinSpeedValue = document.getElementById("spin-speed-value");
+let currentConfigId: number | null = null;
 
 // ── Wheel Animator ──
 const wheelAnimator = new WheelAnimator();
+let _animatorFrameUnsub: (() => void) | null = null;
 
 function initWheelAnimator(model: import("three").Group | null): void {
 	console.log(`[Editor] initWheelAnimator called, model=${!!model}`);
+	// Unsubscribe previous frame callback
+	if (_animatorFrameUnsub) {
+		_animatorFrameUnsub();
+		_animatorFrameUnsub = null;
+	}
 	if (model) {
 		wheelAnimator.init(model);
 		const cb = wheelAnimator.getFrameCallback();
 		console.log(`[Editor] wheelAnimator frameCallback=${!!cb}`);
-		if (cb) onRenderFrame(cb);
+		if (cb) _animatorFrameUnsub = onRenderFrame(cb);
 	}
 }
 
@@ -307,181 +320,181 @@ initImportFlow();
 refreshUI();
 
 function refreshUI() {
+	// Re-scan wheels for animator whenever markers change
+	const model = getCurrentModel();
+	if (model) initWheelAnimator(model);
+
 	if (markerListEl) {
-		const entries = getMarkers().map((m) => ({
-			id: m.id,
-			type: m.type,
-			position: { x: m.position.x, y: m.position.y, z: m.position.z },
-			locked: m.locked,
-			pairId: m.pairId,
-			enabled: m.enabled,
-		}));
-		markerListEl.markers = entries;
+		if (markerListEl) {
+			const entries = getMarkers().map((m) => ({
+				id: m.id,
+				type: m.type,
+				position: { x: m.position.x, y: m.position.y, z: m.position.z },
+				locked: m.locked,
+				pairId: m.pairId,
+				enabled: m.enabled,
+			}));
+			markerListEl.markers = entries;
+		}
+		if (validationEl) validationEl.issues = validateMarkers(getMarkers());
+		refreshObjectPanel(getCurrentModel());
 	}
-	if (validationEl) validationEl.issues = validateMarkers(getMarkers());
-	refreshObjectPanel(getCurrentModel());
-}
 
-// ── Current car config ID (for re-submit overwrite) ──
-let currentConfigId: number | null = null;
-
-// ── Suspension Test Slider ──
-const suspSlider = document.getElementById("suspension-slider") as HTMLInputElement | null;
-const suspValue = document.getElementById("suspension-value");
-if (suspSlider) {
-	// Set range from physics overrides (maxSuspensionTravel)
-	const physics = getPhysicsOverrides();
-	const maxTravel = physics.maxSuspensionTravel ?? 0.3;
-	suspSlider.min = `${-maxTravel}`;
-	suspSlider.max = `${maxTravel}`;
-	suspSlider.value = "0";
-
-	suspSlider.addEventListener("input", () => {
-		const newOffset = parseFloat(suspSlider.value);
-		wheelAnimator.setSuspensionOffset(newOffset);
-		if (suspValue) suspValue.textContent = `${newOffset >= 0 ? "+" : ""}${newOffset.toFixed(2)}m`;
-	});
-	suspSlider.addEventListener("dblclick", () => {
+	// ── Suspension Test Slider ──
+	if (suspSlider) {
+		// Set range from physics overrides (maxSuspensionTravel)
+		const physics = getPhysicsOverrides();
+		const maxTravel = physics.maxSuspensionTravel ?? 0.3;
+		suspSlider.min = `${-maxTravel}`;
+		suspSlider.max = `${maxTravel}`;
 		suspSlider.value = "0";
-		wheelAnimator.setSuspensionOffset(0);
-		if (suspValue) suspValue.textContent = "0.00m";
-	});
 
-	// Update range when physics overrides change
-	const physicsModal = document.querySelector("physics-modal");
-	if (physicsModal) {
-		physicsModal.addEventListener("physics-changed", () => {
-			const p = getPhysicsOverrides();
-			const mt = p.maxSuspensionTravel ?? 0.3;
-			suspSlider.min = `${-mt}`;
-			suspSlider.max = `${mt}`;
-			// Clamp current value
-			const cur = parseFloat(suspSlider.value);
-			if (cur < -mt) suspSlider.value = `${-mt}`;
-			else if (cur > mt) suspSlider.value = `${mt}`;
+		suspSlider.addEventListener("input", () => {
+			const newOffset = parseFloat(suspSlider.value);
+			wheelAnimator.setSuspensionOffset(newOffset);
+			if (suspValue) suspValue.textContent = `${newOffset >= 0 ? "+" : ""}${newOffset.toFixed(2)}m`;
 		});
-	}
-}
-
-// ── Wheel Spin Test ──
-const spinBtn = document.getElementById("btn-wheel-spin") as HTMLButtonElement | null;
-const spinStatus = document.getElementById("wheel-spin-status");
-const spinSpeedSlider = document.getElementById("spin-speed-slider") as HTMLInputElement | null;
-const spinSpeedValue = document.getElementById("spin-speed-value");
-console.log(`[Editor] spinBtn=${!!spinBtn}, spinSpeedSlider=${!!spinSpeedSlider}`);
-if (spinBtn) {
-	spinBtn.addEventListener("click", () => {
-		const spinning = !wheelAnimator.isSpinning();
-		wheelAnimator.setSpinning(spinning);
-		if (spinStatus) spinStatus.textContent = spinning ? "Spinning" : "Off";
-		spinBtn.classList.toggle("active", spinning);
-	});
-}
-if (spinSpeedSlider) {
-	spinSpeedSlider.addEventListener("input", () => {
-		const speed = parseFloat(spinSpeedSlider.value);
-		wheelAnimator.setSpinSpeed(speed);
-		if (spinSpeedValue) spinSpeedValue.textContent = `${speed.toFixed(0)} rad/s`;
-	});
-}
-
-// ── Car Manager Modal ──
-async function loadCarForEditing(configId: number, s3Key: string, carName: string): Promise<void> {
-	if (!configId || !s3Key) return;
-
-	try {
-		const configResp = await fetch(`${API_BASE}/cars/imported/${configId}`);
-		if (!configResp.ok) throw new Error(`HTTP ${configResp.status}`);
-		const data = await configResp.json();
-
-		currentConfigId = configId;
-
-		setCarSelection({
-			modelPath: `/api/assets/s3/${s3Key}`,
-			name: carName,
+		suspSlider.addEventListener("dblclick", () => {
+			suspSlider.value = "0";
+			wheelAnimator.setSuspensionOffset(0);
+			if (suspValue) suspValue.textContent = "0.00m";
 		});
 
-		if (statusLine) statusLine.message = `Loading ${carName} for editing (#${configId})...`;
-
-		// Load the GLB
-		await loadGLB(`/api/assets/s3/${s3Key}`);
-		const { clearMarkers } = await import("./marker-tool.js");
-		clearMarkers();
-		clearGhost();
-		updateDimensions();
-
-		// Restore markers from schema markerPositions, or reconstruct from config
-		if (data.schema?.markerPositions) {
-			const { placeMarker } = await import("./marker-tool.js");
-			const { Vector3 } = await import("three");
-			for (const [type, pos] of Object.entries(data.schema.markerPositions)) {
-				const p = pos as { x: number; y: number; z: number };
-				placeMarker(type, new Vector3(p.x, p.y, p.z));
-			}
-		} else if (data.config?.wheelPositions && data.schema?.markers) {
-			const { placeMarker } = await import("./marker-tool.js");
-			const { Vector3 } = await import("three");
-			const { markers: markerNames } = data.schema;
-			const wheelPos = data.config.wheelPositions as Array<{ x: number; y: number; z: number }>;
-			if (wheelPos.length >= 4) {
-				const cx = (wheelPos[0].x + wheelPos[1].x) / 2;
-				const cy = wheelPos[0].y;
-				const cz = (wheelPos[0].z + wheelPos[2].z) / 2;
-				placeMarker("PhysicsMarker", new Vector3(cx, cy, cz));
-			}
-			const wheelNames = markerNames.wheels as string[];
-			wheelNames.forEach((name: string, i: number) => {
-				if (wheelPos[i]) placeMarker(name, new Vector3(wheelPos[i].x, wheelPos[i].y, wheelPos[i].z));
+		// Update range when physics overrides change
+		const physicsModal = document.querySelector("physics-modal");
+		if (physicsModal) {
+			physicsModal.addEventListener("physics-changed", () => {
+				const p = getPhysicsOverrides();
+				const mt = p.maxSuspensionTravel ?? 0.3;
+				suspSlider.min = `${-mt}`;
+				suspSlider.max = `${mt}`;
+				// Clamp current value
+				const cur = parseFloat(suspSlider.value);
+				if (cur < -mt) suspSlider.value = `${-mt}`;
+				else if (cur > mt) suspSlider.value = `${mt}`;
 			});
-			if (markerNames.escapePipes) {
-				const ep = markerNames.escapePipes as { left?: string; right?: string };
-				const rearZ = Math.min(...wheelPos.map((w) => w.z));
-				const exY = wheelPos[0].y - 0.15;
-				if (ep.left) placeMarker(ep.left, new Vector3(0.25, exY, rearZ - 0.1));
-				if (ep.right) placeMarker(ep.right, new Vector3(-0.25, exY, rearZ - 0.1));
+		}
+	}
+
+	// ── Wheel Spin Test ──
+	console.log(`[Editor] spinBtn=${!!spinBtn}, spinSpeedSlider=${!!spinSpeedSlider}`);
+	if (spinBtn) {
+		spinBtn.addEventListener("click", () => {
+			const spinning = !wheelAnimator.isSpinning();
+			wheelAnimator.setSpinning(spinning);
+			if (spinStatus) spinStatus.textContent = spinning ? "Spinning" : "Off";
+			spinBtn.classList.toggle("active", spinning);
+		});
+	}
+	if (spinSpeedSlider) {
+		spinSpeedSlider.addEventListener("input", () => {
+			const speed = parseFloat(spinSpeedSlider.value);
+			wheelAnimator.setSpinSpeed(speed);
+			if (spinSpeedValue) spinSpeedValue.textContent = `${speed.toFixed(0)} rad/s`;
+		});
+	}
+
+	// ── Car Manager Modal ──
+	async function loadCarForEditing(configId: number, s3Key: string, carName: string): Promise<void> {
+		if (!configId || !s3Key) return;
+
+		try {
+			const configResp = await fetch(`${API_BASE}/cars/imported/${configId}`);
+			if (!configResp.ok) throw new Error(`HTTP ${configResp.status}`);
+			const data = await configResp.json();
+
+			currentConfigId = configId;
+
+			setCarSelection({
+				modelPath: `/api/assets/s3/${s3Key}`,
+				name: carName,
+			});
+
+			if (statusLine) statusLine.message = `Loading ${carName} for editing (#${configId})...`;
+
+			// Load the GLB
+			await loadGLB(`/api/assets/s3/${s3Key}`);
+			const { clearMarkers } = await import("./marker-tool.js");
+			clearMarkers();
+			clearGhost();
+			updateDimensions();
+
+			// Restore markers from schema markerPositions, or reconstruct from config
+			if (data.schema?.markerPositions) {
+				const { placeMarker } = await import("./marker-tool.js");
+				const { Vector3 } = await import("three");
+				for (const [type, pos] of Object.entries(data.schema.markerPositions)) {
+					const p = pos as { x: number; y: number; z: number };
+					placeMarker(type, new Vector3(p.x, p.y, p.z));
+				}
+			} else if (data.config?.wheelPositions && data.schema?.markers) {
+				const { placeMarker } = await import("./marker-tool.js");
+				const { Vector3 } = await import("three");
+				const { markers: markerNames } = data.schema;
+				const wheelPos = data.config.wheelPositions as Array<{ x: number; y: number; z: number }>;
+				if (wheelPos.length >= 4) {
+					const cx = (wheelPos[0].x + wheelPos[1].x) / 2;
+					const cy = wheelPos[0].y;
+					const cz = (wheelPos[0].z + wheelPos[2].z) / 2;
+					placeMarker("PhysicsMarker", new Vector3(cx, cy, cz));
+				}
+				const wheelNames = markerNames.wheels as string[];
+				wheelNames.forEach((name: string, i: number) => {
+					if (wheelPos[i]) placeMarker(name, new Vector3(wheelPos[i].x, wheelPos[i].y, wheelPos[i].z));
+				});
+				if (markerNames.escapePipes) {
+					const ep = markerNames.escapePipes as { left?: string; right?: string };
+					const rearZ = Math.min(...wheelPos.map((w) => w.z));
+					const exY = wheelPos[0].y - 0.15;
+					if (ep.left) placeMarker(ep.left, new Vector3(0.25, exY, rearZ - 0.1));
+					if (ep.right) placeMarker(ep.right, new Vector3(-0.25, exY, rearZ - 0.1));
+				}
 			}
+
+			// Restore physics overrides if available
+			if (data.physicsOverrides) {
+				const { setPhysicsOverrides } = await import("./physics-editor.js");
+				setPhysicsOverrides(data.physicsOverrides);
+			}
+
+			// Restore attribution
+			if (data.attribution && sidebarAttribution) sidebarAttribution.value = data.attribution;
+
+			// Update submit button to show overwrite
+			if (sidebarSubmitBtn) sidebarSubmitBtn.textContent = "Bake & Overwrite";
+			if (statusLine) statusLine.message = `Editing: ${carName} (#${configId})`;
+
+			// Initialize wheel animator after markers are placed
+			initWheelAnimator(getCurrentModel());
+
+			refreshUI();
+		} catch (err) {
+			console.error("[editor] Failed to load car for editing:", err);
+			if (statusLine) statusLine.message = `Failed to load car #${configId}`;
 		}
-
-		// Restore physics overrides if available
-		if (data.physicsOverrides) {
-			const { setPhysicsOverrides } = await import("./physics-editor.js");
-			setPhysicsOverrides(data.physicsOverrides);
-		}
-
-		// Restore attribution
-		if (data.attribution && sidebarAttribution) sidebarAttribution.value = data.attribution;
-
-		// Update submit button to show overwrite
-		if (sidebarSubmitBtn) sidebarSubmitBtn.textContent = "Bake & Overwrite";
-		if (statusLine) statusLine.message = `Editing: ${carName} (#${configId})`;
-
-		refreshUI();
-	} catch (err) {
-		console.error("[editor] Failed to load car for editing:", err);
-		if (statusLine) statusLine.message = `Failed to load car #${configId}`;
 	}
-}
 
-const carManager = document.getElementById("car-manager");
-const manageCarsBtn = document.getElementById("btn-manage-cars");
-if (carManager && manageCarsBtn) {
-	manageCarsBtn.addEventListener("click", () => {
-		(carManager as any).show();
+	const carManager = document.getElementById("car-manager");
+	const manageCarsBtn = document.getElementById("btn-manage-cars");
+	if (carManager && manageCarsBtn) {
+		manageCarsBtn.addEventListener("click", () => {
+			(carManager as any).show();
+		});
+		carManager.addEventListener("car-load", ((e: CustomEvent) => {
+			const { id, s3Key, name } = e.detail;
+			loadCarForEditing(id, s3Key, name);
+		}) as EventListener);
+	}
+
+	// ── Test in Practice ──// ── Test in Practice ──
+	const testPracticeBtn = document.getElementById("btn-test-practice");
+	testPracticeBtn?.addEventListener("click", () => {
+		// TODO: Admin-only guard — only allow testing for admin users
+		if (currentConfigId) {
+			window.open(`/practice?car=${currentConfigId}`, "_blank");
+		} else {
+			// No config ID yet — prompt to submit first
+			if (statusLine) statusLine.message = "Submit the car first, then test in practice.";
+		}
 	});
-	carManager.addEventListener("car-load", ((e: CustomEvent) => {
-		const { id, s3Key, name } = e.detail;
-		loadCarForEditing(id, s3Key, name);
-	}) as EventListener);
-}
-
-// ── Test in Practice ──// ── Test in Practice ──
-const testPracticeBtn = document.getElementById("btn-test-practice");
-testPracticeBtn?.addEventListener("click", () => {
-	// TODO: Admin-only guard — only allow testing for admin users
-	if (currentConfigId) {
-		window.open(`/practice?car=${currentConfigId}`, "_blank");
-	} else {
-		// No config ID yet — prompt to submit first
-		if (statusLine) statusLine.message = "Submit the car first, then test in practice.";
-	}
-});
+} // end else (viewport + dropZone)
