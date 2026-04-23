@@ -37,7 +37,11 @@ function computeWheelWorldY(
 	const pivotLocalY = basePos.y + suspOffset;
 	// The wheel center world-Y = body rotation applied to (basePos.x, pivotLocalY, basePos.z)
 	// then translated by (bodyX, bodyY + modelGroundOffset, bodyZ)
-	const rotated = rotatedY(quaternion, { x: basePos.x, y: pivotLocalY, z: basePos.z });
+	const rotated = rotatedY(quaternion, {
+		x: basePos.x,
+		y: pivotLocalY,
+		z: basePos.z,
+	});
 	return bodyY + modelGroundOffset + rotated;
 }
 
@@ -198,7 +202,10 @@ describe("wheel sync", () => {
 		// in body-local space should always equal susLen.
 		const orientations = [
 			{ name: "level", q: { x: 0, y: 0, z: 0, w: 1 } },
-			{ name: "pitch 30°", q: quatFromAxisAngle(1, 0, 0, (-30 * Math.PI) / 180) },
+			{
+				name: "pitch 30°",
+				q: quatFromAxisAngle(1, 0, 0, (-30 * Math.PI) / 180),
+			},
 			{ name: "roll 20°", q: quatFromAxisAngle(0, 0, 1, (20 * Math.PI) / 180) },
 			{ name: "flip", q: quatFromAxisAngle(1, 0, 0, Math.PI) },
 			{ name: "yaw 45°", q: quatFromAxisAngle(0, 1, 0, (45 * Math.PI) / 180) },

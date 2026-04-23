@@ -43,7 +43,7 @@ export default defineConfig({
 		},
 		proxy: {
 			"/api": {
-				target: "http://localhost:3000",
+				target: "http://localhost:3001",
 				changeOrigin: true,
 			},
 		},
@@ -55,4 +55,25 @@ export default defineConfig({
 			"@shared": resolve(__dirname, "src/shared"),
 		},
 	},
+	plugins: [
+		{
+			name: "page-rewrite",
+			configureServer(server) {
+				server.middlewares.use((req, _res, next) => {
+					const pageMap: Record<string, string> = {
+						"/editor": "/pages/editor.html",
+						"/practice": "/pages/practice.html",
+						"/world": "/pages/world.html",
+						"/garage": "/pages/garage.html",
+					};
+					const rewritten = pageMap[req.url?.split("?")[0] ?? ""];
+					if (rewritten) {
+						req.url = rewritten;
+					}
+					next();
+				});
+				return () => {};
+			},
+		},
+	],
 });

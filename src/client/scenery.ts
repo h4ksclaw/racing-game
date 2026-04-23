@@ -342,7 +342,10 @@ export function buildInstancedScenery(scenery: SceneryItem[], terrain: TerrainSa
 
 		const cached = decorationCache.get(type);
 		if (cached) {
-			const meshEntries: { geo: THREE.BufferGeometry; mat: THREE.Material | THREE.Material[] }[] = [];
+			const meshEntries: {
+				geo: THREE.BufferGeometry;
+				mat: THREE.Material | THREE.Material[];
+			}[] = [];
 			cached.traverse((child) => {
 				if (child instanceof THREE.Mesh) {
 					meshEntries.push({ geo: child.geometry, mat: child.material });

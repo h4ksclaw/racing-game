@@ -163,11 +163,11 @@ export class VehicleLights {
 		}
 	}
 
-	getHeadlightData(physicsForward?: {
-		x: number;
-		y: number;
-		z: number;
-	}): { positions: THREE.Vector3[]; directions: THREE.Vector3[]; intensity: number } | null {
+	getHeadlightData(physicsForward?: { x: number; y: number; z: number }): {
+		positions: THREE.Vector3[];
+		directions: THREE.Vector3[];
+		intensity: number;
+	} | null {
 		if (this.headlights.length === 0) return null;
 
 		const positions: THREE.Vector3[] = [];

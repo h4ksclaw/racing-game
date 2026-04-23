@@ -235,7 +235,9 @@ function createGrass(palette: BiomeColors, large: boolean): THREE.Group {
 		const bladeGeo = new THREE.PlaneGeometry(0.04, height * (0.7 + Math.random() * 0.3));
 		const blade = new THREE.Mesh(
 			bladeGeo,
-			mat(i % 2 === 0 ? palette.grass : palette.grassAlt, { side: THREE.DoubleSide }),
+			mat(i % 2 === 0 ? palette.grass : palette.grassAlt, {
+				side: THREE.DoubleSide,
+			}),
 		);
 		blade.position.set(Math.cos(angle) * spread, height * 0.5, Math.sin(angle) * spread);
 		blade.rotation.y = angle;

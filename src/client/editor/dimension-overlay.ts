@@ -6,7 +6,17 @@ import { getCurrentModel, getScene, isShowingDims } from "./editor-main.js";
 
 const dimsGroup = new THREE.Group();
 dimsGroup.visible = false;
-getScene().add(dimsGroup);
+let addedToScene = false;
+
+function ensureInScene() {
+	if (!addedToScene) {
+		const scene = getScene();
+		if (scene) {
+			scene.add(dimsGroup);
+			addedToScene = true;
+		}
+	}
+}
 
 let ghostBox: THREE.Mesh | null = null;
 let dimLabels: THREE.Sprite[] = [];
@@ -48,6 +58,7 @@ function clearDims() {
  * Update the dimension overlay to show the current model's bounding box.
  */
 export function updateDimensions() {
+	ensureInScene();
 	if (!isShowingDims()) {
 		dimsGroup.visible = false;
 		return;
@@ -69,7 +80,10 @@ export function updateDimensions() {
 	// Edge wireframe box
 	const boxGeo = new THREE.BoxGeometry(size.x, size.y, size.z);
 	const edges = new THREE.EdgesGeometry(boxGeo);
-	const lineMat = new THREE.LineBasicMaterial({ color: 0x4a9eff, depthTest: false });
+	const lineMat = new THREE.LineBasicMaterial({
+		color: 0x4a9eff,
+		depthTest: false,
+	});
 	const wireframe = new THREE.LineSegments(edges, lineMat);
 	wireframe.position.copy(center);
 	dimsGroup.add(wireframe);
@@ -93,6 +107,7 @@ export function updateDimensions() {
  * Show ghost overlay of expected dimensions for comparison.
  */
 export function showExpectedGhost(lengthM: number, widthM: number, heightM: number) {
+	ensureInScene();
 	const model = getCurrentModel();
 	if (!model) return;
 
@@ -131,7 +146,11 @@ export function clearGhost() {
 /**
  * Get current model dimensions in meters.
  */
-export function getModelDimensions(): { length: number; width: number; height: number } | null {
+export function getModelDimensions(): {
+	length: number;
+	width: number;
+	height: number;
+} | null {
 	const model = getCurrentModel();
 	if (!model) return null;
 	const box = new THREE.Box3().setFromObject(model);

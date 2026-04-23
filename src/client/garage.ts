@@ -160,8 +160,22 @@ const sections: SectionDef[] = [
 				max: 500,
 				step: 1,
 			},
-			{ key: "idleRPM", path: "engine.idleRPM", label: "Idle RPM", min: 500, max: 1500, step: 50 },
-			{ key: "maxRPM", path: "engine.maxRPM", label: "Max RPM", min: 4000, max: 10000, step: 100 },
+			{
+				key: "idleRPM",
+				path: "engine.idleRPM",
+				label: "Idle RPM",
+				min: 500,
+				max: 1500,
+				step: 50,
+			},
+			{
+				key: "maxRPM",
+				path: "engine.maxRPM",
+				label: "Max RPM",
+				min: 4000,
+				max: 10000,
+				step: 100,
+			},
 			{
 				key: "redlinePct",
 				path: "engine.redlinePct",
@@ -282,14 +296,26 @@ const sections: SectionDef[] = [
 				label: "Rolling Resistance",
 				step: 0.1,
 			},
-			{ key: "aeroDrag", path: "drag.aeroDrag", label: "Aero Drag", step: 0.01 },
+			{
+				key: "aeroDrag",
+				path: "drag.aeroDrag",
+				label: "Aero Drag",
+				step: 0.01,
+			},
 		],
 	},
 	{
 		id: "chassis",
 		title: "Chassis",
 		fields: [
-			{ key: "mass", path: "chassis.mass", label: "Mass (kg)", min: 50, max: 3000, step: 10 },
+			{
+				key: "mass",
+				path: "chassis.mass",
+				label: "Mass (kg)",
+				min: 50,
+				max: 3000,
+				step: 10,
+			},
 			{
 				key: "maxSteerAngle",
 				path: "chassis.maxSteerAngle",
@@ -302,7 +328,12 @@ const sections: SectionDef[] = [
 				label: "Susp. Stiffness",
 				step: 1,
 			},
-			{ key: "cgHeight", path: "chassis.cgHeight", label: "CG Height", step: 0.01 },
+			{
+				key: "cgHeight",
+				path: "chassis.cgHeight",
+				label: "CG Height",
+				step: 0.01,
+			},
 			{
 				key: "weightFront",
 				path: "chassis.weightFront",

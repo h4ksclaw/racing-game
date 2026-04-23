@@ -66,7 +66,14 @@ function bucket(): string {
 export async function uploadToS3(key: string, buffer: Buffer, contentType?: string): Promise<string> {
 	const s3 = initS3Client();
 	const ct = contentType ?? guessContentType(key);
-	await s3.send(new PutObjectCommand({ Bucket: bucket(), Key: key, Body: buffer, ContentType: ct }));
+	await s3.send(
+		new PutObjectCommand({
+			Bucket: bucket(),
+			Key: key,
+			Body: buffer,
+			ContentType: ct,
+		}),
+	);
 	return key;
 }
 

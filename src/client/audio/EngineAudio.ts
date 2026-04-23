@@ -181,7 +181,10 @@ export class EngineAudio {
 
 		// Noise layers (4 layers from shared noise buffer)
 		const noiseBuf = createNoiseBuffer(ctx);
-		const layerDefs: { key: string; config: { freq: number; q: number; level: number } }[] = [
+		const layerDefs: {
+			key: string;
+			config: { freq: number; q: number; level: number };
+		}[] = [
 			{ key: "exhaust", config: this.config.noise.exhaust },
 			{ key: "intake", config: this.config.noise.intake },
 			{ key: "mechanical", config: this.config.noise.mechanical },
@@ -206,7 +209,13 @@ export class EngineAudio {
 			gain.connect(this.distortionNode);
 			source.start();
 
-			this.noiseLayers.push({ source, filter, gain, config: ld.config, key: ld.key });
+			this.noiseLayers.push({
+				source,
+				filter,
+				gain,
+				config: ld.config,
+				key: ld.key,
+			});
 		}
 	}
 

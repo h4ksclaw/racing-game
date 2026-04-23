@@ -4,371 +4,407 @@
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	<title>Car Editor</title>
-	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+	<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 	<style>
+		/* Global theme variables (mirrors theme.ts for non-shadow-DOM elements) */
 		:root {
-			--bg: #0a0a0f;
-			--panel: #12121a;
-			--border: #1e1e2e;
-			--text: #e0e0e8;
-			--muted: #6b6b80;
-			--accent: #4a9eff;
-			--accent-dim: #2a5e99;
-			--danger: #ff4a6a;
-			--success: #4aff8b;
-			--warn: #ffaa4a;
-			--radius: 6px;
+			--ui-bg: rgba(17, 19, 28, 1);
+			--ui-panel: rgba(25, 29, 42, 0.92);
+			--ui-panel-solid: rgba(25, 29, 42, 1);
+			--ui-border: rgba(46, 53, 80, 0.6);
+			--ui-accent: rgba(92, 158, 255, 1);
+			--ui-accent-dim: rgba(92, 158, 255, 0.35);
+			--ui-accent-faint: rgba(92, 158, 255, 0.12);
+			--ui-accent-ghost: rgba(92, 158, 255, 0.06);
+			--ui-orange: rgba(255, 140, 75, 1);
+			--ui-orange-dim: rgba(255, 140, 75, 0.35);
+			--ui-orange-faint: rgba(255, 140, 75, 0.12);
+			--ui-red: rgba(244, 63, 94, 0.85);
+			--ui-red-dim: rgba(244, 63, 94, 0.06);
+			--ui-green: rgba(163, 230, 53, 0.85);
+			--ui-green-dim: rgba(163, 230, 53, 0.15);
+			--ui-text: rgba(240, 244, 255, 0.55);
+			--ui-text-bright: rgba(240, 244, 255, 0.85);
+			--ui-text-white: #f0f4ff;
+			--ui-mono: 'JetBrains Mono', monospace;
+			--ui-sans: 'IBM Plex Sans', sans-serif;
 		}
 		* { margin: 0; padding: 0; box-sizing: border-box; }
-		html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; font-size: 13px; }
-		#viewport { position: fixed; top: 0; left: 280px; right: 0; bottom: 0; }
-		#viewport canvas { display: block; width: 100%; height: 100%; }
+		html, body { width: 100%; height: 100%; overflow: hidden; background: var(--ui-bg); font-family: var(--ui-sans); font-size: 13px; }
 
-		/* Sidebar */
+		/* Focus-visible for keyboard navigation */
+		:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px; }
+		button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px; }
+
+		/* Reduced motion */
+		@media (prefers-reduced-motion: reduce) {
+			*, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+		}
+
+		/* Sidebar — resizable via drag handle */
 		#sidebar {
-			position: fixed; top: 0; left: 0; width: 280px; height: 100%;
-			background: var(--panel); border-right: 1px solid var(--border);
+			position: fixed; top: 0; left: 0; width: 280px; min-width: 220px; max-width: 500px; height: 100%;
+			background: var(--ui-panel-solid);
+			border-right: 1px solid var(--ui-border);
 			overflow-y: auto; z-index: 10;
-			display: flex; flex-direction: column;
 		}
-		#sidebar::-webkit-scrollbar { width: 4px; }
-		#sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+		#sidebar-resize {
+			position: fixed; top: 0; left: 280px; width: 5px; height: 100%;
+			cursor: col-resize; z-index: 11;
+			background: transparent;
+			transition: background 0.15s;
+		}
+		#sidebar-resize:hover, #sidebar-resize.active {
+			background: var(--ui-accent);
+			opacity: 0.5;
+		}
+		#sidebar::-webkit-scrollbar { width: 3px; }
+		#sidebar::-webkit-scrollbar-thumb { background: var(--ui-accent-ghost); border-radius: 2px; }
 
+		/* Sidebar header */
 		.sidebar-header {
-			padding: 14px 16px; border-bottom: 1px solid var(--border);
-			font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px;
+			padding: 12px 14px;
+			border-bottom: 1px solid var(--ui-border);
+			font-size: 12px;
+			font-weight: 700;
+			color: var(--ui-text-white);
+			letter-spacing: 0.5px;
 		}
-		.sidebar-header span { color: var(--accent); }
+		.sidebar-header .accent { color: var(--ui-accent); }
 
-		.section { padding: 12px 16px; border-bottom: 1px solid var(--border); }
-		.section-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
+		/* Viewport */
+		#viewport { position: fixed; top: 0; left: 280px; right: 0; bottom: 0; }
+		#viewport canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
-		/* Drop zone */
-		#drop-zone {
-			border: 2px dashed var(--border); border-radius: var(--radius);
-			padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s;
-			color: var(--muted);
+		/* Export buttons */
+		.export-actions { padding: 10px 14px; border-top: 1px solid var(--ui-border); }
+		.btn-primary {
+			width: 100%; padding: 7px; background: var(--ui-accent-dim); border: 1px solid var(--ui-accent);
+			border-radius: 3px; color: var(--ui-text-white); cursor: pointer; font-size: 11px;
+			font-weight: 600; font-family: var(--ui-sans); transition: background 0.12s, border-color 0.12s;
 		}
-		#drop-zone:hover, #drop-zone.drag-over { border-color: var(--accent); color: var(--accent); background: rgba(74,158,255,0.05); }
-		#drop-zone input { display: none; }
+		.btn-primary:hover { background: var(--ui-accent); }
+		.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+		.btn-primary.success { background: var(--ui-green-dim); border-color: var(--ui-green); color: var(--ui-green); }
+		.btn-primary.error { background: var(--ui-red-dim); border-color: var(--ui-red); color: var(--ui-red); }
+		.export-error {
+			font-size: 10px; color: var(--ui-red); margin-top: 6px; line-height: 1.4;
+			padding: 6px 8px; background: var(--ui-red-dim); border-radius: 3px;
+			display: none;
+		}
+		.export-error.visible { display: block; }
+		.export-validation {
+			font-size: 10px; color: var(--ui-orange); margin-top: 6px; line-height: 1.4;
+			padding: 6px 8px; background: var(--ui-orange-faint); border-radius: 3px;
+			display: none;
+		}
+		.export-validation.visible { display: block; }
+		.btn-secondary {
+			width: 100%; padding: 6px; background: transparent; border: 1px solid var(--ui-border);
+			border-radius: 3px; color: var(--ui-text); cursor: pointer; font-size: 11px;
+			margin-top: 5px; font-family: var(--ui-sans); transition: all 0.12s;
+		}
+		.btn-secondary:hover { border-color: var(--ui-accent-dim); color: var(--ui-text-bright); }
 
-		/* Search */
-		#search-wrap { position: relative; }
-		#search-input {
-			width: 100%; padding: 7px 10px; background: var(--bg); border: 1px solid var(--border);
-			border-radius: var(--radius); color: var(--text); font-size: 12px; outline: none;
+		/* Pending items */
+		.pending-item {
+			padding: 5px 7px; margin-bottom: 3px; background: var(--ui-bg); border: 1px solid var(--ui-border);
+			border-radius: 3px; cursor: pointer; font-size: 11px; display: flex;
+			justify-content: space-between; align-items: center; transition: all 0.12s;
 		}
-		#search-input:focus { border-color: var(--accent); }
-		#search-results {
-			position: absolute; top: 100%; left: 0; right: 0; background: var(--panel);
-			border: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius);
-			max-height: 150px; overflow-y: auto; display: none; z-index: 20;
+		.pending-item:hover { border-color: var(--ui-accent-dim); background: var(--ui-accent-ghost); }
+		.pending-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ui-text-bright); cursor: pointer; transition: opacity 0.2s; }
+		.pending-name.loading { opacity: 0.5; pointer-events: none; }
+		.pending-size { color: var(--ui-text); font-family: var(--ui-mono); font-size: 10px; margin-left: 8px; }
+		.pending-delete-btn {
+			background: none; border: none; color: var(--ui-red); font-size: 16px; font-weight: bold;
+			cursor: pointer; padding: 0 4px; line-height: 1; border-radius: 3px;
+			opacity: 0.5; transition: opacity 0.15s;
 		}
-		#search-results.active { display: block; }
-		.search-item {
-			padding: 6px 10px; cursor: pointer; font-size: 12px;
-			border-bottom: 1px solid var(--border);
-		}
-		.search-item:hover { background: var(--accent-dim); }
+		.pending-delete-btn:hover { opacity: 1; background: rgba(255,60,60,0.15); }
 
-		/* Car info */
-		#car-info { display: none; font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+		/* Car info (displayed after search selection) */
+		#car-info { display: none; font-size: 11px; font-family: var(--ui-mono); margin-top: 6px; }
 		#car-info.active { display: block; }
 		.info-row { display: flex; justify-content: space-between; padding: 2px 0; }
-		.info-label { color: var(--muted); }
+		.info-label { color: var(--ui-text); }
+		.info-val { color: var(--ui-text-bright); }
 
-		/* Pending assets */
-		.pending-item {
-			padding: 6px 8px; margin-bottom: 3px; background: var(--bg); border: 1px solid var(--border);
-			border-radius: var(--radius); cursor: pointer; font-size: 11px; display: flex;
-			justify-content: space-between; align-items: center; transition: all 0.15s;
+		/* Sketchfab */
+		.sf-input-row { display: flex; gap: 4px; margin-bottom: 6px; align-items: center; }
+		.sf-input-row select {
+			background: var(--ui-bg); color: var(--ui-text-bright); border: 1px solid var(--ui-border);
+			padding: 2px 4px; font-size: 11px; border-radius: 3px; font-family: var(--ui-sans);
 		}
-		.pending-item:hover { border-color: var(--accent); background: rgba(74,158,255,0.05); }
-		.pending-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-		.pending-size { color: var(--muted); font-family: 'JetBrains Mono', monospace; font-size: 10px; margin-left: 8px; }
-
-		/* Sketchfab search */
-		.sf-input-row { display: flex; gap: 4px; margin-bottom: 6px; }
-		.sf-input-row input { flex: 1; }
-		.sf-input-row button {
-			padding: 4px 10px; background: var(--accent-dim); border: 1px solid var(--accent);
-			border-radius: var(--radius); color: var(--accent); cursor: pointer; font-size: 11px;
-			font-family: 'Inter', sans-serif; white-space: nowrap;
-		}
-		.sf-input-row button:hover { background: var(--accent); color: #fff; }
+		#sf-results { max-height: 300px; overflow-y: auto; }
+		#sf-results::-webkit-scrollbar { width: 3px; }
+		#sf-results::-webkit-scrollbar-thumb { background: var(--ui-accent-ghost); border-radius: 2px; }
 		.sf-item {
-			padding: 6px 8px; margin-bottom: 3px; background: var(--bg); border: 1px solid var(--border);
-			border-radius: var(--radius); cursor: pointer; font-size: 11px; transition: all 0.15s;
+			padding: 6px 7px; margin-bottom: 3px; background: var(--ui-bg); border: 1px solid var(--ui-border);
+			border-radius: 3px; cursor: pointer; font-size: 11px; transition: all 0.12s;
 		}
-		.sf-item:hover { border-color: var(--accent); background: rgba(74,158,255,0.05); }
-		.sf-name { font-weight: 600; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-		.sf-meta { color: var(--muted); font-size: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
-		.sf-meta a { color: var(--accent); text-decoration: none; }
+		.sf-item:hover { border-color: var(--ui-accent-dim); background: var(--ui-accent-ghost); }
+		.sf-name { font-weight: 600; color: var(--ui-text-bright); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+		.sf-meta { color: var(--ui-text); font-size: 10px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+		.sf-meta a { color: var(--ui-accent); text-decoration: none; }
 		.sf-meta a:hover { text-decoration: underline; }
-		.sf-thumb { width: 48px; height: 48px; border-radius: 4px; object-fit: cover; margin-right: 8px; float: left; }
-		.sf-load-more { text-align: center; padding: 6px; color: var(--muted); font-size: 10px; cursor: pointer; }
-		.sf-load-more:hover { color: var(--accent); }
-		.sf-download-btn { background: var(--accent); color: #fff; border: none; padding: 2px 8px; border-radius: 3px; font-size: 10px; cursor: pointer; }
-		.sf-download-btn:hover { opacity: 0.85; }
-		.sf-download-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-		.sf-download-status { font-size: 10px; color: var(--muted); }
-
-		/* Scale */
-		.scale-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-		.scale-row label { width: 14px; color: var(--muted); font-size: 11px; font-weight: 600; }
-		.scale-row input[type=range] { flex: 1; accent-color: var(--accent); }
-		.scale-row .val { width: 36px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
-
-		/* Markers */
-		#marker-list { display: flex; flex-direction: column; gap: 3px; }
-		.marker-item {
-			display: flex; align-items: center; gap: 6px; padding: 4px 6px;
-			border-radius: 4px; font-size: 11px; cursor: default;
+		.sf-thumb { width: 44px; height: 44px; border-radius: 3px; object-fit: cover; margin-right: 7px; float: left; }
+		.sf-download-btn {
+			background: var(--ui-accent-dim); color: var(--ui-text-white); border: 1px solid var(--ui-accent);
+			padding: 2px 7px; border-radius: 2px; font-size: 10px; cursor: pointer; font-family: var(--ui-sans);
 		}
-		.marker-item:hover { background: rgba(255,255,255,0.03); }
-		.marker-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-		.marker-name { flex: 1; }
-		.marker-pos { font-family: 'JetBrains Mono', monospace; color: var(--muted); font-size: 10px; }
-		.marker-btn {
-			padding: 1px 5px; border: 1px solid var(--border); border-radius: 3px;
-			background: transparent; color: var(--text); cursor: pointer; font-size: 10px;
+		.sf-download-btn:hover { background: var(--ui-accent); }
+		.sf-download-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+		.sf-download-status { font-size: 10px; color: var(--ui-text); }
+		.sf-load-more { text-align: center; padding: 5px; color: var(--ui-text); font-size: 10px; cursor: pointer; }
+		.sf-load-more:hover { color: var(--ui-accent); }
+		.cc-badge {
+			background: rgba(163,230,53,0.12); color: var(--ui-green); padding: 1px 5px; border-radius: 3px;
+			font-size: 10px; font-weight: 600;
 		}
-		.marker-btn:hover { background: var(--accent-dim); border-color: var(--accent); }
-		.marker-btn.del { color: var(--danger); }
-		.marker-btn.del:hover { background: rgba(255,74,106,0.15); border-color: var(--danger); }
-
-		/* Validation */
-		#validation { font-size: 11px; }
-		.val-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
-		.val-item.error { color: var(--danger); }
-		.val-item.warn { color: var(--warn); }
-		.val-item.ok { color: var(--success); }
-
-		/* Toolbar */
-		#toolbar {
-			position: fixed; top: 10px; left: 294px; z-index: 10;
-			display: flex; gap: 4px;
-		}
-		.tool-btn {
-			padding: 6px 10px; background: var(--panel); border: 1px solid var(--border);
-			border-radius: var(--radius); color: var(--text); cursor: pointer; font-size: 11px;
-			font-family: 'Inter', sans-serif; transition: all 0.15s;
-		}
-		.tool-btn:hover { background: var(--accent-dim); border-color: var(--accent); }
-		.tool-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-
-		/* Export */
-		.btn-primary {
-			width: 100%; padding: 8px; background: var(--accent); border: none;
-			border-radius: var(--radius); color: #fff; cursor: pointer; font-size: 12px;
-			font-weight: 600; font-family: 'Inter', sans-serif; transition: all 0.15s;
-		}
-		.btn-primary:hover { background: #5ab0ff; }
-		.btn-secondary {
-			width: 100%; padding: 6px; background: transparent; border: 1px solid var(--border);
-			border-radius: var(--radius); color: var(--text); cursor: pointer; font-size: 11px;
-			margin-top: 6px; font-family: 'Inter', sans-serif;
-		}
-		.btn-secondary:hover { border-color: var(--accent); }
+		.sf-empty { color: var(--ui-text); font-size: 11px; padding: 4px 0; }
 
 		/* Object panel */
-		#object-panel { max-height: 250px; overflow-y: auto; }
+		#object-panel { max-height: 240px; overflow-y: auto; }
 		#object-panel::-webkit-scrollbar { width: 3px; }
-		#object-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+		#object-panel::-webkit-scrollbar-thumb { background: var(--ui-accent-ghost); border-radius: 2px; }
 		.obj-item {
 			display: flex; align-items: center; gap: 4px; padding: 3px 4px;
-			border-radius: 4px; font-size: 11px; cursor: default; transition: background 0.1s;
+			border-radius: 3px; font-size: 11px; cursor: default; transition: background 0.1s;
 		}
-		.obj-item:hover { background: rgba(255,255,255,0.03); }
-		.obj-item.selected { background: rgba(74,158,255,0.12); outline: 1px solid var(--accent-dim); }
-		.obj-vis-btn { background: none; border: none; cursor: pointer; font-size: 12px; padding: 0 2px; opacity: 0.5; }
+		.obj-item:hover { background: var(--ui-accent-ghost); }
+		.obj-item.selected { background: var(--ui-accent-dim); outline: 1px solid var(--ui-accent-dim); }
+		@keyframes obj-blink {
+			0%, 100% { outline: 1px solid var(--ui-accent-dim); }
+			50% { outline: 2px solid var(--ui-accent); box-shadow: 0 0 8px var(--ui-accent-dim); }
+		}
+		.obj-item.blink { animation: obj-blink 0.4s ease-in-out 3; }
+		.obj-vis-btn {
+			background: none; border: none; cursor: pointer; font-size: 10px; padding: 0 2px;
+			color: var(--ui-text); font-family: var(--ui-mono); opacity: 0.6;
+		}
 		.obj-vis-btn:hover { opacity: 1; }
-		.obj-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-		.obj-name:hover { color: var(--accent); }
-		.obj-tris { color: var(--muted); font-size: 9px; font-family: "JetBrains Mono", monospace; }
+		.obj-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; color: var(--ui-text-bright); }
+		.obj-name:hover { color: var(--ui-accent); }
+		.obj-tris { color: var(--ui-text); font-size: 9px; font-family: var(--ui-mono); }
 		.obj-badge {
 			font-size: 8px; padding: 1px 4px; border-radius: 3px; font-weight: 600;
 			text-transform: uppercase; letter-spacing: 0.5px;
 		}
-		.obj-badge.wheel_FL, .obj-badge.wheel_FR, .obj-badge.wheel_RL, .obj-badge.wheel_RR { background: #1a3a1a; color: #4aff8b; }
-		.obj-badge.headlight { background: #3a3a1a; color: #ffff88; }
-		.obj-badge.taillight { background: #3a1a1a; color: #ff4444; }
-		.obj-badge.brake_disc { background: #2a2a2a; color: #ff8844; }
-		.obj-actions-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 2px; }
-		.obj-actions-btn:hover { color: var(--text); }
+		.obj-badge.wheel_FL { background: rgba(0,255,136,0.1); color: #00ff88; }
+		.obj-badge.wheel_FR { background: rgba(136,255,0,0.1); color: #88ff00; }
+		.obj-badge.wheel_RL { background: rgba(0,221,204,0.1); color: #00ddcc; }
+		.obj-badge.wheel_RR { background: rgba(204,221,0,0.1); color: #ccdd00; }
+		.obj-badge.brake_disc_FL { background: rgba(255,102,68,0.12); color: #ff6644; }
+		.obj-badge.brake_disc_FR { background: rgba(255,170,34,0.12); color: #ffaa22; }
+		.obj-badge.brake_disc_RL { background: rgba(255,68,136,0.12); color: #ff4488; }
+		.obj-badge.brake_disc_RR { background: rgba(255,204,68,0.12); color: #ffcc44; }
+		.obj-badge.headlight { background: rgba(170,204,255,0.1); color: #aaccff; }
+		.obj-badge.headlight_F { background: rgba(170,204,255,0.1); color: #aaccff; }
+		.obj-badge.headlight_R { background: rgba(204,187,255,0.1); color: #ccbbff; }
+		.obj-badge.headlight_FL { background: rgba(136,187,255,0.1); color: #88bbff; }
+		.obj-badge.headlight_FR { background: rgba(170,238,255,0.1); color: #aaeeff; }
+		.obj-badge.headlight_RL { background: rgba(187,170,255,0.1); color: #bbaaff; }
+		.obj-badge.headlight_RR { background: rgba(221,204,255,0.1); color: #ddccff; }
+		.obj-badge.taillight { background: rgba(255,51,68,0.1); color: #ff3344; }
+		.obj-badge.taillight_F { background: rgba(255,51,68,0.1); color: #ff3344; }
+		.obj-badge.taillight_R { background: rgba(255,34,51,0.1); color: #ff2233; }
+		.obj-badge.taillight_FL { background: rgba(255,85,102,0.1); color: #ff5566; }
+		.obj-badge.taillight_FR { background: rgba(255,68,85,0.1); color: #ff4455; }
+		.obj-badge.taillight_RL { background: rgba(255,102,119,0.1); color: #ff6677; }
+		.obj-badge.taillight_RR { background: rgba(255,17,51,0.1); color: #ff1133; }
+		.obj-badge.exhaust_F, .obj-badge.exhaust_R, .obj-badge.exhaust_FL, .obj-badge.exhaust_FR, .obj-badge.exhaust_RL, .obj-badge.exhaust_RR { background: rgba(168,130,255,0.12); color: #a882ff; }
+		.obj-actions-btn { background: none; border: none; color: var(--ui-text); cursor: pointer; font-size: 12px; padding: 0 2px; font-family: var(--ui-mono); }
 
 		/* Context menu */
 		.obj-context-menu {
-			background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
-			padding: 4px 0; min-width: 160px; z-index: 100; font-size: 11px;
-			box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+			background: var(--ui-panel-solid); border: 1px solid var(--ui-border); border-radius: 4px;
+			padding: 4px 0; min-width: 150px; z-index: 100; font-size: 11px;
+			box-shadow: 0 4px 16px rgba(0,0,0,0.5); position: fixed;
 		}
-		.ctx-label { padding: 4px 10px; color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: 1px; }
-		.ctx-item { padding: 4px 10px; cursor: pointer; }
-		.ctx-item:hover { background: var(--accent-dim); color: var(--accent); }
-		.ctx-item.danger { color: var(--danger); }
-		.ctx-item.danger:hover { background: rgba(255,74,106,0.15); }
-		.ctx-sep { height: 1px; background: var(--border); margin: 2px 0; }
+		.ctx-label { padding: 4px 10px; color: var(--ui-text); font-size: 9px; text-transform: uppercase; letter-spacing: 2px; font-weight: 600; }
+		.ctx-item { padding: 4px 10px; cursor: pointer; color: var(--ui-text-bright); display: flex; align-items: center; gap: 6px; }
+		.assign-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+		.ctx-item:hover { background: var(--ui-accent-ghost); color: var(--ui-accent); }
+		.ctx-item.danger { color: var(--ui-red); }
+		.ctx-item.danger:hover { background: var(--ui-red-dim); }
+		.ctx-sep { height: 1px; background: var(--ui-border); margin: 2px 0; }
 
 		/* Import flow */
-		.import-section {
-			background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;
-			padding: 12px; margin: 8px 8px 8px 0;
+		#import-section {
+			position: fixed; bottom: 24px; right: 16px; z-index: 50;
+			background: var(--ui-panel); backdrop-filter: blur(12px);
+			border: 1px solid var(--ui-border); border-radius: 6px;
+			padding: 14px 16px; width: 320px;
+			font-family: var(--ui-sans);
 		}
-		.import-header { margin-bottom: 10px; }
-		.import-title { font-size: 13px; font-weight: 600; color: var(--fg); display: block; margin-bottom: 8px; }
-		.import-steps-bar { display: flex; gap: 4px; }
+		.import-title {
+			font-size: 12px; font-weight: 600; color: var(--ui-text-white);
+			margin-bottom: 8px; letter-spacing: 0.3px;
+			display: flex; align-items: center; justify-content: space-between;
+		}
+		.import-title .close-btn { background: none; border: none; color: var(--ui-text); font-size: 18px; cursor: pointer; padding: 0 4px; border-radius: 3px; line-height: 1; }
+		.import-title .close-btn:hover { background: var(--ui-accent-ghost); color: var(--ui-text-bright); }
+		.import-steps-bar { display: flex; gap: 3px; margin-bottom: 10px; }
 		.import-step {
-			flex: 1; text-align: center; font-size: 10px; color: var(--muted); padding: 4px;
-			border-radius: 4px; transition: all 0.2s;
+			flex: 1; text-align: center; font-size: 9px; color: var(--ui-text);
+			padding: 3px; border-radius: 3px; cursor: pointer;
+			font-family: var(--ui-mono); letter-spacing: 0.5px;
 		}
-		.import-step.active { color: var(--accent); background: rgba(74,158,255,0.1); }
-		.import-step.done { color: #4aff8b; }
-		.step-num { font-weight: 700; margin-right: 2px; }
-		.import-nav { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
-		.import-nav button { flex: 0; }
-		.import-panel { padding: 4px 0; }
+		.import-step.active { color: var(--ui-accent); background: var(--ui-accent-ghost); }
+		.import-step.done { color: var(--ui-green); }
+		.import-panels { height: 110px; overflow: hidden; }
+		.import-panel { font-size: 11px; color: var(--ui-text); }
+		.import-hint { color: var(--ui-text); font-size: 11px; margin: 0 0 5px 0; line-height: 1.45; }
+		.import-hint:last-child { margin-bottom: 0; }
+		.import-nav { display: flex; gap: 6px; margin-top: 10px; justify-content: flex-end; }
+		kbd { background: var(--ui-bg); border: 1px solid var(--ui-border); border-radius: 3px; padding: 1px 5px; font-family: var(--ui-mono); font-size: 10px; color: var(--ui-accent); }
+		.import-attribution {
+			width: 100%; min-height: 54px; background: var(--ui-bg); color: var(--ui-text-bright);
+			border: 1px solid var(--ui-border); border-radius: 3px; padding: 6px; font-size: 11px;
+			resize: vertical; font-family: var(--ui-mono); outline: none;
+		}
+		.import-attribution:focus { border-color: var(--ui-accent-dim); }
+		.import-attribution::placeholder { color: var(--ui-text); }
+		.import-label { color: var(--ui-text); font-size: 11px; display: block; margin-bottom: 4px; }
+		/* Physics modal is now a standalone Lit component */
+		.toast.info    { border-left: 3px solid var(--ui-accent); }
+		.toast.success { border-left: 3px solid var(--ui-green); }
+		.toast.warning { border-left: 3px solid var(--ui-orange); }
+		.toast.error   { border-left: 3px solid var(--ui-red); }
+		#toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column-reverse; gap: 6px; pointer-events: none; }
+		.toast { pointer-events: auto; background: var(--ui-panel-solid); color: var(--ui-text-bright); padding: 8px 14px; border-radius: 4px; font-size: 12px; font-family: var(--ui-sans); box-shadow: 0 4px 12px rgba(0,0,0,0.4); opacity: 0; transform: translateY(10px); animation: toast-in 0.2s forwards; }
+		.toast.out { animation: toast-out 0.3s forwards; }
+		@keyframes toast-in { to { opacity: 1; transform: translateY(0); } }
+		@keyframes toast-out { to { opacity: 0; transform: translateY(-10px); } }
 	</style>
 </head>
 <body>
+	<!-- UI Components (registers custom elements) -->
+	<script type="module">import "/src/client/ui/index.ts";</script>
+
 	<div id="sidebar">
-		<div class="sidebar-header">🚗 <span>Car Editor</span></div>
+		<div id="sidebar-resize"></div>
+		<div class="sidebar-header">Car <span class="accent">Editor</span></div>
 
-		<div class="section">
-			<div class="section-title">Load Model</div>
-			<div id="drop-zone">
-				<div>Drop GLB here or click</div>
-				<input type="file" id="file-input" accept=".glb,.gltf">
-			</div>
-		</div>
+		<editor-panel title="Load Model">
+			<drop-zone id="drop-zone"></drop-zone>
+		</editor-panel>
 
-		<div class="section">
-			<div class="section-title">Pending Assets</div>
+		<editor-panel title="Pending Assets">
 			<div id="pending-assets"></div>
-		</div>
+		</editor-panel>
 
-		<div class="section">
-			<div class="section-title">Car Database</div>
-			<div id="search-wrap">
-				<input type="text" id="search-input" placeholder="Search cars..." autocomplete="off">
-				<div id="search-results"></div>
-			</div>
+		<editor-panel title="Car Database">
+			<car-search id="car-search"></car-search>
 			<div id="car-info">
-				<div class="info-row"><span class="info-label">Dimensions</span><span id="car-dims"></span></div>
-				<div class="info-row"><span class="info-label">Weight</span><span id="car-weight"></span></div>
-				<div class="info-row"><span class="info-label">Model</span><span id="car-model"></span></div>
+				<div class="info-row"><span class="info-label">Dimensions</span><span class="info-val" id="car-dims"></span></div>
+				<div class="info-row"><span class="info-label">Weight</span><span class="info-val" id="car-weight"></span></div>
+				<div class="info-row"><span class="info-label">Price</span><span class="info-val" id="car-price"></span></div>
+				<div class="info-row"><span class="info-label">Model</span><span class="info-val" id="car-model"></span></div>
 			</div>
-		</div>
+		</editor-panel>
 
-		<div class="section">
-			<div class="section-title">Sketchfab</div>
+		<editor-panel title="Sketchfab">
 			<div class="sf-input-row">
-				<input type="text" id="sf-search" placeholder="Search free car models..." autocomplete="off">
-				<select id="sf-sort" style="background:var(--bg-secondary);color:var(--fg);border:1px solid var(--border);padding:2px 4px;font-size:12px;border-radius:4px;">
+				<span id="sf-search-label" style="flex:1;color:var(--ui-text);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Select a car above</span>
+				<select id="sf-sort">
 					<option value="-likeCount">Most liked</option>
 					<option value="-viewCount">Most viewed</option>
 					<option value="-createdAt">Newest</option>
 					<option value="-downloadCount">Most downloaded</option>
 				</select>
-				<button id="sf-search-btn">Search</button>
 			</div>
 			<div id="sf-results"></div>
-		</div>
+		</editor-panel>
 
-		<div class="section">
-			<div class="section-title">Scale</div>
-			<div class="scale-row"><label>U</label><input type="range" id="scale-u" min="0.01" max="5" step="0.01" value="1"><span class="val" id="scale-u-val">1.00</span></div>
-			<div class="scale-row"><label>X</label><input type="range" id="scale-x" min="0.01" max="5" step="0.01" value="1"><span class="val" id="scale-x-val">1.00</span></div>
-			<div class="scale-row"><label>Y</label><input type="range" id="scale-y" min="0.01" max="5" step="0.01" value="1"><span class="val" id="scale-y-val">1.00</span></div>
-			<div class="scale-row"><label>Z</label><input type="range" id="scale-z" min="0.01" max="5" step="0.01" value="1"><span class="val" id="scale-z-val">1.00</span></div>
-		</div>
+		<editor-panel title="Scale">
+			<div id="scale-controls"></div>
+		</editor-panel>
 
-		<div class="section">
-			<div class="section-title">Objects</div>
+		<editor-panel title="Objects">
 			<div id="object-panel"></div>
-		</div>
+		</editor-panel>
 
-		<div class="section">
-			<div class="section-title">Markers</div>
-			<div id="marker-list"></div>
-		</div>
+		<editor-panel title="Markers">
+			<marker-list id="marker-list"></marker-list>
+		</editor-panel>
 
-		<div class="section">
-			<div class="section-title">Validation</div>
-			<div id="validation"></div>
-		</div>
+		<editor-panel title="Validation">
+			<validation-display id="validation"></validation-display>
+		</editor-panel>
 
-		<div class="section">
-			<button class="btn-primary" id="btn-export">Save Config</button>
+		<div style="padding: 0 8px 8px;">
+			<label class="import-label" style="font-size:10px;color:var(--ui-text);margin-bottom:3px;display:block;">Attribution</label>
+			<textarea id="sidebar-attribution" class="import-attribution" style="width:100%;min-height:40px;font-size:10px;resize:vertical;" placeholder="Auto-filled from Sketchfab or enter manually..."></textarea>
+		</div>
+		<div class="export-actions">
+			<button class="btn-secondary" id="btn-physics">Physics</button>
+			<button class="btn-primary" id="btn-submit">Bake & Submit</button>
+			<div class="export-error" id="export-error"></div>
+			<div class="export-validation" id="export-validation"></div>
 			<button class="btn-secondary" id="btn-download">Download JSON</button>
 		</div>
 	</div>
 
-	<!-- Import Car Flow -->
-	<div id="import-section" class="import-section">
-		<div class="import-header">
-			<span class="import-title">Import Car</span>
-			<div class="import-steps-bar">
-				<div class="import-step active" data-step="0"><span class="step-num">1</span> Select</div>
-				<div class="import-step" data-step="1"><span class="step-num">2</span> Configure</div>
-				<div class="import-step" data-step="2"><span class="step-num">3</span> Physics</div>
-				<div class="import-step" data-step="3"><span class="step-num">4</span> Submit</div>
-			</div>
+	<!-- Quick Tutorial (disposable overlay) -->
+	<div id="import-section">
+		<span class="import-title">Quick Start <button class="close-btn" id="import-close-btn" title="Close">&times;</button></span>
+		<div class="import-steps-bar">
+			<div class="import-step active" data-step="0"><span class="step-num">1</span> Load</div>
+			<div class="import-step" data-step="1"><span class="step-num">2</span> Mark</div>
+			<div class="import-step" data-step="2"><span class="step-num">3</span> Adjust</div>
+			<div class="import-step" data-step="3"><span class="step-num">4</span> Check</div>
+			<div class="import-step" data-step="4"><span class="step-num">5</span> Submit</div>
 		</div>
 
-		<!-- Step 0: Select car (fuzzy search or upload) -->
+		<div class="import-panels">
 		<div class="import-panel" data-panel="0">
-			<p style="color:var(--fg-secondary);font-size:12px;margin-bottom:8px;">Search for an existing car in the database, or load a new model from Sketchfab / file upload.</p>
-			<div id="import-car-search"></div>
+			<p class="import-hint"><strong>1. Select a car</strong> from the database → auto-loads real dimensions, weight & physics.</p>
+			<p class="import-hint"><strong>2. Pick a 3D model</strong> from Pending Assets or Sketchfab panel, or drag & drop a GLB file onto the viewport.</p>
+			<p class="import-hint">The model auto-scales to match the selected car's real size. Attribution auto-fills from Sketchfab metadata.</p>
 		</div>
 
-		<!-- Step 1: Configure model (object marking, placement) -->
 		<div class="import-panel" data-panel="1" style="display:none;">
-			<p style="color:var(--fg-secondary);font-size:12px;margin-bottom:8px;">Use the editor tools to mark wheels, lights, and adjust the model. Use the Objects panel to mark components.</p>
-			<div id="import-config-status"></div>
+			<p class="import-hint"><strong>Place wheel markers</strong> — press <kbd>R</kbd>, then click each wheel center on the mesh. Select which marker in the marker list first, or it auto-picks the next unplaced one.</p>
+			<p class="import-hint"><strong>Assign object marks</strong> — press <kbd>A</kbd> to open the component picker, then left-click meshes to mark (headlights, taillights, brake discs). Middle-click to remove a mark.</p>
+			<p class="import-hint"><strong>Auto-detect</strong> — press <kbd>Shift+A</kbd> to auto-find wheels and lights by name/geometry.</p>
 		</div>
 
-		<!-- Step 2: Physics overrides -->
 		<div class="import-panel" data-panel="2" style="display:none;">
-			<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-				<label style="color:var(--fg-secondary);font-size:12px;display:flex;align-items:center;gap:4px;">
-					<input type="checkbox" id="susp-viz-toggle"> Show suspension range
-				</label>
-			</div>
-			<div id="physics-panel-container"></div>
+			<p class="import-hint"><strong>Scale</strong> — use scale controls to match the green reference prism to the car's real proportions.</p>
+			<p class="import-hint"><strong>Move markers</strong> — press <kbd>W</kbd>, select a marker, drag it. Paired markers (FL/FR) move in sync when locked.</p>
+			<p class="import-hint"><strong>Physics</strong> — click the Physics button to tweak mass, suspension, damping. "Reset Defaults" restores the selected car's values.</p>
 		</div>
 
-		<!-- Step 3: Submit -->
 		<div class="import-panel" data-panel="3" style="display:none;">
-			<p style="color:var(--fg-secondary);font-size:12px;margin-bottom:8px;">Review and submit. Attribution will be auto-filled from Sketchfab if applicable.</p>
-			<label style="color:var(--fg-secondary);font-size:12px;display:block;margin-bottom:4px;">Attribution</label>
-			<textarea id="import-attribution" placeholder="Attribution text (auto-filled from Sketchfab or enter manually)"
-				style="width:100%;min-height:60px;background:var(--bg-secondary);color:var(--fg);border:1px solid var(--border);border-radius:4px;padding:6px;font-size:12px;resize:vertical;font-family:monospace;"></textarea>
+			<p class="import-hint"><strong>Validation panel</strong> — check that all required markers are placed and all errors are resolved.</p>
+			<p class="import-hint"><strong>Objects panel</strong> — verify badges (wheel, headlight, taillight, brake disc) are on the correct meshes.</p>
+			<p class="import-hint"><strong>Attribution</strong> — confirm the attribution field in the sidebar is filled (auto-populated from Sketchfab).</p>
+		</div>
+
+		<div class="import-panel" data-panel="4" style="display:none;">
+			<p class="import-hint">Hit <strong>Bake & Submit</strong> in the sidebar → exports GLB with markers baked in, uploads to S3, saves car config. Done!</p>
+			<p class="import-hint" style="margin-top:6px;border-top:1px solid var(--ui-border);padding-top:6px;color:var(--ui-text-dim);">
+				<strong style="color:var(--ui-text);">Shortcuts:</strong>
+				<kbd>Q</kbd> orbit · <kbd>Shift+Q</kbd> select · <kbd>R</kbd> place marker · <kbd>A</kbd> assign · <kbd>W</kbd> move · <kbd>E</kbd> explode · <kbd>X</kbd> wireframe · <kbd>H</kbd> highlights · <kbd>0</kbd> fit · <kbd>Esc</kbd> cancel
+			</p>
+		</div>
 		</div>
 
 		<div class="import-nav">
 			<button class="btn-secondary" id="import-prev-btn" style="display:none;">← Back</button>
 			<button class="btn-primary" id="import-next-btn">Next →</button>
-			<button class="btn-primary" id="import-bake-btn" style="display:none;background:var(--accent);">Bake & Submit</button>
 		</div>
 	</div>
 
-	<div id="toolbar">
-		<button class="tool-btn active" data-mode="orbit">🖱 Orbit</button>
-		<button class="tool-btn" data-mode="select">🔍 Select</button>
-		<button class="tool-btn" data-mode="place">📍 Place</button>
-		<button class="tool-btn" data-mode="move">✋ Move</button>
-		<button class="tool-btn" data-mode="delete">🗑 Delete</button>
-		<button class="tool-btn" id="btn-wireframe">Wire</button>
-		<button class="tool-btn" id="btn-dims">Dims</button>
-		<button class="tool-btn" id="btn-autodetect">Auto</button>
-		<button class="tool-btn" id="btn-view-front">Front</button>
-		<button class="tool-btn" id="btn-view-back">Back</button>
-		<button class="tool-btn" id="btn-view-top">Top</button>
-		<button class="tool-btn" id="btn-view-left">Left</button>
-		<button class="tool-btn" id="btn-view-right">Right</button>
-		<button class="tool-btn" id="btn-fit">Fit</button>
-	</div>
+	<physics-modal id="physics-modal"></physics-modal>
+
+	<editor-toolbar id="toolbar" mode="select"></editor-toolbar>
+
+	<div id="toast-container"></div>
+
+	<status-line id="status-line" message=""></status></status-line>
 
 	<div id="viewport"></div>
 

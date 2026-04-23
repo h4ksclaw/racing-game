@@ -220,7 +220,10 @@ describe("generateHouses", () => {
 
 	it("returns empty array when disabled", () => {
 		const samples = makeSamples(42, 200);
-		const houses = generateHouses(1, samples, { ...defaultConfig, enabled: false });
+		const houses = generateHouses(1, samples, {
+			...defaultConfig,
+			enabled: false,
+		});
 		expect(houses).toEqual([]);
 	});
 });

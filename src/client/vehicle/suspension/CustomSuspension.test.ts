@@ -10,7 +10,10 @@ function mockVehicle(suspensionLengths: (number | null)[]) {
 
 /** Create a mock rigid body that records impulses */
 function mockBody() {
-	const impulses: { point: { x: number; y: number; z: number }; impulse: { x: number; y: number; z: number } }[] = [];
+	const impulses: {
+		point: { x: number; y: number; z: number };
+		impulse: { x: number; y: number; z: number };
+	}[] = [];
 	return {
 		translation: () => ({ x: 0, y: 0, z: 0 }),
 		rotation: () => ({ x: 0, y: 0, z: 0, w: 1 }),
@@ -63,7 +66,11 @@ describe("CustomSuspension", () => {
 	});
 
 	it("applies differential forces when compression differs", () => {
-		const susp = new CustomSuspension({ stiffness: 10000, damping: 0, maxForce: 50000 });
+		const susp = new CustomSuspension({
+			stiffness: 10000,
+			damping: 0,
+			maxForce: 50000,
+		});
 		susp.setAnchors([
 			{ x: 0, y: 0, z: 1 },
 			{ x: 0, y: 0, z: -1 },
@@ -101,7 +108,11 @@ describe("CustomSuspension", () => {
 	});
 
 	it("applyWeightTransfer applies forces under braking", () => {
-		const susp = new CustomSuspension({ stiffness: 10000, damping: 0, maxForce: 50000 });
+		const susp = new CustomSuspension({
+			stiffness: 10000,
+			damping: 0,
+			maxForce: 50000,
+		});
 		susp.setAnchors([
 			{ x: 0.7, y: 0, z: 1.2 },
 			{ x: -0.7, y: 0, z: 1.2 },

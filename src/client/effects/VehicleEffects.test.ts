@@ -26,7 +26,10 @@ vi.mock("three", () => {
 		dispose = vi.fn();
 	}
 	class InstancedMesh {
-		geometry = { attributes: {} as Record<string, { needsUpdate: boolean }>, dispose: vi.fn() };
+		geometry = {
+			attributes: {} as Record<string, { needsUpdate: boolean }>,
+			dispose: vi.fn(),
+		};
 		material = { dispose: vi.fn() };
 		frustumCulled = false;
 		count = 0;
@@ -88,7 +91,10 @@ if (typeof globalThis.document === "undefined") {
 				height: 0,
 				getContext: vi.fn(() => ({
 					fillRect: vi.fn(),
-					createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn(), fillStyle: "" })),
+					createRadialGradient: vi.fn(() => ({
+						addColorStop: vi.fn(),
+						fillStyle: "",
+					})),
 				})),
 			};
 			return canvas;

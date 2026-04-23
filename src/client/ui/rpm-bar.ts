@@ -5,56 +5,56 @@ export class RpmBar extends LitElement {
 	static override styles = [
 		themeStyles,
 		css`
-			:host {
-				display: flex;
-				align-items: center;
-				gap: 8px;
-				position: fixed;
-				bottom: 46px;
-				right: 16px;
-				z-index: 100;
-				pointer-events: none;
-				font-family: var(--ui-sans);
-				background: var(--ui-panel);
-				backdrop-filter: blur(10px);
-				border: var(--ui-border);
-				padding: 7px 14px;
-			}
-			.lbl {
-				font-size: 9px;
-				color: rgba(92,158,255,0.3);
-				font-weight: 600;
-				letter-spacing: 2px;
-			}
-			.segments {
-				display: flex;
-				gap: 2px;
-				flex: 1;
-				height: 7px;
-			}
-			.seg {
-				flex: 1;
-				background: var(--ui-accent-ghost);
-				transition: background 0.05s;
-			}
-			.seg.filled {
-				background: rgba(92,158,255,0.5);
-			}
-			.seg.filled.red {
-				background: rgba(244,63,94,0.6);
-			}
-			.seg.red-zone {
-				background: var(--ui-red-dim);
-			}
-			.rpm-val {
-				font-size: 10px;
-				color: rgba(92,158,255,0.5);
-				min-width: 28px;
-				text-align: right;
-				font-family: var(--ui-mono);
-				font-variant-numeric: tabular-nums;
-			}
-		`,
+      :host {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        position: fixed;
+        bottom: 46px;
+        right: 16px;
+        z-index: 100;
+        pointer-events: none;
+        font-family: var(--ui-sans);
+        background: var(--ui-panel);
+        backdrop-filter: blur(10px);
+        border: var(--ui-border);
+        padding: 7px 14px;
+      }
+      .lbl {
+        font-size: 9px;
+        color: rgba(92, 158, 255, 0.3);
+        font-weight: 600;
+        letter-spacing: 2px;
+      }
+      .segments {
+        display: flex;
+        gap: 2px;
+        flex: 1;
+        height: 7px;
+      }
+      .seg {
+        flex: 1;
+        background: var(--ui-accent-ghost);
+        transition: background 0.05s;
+      }
+      .seg.filled {
+        background: rgba(92, 158, 255, 0.5);
+      }
+      .seg.filled.red {
+        background: rgba(244, 63, 94, 0.6);
+      }
+      .seg.red-zone {
+        background: var(--ui-red-dim);
+      }
+      .rpm-val {
+        font-size: 10px;
+        color: rgba(92, 158, 255, 0.5);
+        min-width: 28px;
+        text-align: right;
+        font-family: var(--ui-mono);
+        font-variant-numeric: tabular-nums;
+      }
+    `,
 	];
 
 	declare rpm: number;
@@ -83,10 +83,16 @@ export class RpmBar extends LitElement {
 		}
 		const rpmVal = Math.round(this.rpm * 8000);
 		return html`
-			<span class="lbl">RPM</span>
-			<div class="segments">${segs}</div>
-			<span class="rpm-val">${rpmVal}</span>
-		`;
+      <span class="lbl">RPM</span>
+      <div class="segments">${segs}</div>
+      <span class="rpm-val">${rpmVal}</span>
+    `;
 	}
 }
 customElements.define("rpm-bar", RpmBar);
+
+declare global {
+	interface HTMLElementTagNameMap {
+		"rpm-bar": RpmBar;
+	}
+}

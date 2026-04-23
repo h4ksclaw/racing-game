@@ -41,7 +41,12 @@ export function showSuspensionRange(_model: THREE.Group, markers: MarkerData[], 
 
 		// Vertical line connecting min/max
 		const lineGeo = new THREE.BufferGeometry().setFromPoints([upPos, downPos]);
-		const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.4 });
+		const lineMat = new THREE.LineBasicMaterial({
+			color: 0xffffff,
+			depthTest: false,
+			transparent: true,
+			opacity: 0.4,
+		});
 		const line = new THREE.Line(lineGeo, lineMat);
 		line.renderOrder = 999;
 		vizGroup.add(line);

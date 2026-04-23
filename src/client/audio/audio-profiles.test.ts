@@ -162,7 +162,11 @@ describe("deriveSoundConfig", () => {
 	});
 
 	it("uses provided cylinder count", () => {
-		const config = deriveSoundConfig({ cylinders: 6, idleRPM: 700, maxRPM: 7000 });
+		const config = deriveSoundConfig({
+			cylinders: 6,
+			idleRPM: 700,
+			maxRPM: 7000,
+		});
 		expect(config.cylinders).toBe(6);
 	});
 
@@ -172,12 +176,20 @@ describe("deriveSoundConfig", () => {
 	});
 
 	it("uses provided rev limiter RPM", () => {
-		const config = deriveSoundConfig({ idleRPM: 800, maxRPM: 7000, revLimiterRPM: 6800 });
+		const config = deriveSoundConfig({
+			idleRPM: 800,
+			maxRPM: 7000,
+			revLimiterRPM: 6800,
+		});
 		expect(config.revLimiterRPM).toBe(6800);
 	});
 
 	it("sets turbo flag when provided", () => {
-		const config = deriveSoundConfig({ idleRPM: 800, maxRPM: 7000, turbo: true });
+		const config = deriveSoundConfig({
+			idleRPM: 800,
+			maxRPM: 7000,
+			turbo: true,
+		});
 		expect(config.turbo).toBe(true);
 	});
 
@@ -249,7 +261,11 @@ describe("deriveSoundConfig", () => {
 	});
 
 	it("supports 8 cylinder", () => {
-		const config = deriveSoundConfig({ cylinders: 8, idleRPM: 600, maxRPM: 9000 });
+		const config = deriveSoundConfig({
+			cylinders: 8,
+			idleRPM: 600,
+			maxRPM: 9000,
+		});
 		expect(config.cylinders).toBe(8);
 		expect(config.maxRPM).toBe(9000);
 	});

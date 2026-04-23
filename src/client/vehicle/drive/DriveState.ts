@@ -38,6 +38,12 @@ export class DriveState {
 		}
 
 		this.prevReverse = isReverse;
-		return { wantsForward, wantsBackward, isBraking, isReverse, effectiveNeutral: wantsNeutral };
+		return {
+			wantsForward,
+			wantsBackward,
+			isBraking,
+			isReverse,
+			effectiveNeutral: wantsNeutral,
+		};
 	}
 }

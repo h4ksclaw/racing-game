@@ -71,13 +71,19 @@ export function validateMarkers(markers: MarkerData[]): ValidationIssue[] {
 	const issues: ValidationIssue[] = [];
 
 	if (!findMarker(markers, "PhysicsMarker")) {
-		issues.push({ type: "error", message: "Missing PhysicsMarker" });
+		issues.push({
+			type: "error",
+			message: "Missing PhysicsMarker — place it at the car's center of mass (auto-placed by detect, or manually)",
+		});
 	}
 
 	const wheelTypes = ["Wheel_FL", "Wheel_FR", "Wheel_RL", "Wheel_RR"];
 	const missingWheels = wheelTypes.filter((t) => !findMarker(markers, t));
 	if (missingWheels.length > 0) {
-		issues.push({ type: "error", message: `Missing wheels: ${missingWheels.join(", ")}` });
+		issues.push({
+			type: "error",
+			message: `Missing wheels: ${missingWheels.join(", ")}`,
+		});
 	}
 
 	const fl = findMarker(markers, "Wheel_FL");
@@ -94,7 +100,10 @@ export function validateMarkers(markers: MarkerData[]): ValidationIssue[] {
 
 	const radius = computeWheelRadius(markers);
 	if (radius < 0.15 || radius > 0.6) {
-		issues.push({ type: "warn", message: `Suspicious wheel radius: ${radius.toFixed(2)}m` });
+		issues.push({
+			type: "warn",
+			message: `Suspicious wheel radius: ${radius.toFixed(2)}m`,
+		});
 	}
 
 	const noLights = !findMarker(markers, "Headlight_L") && !findMarker(markers, "Taillight_L");
@@ -180,15 +189,25 @@ export function generateExport(
 	};
 }
 
-export async function saveConfig(payload: ExportPayload): Promise<{ ok: boolean; error?: string }> {
+export async function saveConfig(payload: ExportPayload): Promise<{ ok: boolean; error?: string; data?: unknown }> {
 	try {
 		const resp = await fetch(`${API_BASE}/cars/config`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(payload),
 		});
-		if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` };
-		return { ok: true };
+		if (!resp.ok) {
+			let msg = `HTTP ${resp.status}`;
+			try {
+				const body = await resp.json();
+				if (body.error) msg = body.error;
+			} catch {
+				/* ignore parse */
+			}
+			return { ok: false, error: msg };
+		}
+		const data = await resp.json();
+		return { ok: true, data };
 	} catch (e: unknown) {
 		const msg = e instanceof Error ? e.message : String(e);
 		return { ok: false, error: msg };
@@ -196,7 +215,9 @@ export async function saveConfig(payload: ExportPayload): Promise<{ ok: boolean;
 }
 
 export function downloadJSON(payload: ExportPayload, filename?: string) {
-	const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+	const blob = new Blob([JSON.stringify(payload, null, 2)], {
+		type: "application/json",
+	});
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement("a");
 	a.href = url;

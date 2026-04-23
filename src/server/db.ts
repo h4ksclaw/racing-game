@@ -161,6 +161,7 @@ export interface AssetRow {
 	download_date: string;
 	status: string;
 	metadata_json: string | null;
+	s3_key?: string | null;
 }
 
 export function getAssets(status?: string): AssetRow[] {
@@ -192,10 +193,12 @@ export function insertAsset(asset: {
 }): number {
 	const db = getDb();
 	const result = db
-		.prepare(`
+		.prepare(
+			`
 		INSERT INTO assets (filepath, sha256_hash, source_url, source_type, license, attribution, original_name, status, metadata_json)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`)
+	`,
+		)
 		.run(
 			asset.filepath,
 			asset.sha256_hash,
@@ -208,6 +211,19 @@ export function insertAsset(asset: {
 			asset.metadata_json ?? null,
 		);
 	return result.lastInsertRowid as number;
+}
+
+export function deleteAsset(id: number): boolean {
+	const db = getDb();
+	const asset = db.prepare("SELECT * FROM assets WHERE id = ?").get(id) as AssetRow | undefined;
+	if (!asset) return false;
+	// Delete related attributions
+	db.prepare("DELETE FROM attributions WHERE asset_id = ?").run(id);
+	// Delete related car configs that reference this asset
+	db.prepare("DELETE FROM car_configs WHERE asset_id = ?").run(id);
+	// Delete the asset itself
+	db.prepare("DELETE FROM assets WHERE id = ?").run(id);
+	return true;
 }
 
 export function updateAssetStatus(id: number, status: string, filepath?: string): void {
@@ -575,17 +591,33 @@ export function upsertCarMetadata(car: {
 	if (existing && (car.confidence ?? 0.5) > existing.confidence) {
 		// Merge: update only non-null fields
 		const current = db.prepare("SELECT * FROM car_metadata WHERE id = ?").get(existing.id) as CarMetadataRow;
-		const dims = { ...parseJson<CarDimensions>(current.dimensions_json), ...car.dimensions };
+		const dims = {
+			...parseJson<CarDimensions>(current.dimensions_json),
+			...car.dimensions,
+		};
 		const eng = { ...parseJson<CarEngine>(current.engine_json), ...car.engine };
-		const perf = { ...parseJson<CarPerformance>(current.performance_json), ...car.performance };
-		const trans = { ...parseJson<CarTransmission>(current.transmission_json), ...car.transmission };
-		const brakes = { ...parseJson<CarBrakes>(current.brakes_json), ...car.brakes };
-		const susp = { ...parseJson<CarSuspension>(current.suspension_json), ...car.suspension };
+		const perf = {
+			...parseJson<CarPerformance>(current.performance_json),
+			...car.performance,
+		};
+		const trans = {
+			...parseJson<CarTransmission>(current.transmission_json),
+			...car.transmission,
+		};
+		const brakes = {
+			...parseJson<CarBrakes>(current.brakes_json),
+			...car.brakes,
+		};
+		const susp = {
+			...parseJson<CarSuspension>(current.suspension_json),
+			...car.suspension,
+		};
 		const tires = { ...parseJson<CarTires>(current.tires_json), ...car.tires };
 		const aero = { ...parseJson<CarAero>(current.aero_json), ...car.aero };
 		const price = { ...parseJson<CarPrice>(current.price_json), ...car.price };
 
-		db.prepare(`
+		db.prepare(
+			`
 			UPDATE car_metadata SET
 				trim = COALESCE(NULLIF(?, trim), trim),
 				body_type = COALESCE(NULLIF(?, body_type), body_type),
@@ -601,7 +633,8 @@ export function upsertCarMetadata(car: {
 				tags = COALESCE(NULLIF(?, tags), tags),
 				source = ?, confidence = ?, updated_at = ?
 			WHERE id = ?
-		`).run(
+		`,
+		).run(
 			car.trim ?? null,
 			car.body_type ?? null,
 			JSON.stringify(dims),
@@ -629,13 +662,15 @@ export function upsertCarMetadata(car: {
 
 	if (!existing) {
 		const result = db
-			.prepare(`
+			.prepare(
+				`
 			INSERT INTO car_metadata (make, model, year, trim, body_type, dimensions_json, engine_json,
 				performance_json, drivetrain, transmission_json, brakes_json, suspension_json,
 				tires_json, aero_json, weight_kg, weight_front_pct, fuel_type, price_json,
 				eras, tags, source, confidence)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`)
+		`,
+			)
 			.run(
 				car.make,
 				car.model,
@@ -674,6 +709,8 @@ export interface CarConfigRow {
 	car_metadata_id: number | null;
 	config_json: string;
 	model_schema_json: string | null;
+	physics_overrides_json?: string | null;
+	attribution?: string | null;
 	created_date: string;
 }
 
@@ -685,10 +722,12 @@ export function saveCarConfig(
 ): number {
 	const db = getDb();
 	const result = db
-		.prepare(`
+		.prepare(
+			`
 		INSERT INTO car_configs (asset_id, car_metadata_id, config_json, model_schema_json)
 		VALUES (?, ?, ?, ?)
-	`)
+	`,
+		)
 		.run(assetId, carMetadataId ?? null, configJson, modelSchemaJson ?? null);
 
 	// Mark asset as ready
@@ -723,10 +762,12 @@ export function insertCarImport(data: {
 
 	// Create asset
 	const assetResult = db
-		.prepare(`
+		.prepare(
+			`
 		INSERT INTO assets (filepath, sha256_hash, source_url, source_type, license, attribution, original_name, status, s3_key)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`)
+	`,
+		)
 		.run(
 			`s3://${data.s3Key}`,
 			hash,
@@ -742,10 +783,12 @@ export function insertCarImport(data: {
 
 	// Create car config
 	const configResult = db
-		.prepare(`
+		.prepare(
+			`
 		INSERT INTO car_configs (asset_id, car_metadata_id, config_json, model_schema_json, physics_overrides_json, attribution)
 		VALUES (?, ?, ?, ?, ?, ?)
-	`)
+	`,
+		)
 		.run(
 			assetId,
 			data.carMetadataId ?? null,
@@ -796,11 +839,13 @@ export function insertAttribution(data: {
 }): number {
 	const db = getDb();
 	const result = db
-		.prepare(`
+		.prepare(
+			`
 		INSERT INTO attributions (asset_id, car_config_id, source_type, model_name, author_name,
 			author_url, license_label, license_slug, source_url, license_url, description, notes)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`)
+	`,
+		)
 		.run(
 			data.asset_id ?? null,
 			data.car_config_id ?? null,

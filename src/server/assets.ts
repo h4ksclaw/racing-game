@@ -64,7 +64,6 @@ export function createUploadMiddleware(): multer.Multer {
 			cb(null, path.join(getAssetDir(), "pending"));
 		},
 		filename: (_req, file, cb) => {
-			// Use original name for now; we'll hash after full upload
 			const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
 			cb(null, safeName);
 		},
@@ -72,7 +71,7 @@ export function createUploadMiddleware(): multer.Multer {
 
 	return multer({
 		storage,
-		limits: { fileSize: 40 * 1024 * 1024 }, // 40 MB max
+		limits: { fileSize: 40 * 1024 * 1024 },
 		fileFilter: (_req, file, cb) => {
 			const ext = path.extname(file.originalname).toLowerCase();
 			if (ext === ".glb" || ext === ".gltf") {
@@ -84,7 +83,6 @@ export function createUploadMiddleware(): multer.Multer {
 	});
 }
 
-/** Process an uploaded file: hash it, rename to hash-based name, return metadata. */
 export interface ProcessedUpload {
 	hash: string;
 	originalName: string;
@@ -97,30 +95,59 @@ export function processUploadedFile(tempPath: string, originalName: string): Pro
 	const hash = hashBuffer(buf);
 	const hashPath = getPendingPath(hash);
 
-	// Rename to hash-based filename (overwrite if same hash uploaded again)
 	if (tempPath !== hashPath) {
 		fs.mkdirSync(path.dirname(hashPath), { recursive: true });
 		fs.renameSync(tempPath, hashPath);
-		// Clean up temp file if rename didn't work (same dir)
 		if (fs.existsSync(tempPath) && tempPath !== hashPath) {
 			fs.unlinkSync(tempPath);
 		}
 	}
 
-	return {
-		hash,
-		originalName,
-		filePath: hashPath,
-		size: buf.length,
-	};
+	// Save metadata for name-based lookup
+	const metaPath = hashPath.replace(/\.glb$/, ".meta.json");
+	fs.writeFileSync(metaPath, JSON.stringify({ originalName, size: buf.length }));
+
+	return { hash, originalName, filePath: hashPath, size: buf.length };
 }
 
-/** Serve asset files by hash. */
+/** Resolve an original filename to a hash by scanning metadata files. */
+function resolveByName(name: string): { hash: string; filePath: string; originalName: string } | null {
+	const base = getAssetDir();
+	for (const dir of ["pending", "ready"]) {
+		const dirPath = path.join(base, dir);
+		if (!fs.existsSync(dirPath)) continue;
+		for (const file of fs.readdirSync(dirPath)) {
+			if (!file.endsWith(".meta.json")) continue;
+			try {
+				const meta = JSON.parse(fs.readFileSync(path.join(dirPath, file), "utf-8"));
+				const h = file.replace(/\.meta\.json$/, "");
+				if (meta.originalName === name || meta.originalName?.replace(/\.(glb|gltf)$/i, "") === name) {
+					return {
+						hash: h,
+						filePath: path.join(dirPath, `${h}.glb`),
+						originalName: meta.originalName,
+					};
+				}
+			} catch {
+				/* skip corrupt meta */
+			}
+		}
+	}
+	return null;
+}
+
+/** Serve asset files by hash or original name. */
 export function serveAsset(req: Request, res: Response): void {
-	const hash = String(req.params.hash);
+	let hash = String(req.params.hash);
+
+	// If not a valid 64-char hex hash, try resolving by original name
 	if (!/^[a-f0-9]{64}$/.test(hash)) {
-		res.status(400).json({ error: "Invalid hash" });
-		return;
+		const resolved = resolveByName(hash);
+		if (!resolved) {
+			res.status(404).json({ error: "Asset not found" });
+			return;
+		}
+		hash = resolved.hash;
 	}
 
 	// Try ready first, then pending

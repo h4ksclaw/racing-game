@@ -15,17 +15,15 @@ import { applyTimeOfDay } from "./sky.ts";
 import { updateTerrainShadows } from "./terrain.ts";
 import { applyOverrides, loadCustomConfig } from "./ui/garage-store.ts";
 import type { GearStrip } from "./ui/gear-strip.ts";
-import type { LoadingScreen } from "./ui/loading-screen.ts";
 import type { RaceMinimap } from "./ui/minimap.ts";
 import type { PedalBars } from "./ui/pedal-bars.ts";
-import type { RaceToast } from "./ui/race-toast.ts";
 import type { RpmBar } from "./ui/rpm-bar.ts";
 import type { SessionBadge } from "./ui/session-badge.ts";
 import type { SpeedDisplay } from "./ui/speed-display.ts";
 import type { SpeedTrap } from "./ui/speed-trap.ts";
 import type { SteerIndicator } from "./ui/steer-indicator.ts";
 import type { WeatherType } from "./utils.ts";
-import { SPORTS_CAR } from "./vehicle/configs.ts";
+import { type CarConfig, SPORTS_CAR } from "./vehicle/configs.ts";
 import { DEFAULT_INPUT, RapierVehicleController, type VehicleInput } from "./vehicle/index.ts";
 import { VehicleRenderer } from "./vehicle/VehicleRenderer.ts";
 import { updateWeather } from "./weather.ts";
@@ -186,7 +184,7 @@ function resetCar(): void {
 // ── Build ───────────────────────────────────────────────────────────────
 
 async function buildPractice(): Promise<void> {
-	const loading = document.querySelector("loading-screen") as LoadingScreen | null;
+	const loading = document.querySelector("loading-screen");
 
 	world = await buildWorld({
 		seed,
@@ -203,8 +201,24 @@ async function buildPractice(): Promise<void> {
 
 	const carParam = urlParams.get("car");
 	const customCfg = loadCustomConfig();
-	const carConfig =
-		customCfg && (carParam === "custom" || !carParam) ? applyOverrides(SPORTS_CAR, customCfg) : SPORTS_CAR;
+
+	let carConfig: CarConfig;
+	if (carParam && carParam !== "custom" && !isNaN(Number(carParam))) {
+		// Load saved car config from DB by ID
+		try {
+			const resp = await fetch(`/api/cars/playable/${carParam}`);
+			if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+			const saved = await resp.json();
+			// Merge any garage overrides on top
+			carConfig = customCfg ? applyOverrides(saved as CarConfig, customCfg) : (saved as CarConfig);
+			console.log(`[practice] Loaded saved car config #${carParam}: ${saved.name}`);
+		} catch (err) {
+			console.warn(`[practice] Failed to load car config #${carParam}, falling back to AE86:`, err);
+			carConfig = customCfg && !carParam ? applyOverrides(SPORTS_CAR, customCfg) : SPORTS_CAR;
+		}
+	} else {
+		carConfig = customCfg && (carParam === "custom" || !carParam) ? applyOverrides(SPORTS_CAR, customCfg) : SPORTS_CAR;
+	}
 
 	// Create renderer first to auto-derive chassis from model markers
 	renderer = new VehicleRenderer(carConfig);
@@ -288,7 +302,7 @@ async function buildPractice(): Promise<void> {
 	uiReady = true;
 	sessionStart = Date.now();
 
-	const toast = document.querySelector("race-toast") as RaceToast | null;
+	const toast = document.querySelector("race-toast");
 	if (toast) toast.show("WORLD LOADED");
 }
 
@@ -417,7 +431,11 @@ function updateCOMSphere(v: RapierVehicleController): void {
 
 	if (!comSphereAdded) {
 		const geom = new THREE.SphereGeometry(0.08, 16, 16);
-		const mat = new THREE.MeshBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.85 });
+		const mat = new THREE.MeshBasicMaterial({
+			color: 0x4488ff,
+			transparent: true,
+			opacity: 0.85,
+		});
 		comSphere = new THREE.Mesh(geom, mat);
 		state.scene.add(comSphere);
 		comSphereAdded = true;
@@ -562,6 +580,6 @@ buildPractice()
 	})
 	.catch((err) => {
 		console.error("Failed to build practice scene:", err);
-		const loading = document.querySelector("loading-screen") as LoadingScreen | null;
+		const loading = document.querySelector("loading-screen");
 		if (loading) loading.message = "Error loading track. Check console.";
 	});

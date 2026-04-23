@@ -365,7 +365,11 @@ export class RapierVehicleController {
 			},
 			engine as any,
 			gearbox as any,
-			{ ...engineSpec, gearRatios: this._config.gearbox.gearRatios, maxBrakeG: this._config.brakes.maxBrakeG },
+			{
+				...engineSpec,
+				gearRatios: this._config.gearbox.gearRatios,
+				maxBrakeG: this._config.brakes.maxBrakeG,
+			},
 			chassis,
 			this.drag.config,
 			dt,

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { computeForces, type EngineState, type ForceInput, type GearboxState } from "./ForceComputer.ts";
 
-const engineSpec = { torqueNm: 150, finalDrive: 4.3, gearRatios: [3.59, 2.06, 1.38], maxBrakeG: 1.2 };
+const engineSpec = {
+	torqueNm: 150,
+	finalDrive: 4.3,
+	gearRatios: [3.59, 2.06, 1.38],
+	maxBrakeG: 1.2,
+};
 const chassis = { mass: 1000, wheelRadius: 0.31 };
 const drag = { aeroDrag: 0.44 };
 
@@ -26,7 +31,10 @@ const defaultEngine: EngineState = {
 	getTorqueMultiplier: () => 1,
 };
 
-const defaultGearbox: GearboxState = { effectiveRatio: 3.59, isShifting: false };
+const defaultGearbox: GearboxState = {
+	effectiveRatio: 3.59,
+	isShifting: false,
+};
 
 describe("computeForces", () => {
 	it("returns positive engine force when wanting forward", () => {

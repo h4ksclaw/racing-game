@@ -5,33 +5,39 @@ export class RaceToast extends LitElement {
 	static override styles = [
 		themeStyles,
 		css`
-			:host {
-				position: fixed;
-				top: 50%;
-				left: 50%;
-				transform: translate(-50%, -50%);
-				z-index: 200;
-				pointer-events: none;
-				font-family: var(--ui-mono);
-				background: var(--ui-panel-solid);
-				backdrop-filter: blur(12px);
-				border: 1px solid var(--ui-accent-faint);
-				padding: 10px 22px;
-				font-size: 10px;
-				color: rgba(92,158,255,0.5);
-				letter-spacing: 2px;
-				transition: opacity 0.3s;
-			}
-			:host([hidden]) {
-				opacity: 0;
-			}
-			.prefix {
-				margin-right: 8px;
-			}
-			.prefix.ok { color: var(--ui-green); }
-			.prefix.warn { color: var(--ui-amber); }
-			.prefix.error { color: var(--ui-red); }
-		`,
+      :host {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 200;
+        pointer-events: none;
+        font-family: var(--ui-mono);
+        background: var(--ui-panel-solid);
+        backdrop-filter: blur(12px);
+        border: 1px solid var(--ui-accent-faint);
+        padding: 10px 22px;
+        font-size: 10px;
+        color: rgba(92, 158, 255, 0.5);
+        letter-spacing: 2px;
+        transition: opacity 0.3s;
+      }
+      :host([hidden]) {
+        opacity: 0;
+      }
+      .prefix {
+        margin-right: 8px;
+      }
+      .prefix.ok {
+        color: var(--ui-green);
+      }
+      .prefix.warn {
+        color: var(--ui-amber);
+      }
+      .prefix.error {
+        color: var(--ui-red);
+      }
+    `,
 	];
 
 	declare message: string;
@@ -67,9 +73,15 @@ export class RaceToast extends LitElement {
 	override render() {
 		if (!this.visible) return html``;
 		return html`
-			<span class="prefix ${this.type}">[${this.type.toUpperCase()}]</span>
-			<span>${this.message}</span>
-		`;
+      <span class="prefix ${this.type}">[${this.type.toUpperCase()}]</span>
+      <span>${this.message}</span>
+    `;
 	}
 }
 customElements.define("race-toast", RaceToast);
+
+declare global {
+	interface HTMLElementTagNameMap {
+		"race-toast": RaceToast;
+	}
+}

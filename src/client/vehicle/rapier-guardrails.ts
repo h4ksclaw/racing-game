@@ -53,7 +53,10 @@ export class Guardrails {
 
 		const terrainAny = this.terrain as unknown as {
 			nearestRoad(x: number, z: number): { sampleIndex: number };
-			samples: Array<{ point: { x: number; y: number; z: number }; tangent: { x: number; z: number } }>;
+			samples: Array<{
+				point: { x: number; y: number; z: number };
+				tangent: { x: number; z: number };
+			}>;
 		};
 		const { sampleIndex } = terrainAny.nearestRoad(carX, carZ);
 		const samples = terrainAny.samples;

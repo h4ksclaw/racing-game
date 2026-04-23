@@ -26,7 +26,10 @@ vi.mock("three", () => {
 		dispose = vi.fn();
 	}
 	class InstancedMesh {
-		geometry = { attributes: {} as Record<string, { needsUpdate: boolean }>, dispose: vi.fn() };
+		geometry = {
+			attributes: {} as Record<string, { needsUpdate: boolean }>,
+			dispose: vi.fn(),
+		};
 		material = { dispose: vi.fn() };
 		frustumCulled = false;
 		count = 0;

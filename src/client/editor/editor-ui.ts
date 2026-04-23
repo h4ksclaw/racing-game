@@ -1,243 +1,288 @@
 /**
- * Editor UI — thin orchestrator that wires all editor modules to the DOM.
+ * Editor UI — wires Lit components and editor modules together.
  */
-
-import type { CarMeta } from "./car-search-panel.js";
-import { initCarSearchPanel } from "./car-search-panel.js";
+import type { DropZone } from "../ui/drop-zone.js";
+import { bakeModel } from "./bake-export.js";
 import { clearGhost, updateDimensions } from "./dimension-overlay.js";
-import {
-	API_BASE,
-	getCurrentModel,
-	handleSelectClick,
-	init,
-	loadGLB,
-	setMode,
-	setSelectedObjectUUID,
-} from "./editor-main.js";
-import { downloadJSON, generateExport, saveConfig, validateMarkers } from "./export.js";
+import { API_BASE, getCurrentModel, handleSelectClick, init, loadGLB } from "./editor-main.js";
+import { getEditorState, setCarSelection } from "./editor-state.js";
+import { generateExport, validateMarkers } from "./export.js";
 import { initImportFlow } from "./import-flow.js";
-import {
-	clearMarkers,
-	getMarkers,
-	handleViewportClick,
-	onMarkersChange,
-	removeMarker,
-	setPendingType,
-} from "./marker-tool.js";
-import {
-	deleteObject as deleteModelObject,
-	duplicateMaterialForObject,
-	markObjectAs,
-	toggleObjectVisibility,
-} from "./object-manager.js";
-import { initObjectPanel, onObjectDelete, onObjectMark, onObjectSelect, refreshObjectPanel } from "./object-panel.js";
-import { getPhysicsOverrides, onSuspPreviewChange } from "./physics-editor.js";
+import { getMarkers, handleViewportClick } from "./marker-tool.js";
+import { initObjectPanel, refreshObjectPanel } from "./object-panel.js";
+import { getPhysicsOverrides } from "./physics-editor.js";
+import type { PhysicsModal } from "./physics-modal.js";
 import { getCurrentScale, initScaleControls, setScaleFromCar } from "./scale-controls.js";
-import { initSketchfabPanel, loadPendingAssets } from "./sketchfab-panel.js";
-import { updatePreview } from "./suspension-viz.js";
-import { initToolbarControls } from "./toolbar-controls.js";
+import { collapseSketchfabPanel, initSketchfabPanel, loadPendingAssets } from "./sketchfab-panel.js";
+import { initExportWiring } from "./wire-export.js";
+import { initKeyboardWiring } from "./wire-keyboard.js";
+import { initMarkerWiring } from "./wire-markers.js";
+import { initObjectWiring } from "./wire-objects.js";
+import { initSearchWiring } from "./wire-search.js";
+import { initToolbarWiring } from "./wire-toolbar.js";
 
-// ── State ──
-let currentCarName = "";
-let currentModelPath = "";
+// ── DOM references ──
+const viewport = document.getElementById("viewport");
+const dropZone = document.querySelector("drop-zone");
+const toolbar = document.querySelector("editor-toolbar");
+const markerListEl = document.querySelector("marker-list");
+const validationEl = document.querySelector("validation-display");
+const statusLine = document.querySelector("status-line");
+const sidebarAttribution = document.getElementById("sidebar-attribution") as HTMLTextAreaElement | null;
+const sidebarSubmitBtn = document.getElementById("btn-submit") as HTMLButtonElement | null;
 
 // ── Init scene ──
-const viewport = document.getElementById("viewport")!;
-init(viewport);
+if (!viewport || !dropZone) {
+	console.error("Editor: required DOM elements missing");
+} else {
+	init(viewport);
+	setupDropZone(dropZone);
+}
 
-// ── File upload ──
-const dropZone = document.getElementById("drop-zone")!;
-const fileInput = document.getElementById("file-input") as HTMLInputElement;
-
-dropZone.addEventListener("click", () => fileInput.click());
-dropZone.addEventListener("dragover", (e) => {
-	e.preventDefault();
-	dropZone.classList.add("drag-over");
-});
-dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
-dropZone.addEventListener("drop", (e) => {
-	e.preventDefault();
-	dropZone.classList.remove("drag-over");
-	const file = e.dataTransfer?.files[0];
-	if (file) uploadFile(file);
-});
-fileInput.addEventListener("change", () => {
-	if (fileInput.files?.[0]) uploadFile(fileInput.files[0]);
-});
-
-async function uploadFile(file: File) {
-	const formData = new FormData();
-	formData.append("model", file);
-	try {
-		const resp = await fetch(`${API_BASE}/assets/upload`, { method: "POST", body: formData });
-		const data = await resp.json();
-		if (data.hash) {
-			await loadModelAndReset(`/api/assets/file/${data.hash}`, file.name.replace(/\.(glb|gltf)$/i, ""));
+function setupDropZone(dz: DropZone): void {
+	dz.addEventListener("file-drop", async (e: Event) => {
+		const file = (e as CustomEvent<File>).detail;
+		if (statusLine) statusLine.message = `Uploading ${file.name}...`;
+		dz.setLoading(true);
+		try {
+			const formData = new FormData();
+			formData.append("model", file);
+			const resp = await fetch(`${API_BASE}/assets/upload`, {
+				method: "POST",
+				body: formData,
+			});
+			if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`);
+			const data = await resp.json();
+			if (data.hash) {
+				await loadModelAndReset(`/api/assets/file/${data.hash}`, file.name.replace(/\.(glb|gltf)$/i, ""));
+			}
+		} catch (err) {
+			if (statusLine) statusLine.message = `Upload failed: ${err}`;
+			console.error("Upload failed:", err);
+		} finally {
+			dz.setLoading(false);
 		}
-	} catch (err) {
-		console.error("Upload failed:", err);
-	}
+	});
 }
 
 /** Load a model, clear markers, and refresh the UI. */
-export async function loadModelAndReset(path: string, name: string): Promise<void> {
-	currentModelPath = path;
-	currentCarName = name;
-	await loadGLB(path);
+export async function loadModelAndReset(path: string, name: string, attribution?: string): Promise<void> {
+	setCarSelection({ modelPath: path, name });
+	if (statusLine) statusLine.message = `Loading ${name}...`;
+
+	const dims = getEditorState().car.dims;
+	await loadGLB(path, dims ? { dims } : undefined);
+
+	const model = getCurrentModel();
+	if (model && dims) {
+		const avgScale = model.scale.x;
+		if (avgScale > 0) setScaleFromCar(avgScale);
+	}
+
+	const { clearMarkers } = await import("./marker-tool.js");
 	clearMarkers();
 	clearGhost();
 	updateDimensions();
 	refreshUI();
+
+	// Auto-populate sidebar attribution if provided
+	if (attribution && sidebarAttribution) {
+		sidebarAttribution.value = attribution;
+	}
+
+	if (statusLine) statusLine.message = `Loaded: ${name}`;
+
+	// Pulse the smart/auto-detect button to draw attention
+	if (toolbar) {
+		const brainBtn = toolbar.shadowRoot?.querySelector('[data-action="auto-detect"]');
+		if (brainBtn) {
+			brainBtn.classList.remove("smart-pulse");
+			void (brainBtn as HTMLElement).offsetWidth;
+			brainBtn.classList.add("smart-pulse");
+			brainBtn.addEventListener("animationend", () => brainBtn.classList.remove("smart-pulse"), { once: true });
+		}
+	}
 }
 
-// ── Sketchfab panel ──
-initSketchfabPanel((path, name) => loadModelAndReset(path, name));
+// ── Wire sub-modules ──
+if (toolbar) initToolbarWiring(toolbar as any);
+if (markerListEl && toolbar) initMarkerWiring(markerListEl as any, toolbar as any, refreshUI);
+initScaleControls();
+initSketchfabPanel((path, name, attribution) => {
+	collapseSketchfabPanel();
+	return loadModelAndReset(path, name, attribution);
+});
 loadPendingAssets();
 
-// ── Car search panel ──
-initCarSearchPanel((car: CarMeta) => {
-	currentCarName = car.name;
-	currentModelPath = car.modelPath;
-	setScaleFromCar(car.modelScale || 1);
-	refreshUI();
-});
+const objectPanel = document.getElementById("object-panel");
+if (objectPanel) initObjectPanel(objectPanel);
+initObjectWiring();
+if (toolbar) initKeyboardWiring(toolbar as any);
+initExportWiring();
 
-// ── Scale controls ──
-initScaleControls();
-
-// ── Toolbar ──
-initToolbarControls();
-
-// ── Object panel ──
-initObjectPanel(document.getElementById("object-panel")!);
-onObjectSelect((uuid) => setSelectedObjectUUID(uuid));
-onObjectMark((uuid, type) => {
-	const model = getCurrentModel();
-	if (!model) return;
-	if (type === "_toggleVis") toggleObjectVisibility(model, uuid);
-	else if (type === "_dupMat") {
-		const obj = model.getObjectByProperty("uuid", uuid);
-		if (obj) duplicateMaterialForObject(obj, `bloom_${obj.name || "material"}`);
-	} else markObjectAs(model, uuid, type);
-	refreshObjectPanel(model);
+// ── Toast notifications ──
+document.addEventListener("toast", (e: Event) => {
+	const { message, type = "info" } = (e as CustomEvent<{ message: string; type?: string }>).detail;
+	const container = document.getElementById("toast-container");
+	if (!container) return;
+	const toast = document.createElement("div");
+	toast.className = `toast ${type}`;
+	toast.textContent = message;
+	container.appendChild(toast);
+	setTimeout(() => {
+		toast.classList.add("out");
+		toast.addEventListener("animationend", () => toast.remove());
+	}, 3500);
 });
-onObjectDelete((uuid) => {
-	const model = getCurrentModel();
-	if (!model) return;
-	deleteModelObject(model, uuid);
-	refreshObjectPanel(model);
-});
+initSearchWiring(loadModelAndReset);
 
 // ── Viewport clicks ──
-viewport.addEventListener("click", (e) => {
+viewport?.addEventListener("pointerdown", (e) => {
+	import("./assign-mode.js").then(({ onPointerDown }) => onPointerDown(e));
+});
+viewport?.addEventListener("click", (e) => {
 	if (handleSelectClick(e)) return;
-	handleViewportClick(e);
+	// Check assign mode first
+	import("./assign-mode.js").then(({ handleAssignClick }) => {
+		if (handleAssignClick(e)) return;
+		handleViewportClick(e);
+	});
 });
-
-// ── Marker list ──
-const toolbarBtns = document.querySelectorAll<HTMLButtonElement>(".tool-btn[data-mode]");
-
-onMarkersChange(() => {
-	refreshMarkerList();
-	refreshValidation();
-});
-
-function refreshMarkerList() {
-	const list = document.getElementById("marker-list")!;
-	list.innerHTML = "";
-	const markers = getMarkers();
-	const typeOrder = [
-		"PhysicsMarker",
-		"Wheel_FL",
-		"Wheel_FR",
-		"Wheel_RL",
-		"Wheel_RR",
-		"Headlight_L",
-		"Headlight_R",
-		"Taillight_L",
-		"Taillight_R",
-		"Exhaust_L",
-		"Exhaust_R",
-	];
-	const colors: Record<string, string> = {
-		PhysicsMarker: "#4a9eff",
-		Wheel_FL: "#4aff8b",
-		Wheel_FR: "#8bff4a",
-		Wheel_RL: "#4aff8b",
-		Wheel_RR: "#8bff4a",
-		Headlight_L: "#ffffff",
-		Headlight_R: "#ffffff",
-		Taillight_L: "#ff2222",
-		Taillight_R: "#ff2222",
-		Exhaust_L: "#ff8844",
-		Exhaust_R: "#ff8844",
-	};
-	const sorted = [...markers].sort((a, b) => typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type));
-	for (const m of sorted) {
-		const div = document.createElement("div");
-		div.className = "marker-item";
-		div.innerHTML = `
-			<span class="marker-dot" style="background:${colors[m.type] ?? "#ff00ff"}"></span>
-			<span class="marker-name">${m.type}</span>
-			<span class="marker-pos">${m.position.x.toFixed(2)}, ${m.position.y.toFixed(2)}, ${m.position.z.toFixed(2)}</span>
-			<button class="marker-btn" data-action="place" data-type="${m.type}">↻</button>
-			<button class="marker-btn del" data-action="delete" data-id="${m.id}">✕</button>
-		`;
-		div.querySelector("[data-action=place]")?.addEventListener("click", () => {
-			setPendingType(m.type);
-			setMode("place");
-			for (const b of toolbarBtns) b.classList.toggle("active", b.dataset.mode === "place");
-		});
-		div.querySelector("[data-action=delete]")?.addEventListener("click", () => removeMarker(m.id));
-		list.appendChild(div);
+// Middle click for assign mode remove
+viewport?.addEventListener("auxclick", (e) => {
+	if (e.button === 1) {
+		import("./assign-mode.js").then(({ handleAssignClick }) => handleAssignClick(e));
 	}
+});
+
+// ── Sidebar Submit (bake + upload + save config) ──
+type SubmitState = "idle" | "baking" | "uploading" | "saving" | "success" | "error";
+const SUBMIT_LABELS: Record<SubmitState, string> = {
+	idle: "Bake & Submit",
+	baking: "Baking...",
+	uploading: "Uploading...",
+	saving: "Saving...",
+	success: "✓ Saved",
+	error: "✕ Failed",
+};
+
+function setSubmitState(state: SubmitState, extra?: string): void {
+	if (!sidebarSubmitBtn) return;
+	sidebarSubmitBtn.disabled = state !== "idle" && state !== "success" && state !== "error";
+	sidebarSubmitBtn.textContent = SUBMIT_LABELS[state];
+	sidebarSubmitBtn.className = "btn-primary" + (state === "success" ? " success" : state === "error" ? " error" : "");
+	const errorEl = document.getElementById("export-error");
+	const validEl = document.getElementById("export-validation");
+	if (errorEl) {
+		errorEl.textContent = state === "error" ? extra || "" : "";
+		errorEl.className = "export-error" + (state === "error" && extra ? " visible" : "");
+	}
+	if (validEl) {
+		validEl.className = "export-validation";
+	}
+	if (state === "success" || state === "error") setTimeout(() => setSubmitState("idle"), 4000);
 }
 
-function refreshValidation() {
-	const div = document.getElementById("validation")!;
-	const issues = validateMarkers(getMarkers());
-	if (issues.length === 0) {
-		div.innerHTML = '<div class="val-item ok">✓ All checks passed</div>';
+sidebarSubmitBtn?.addEventListener("click", async () => {
+	const model = getCurrentModel();
+	if (!model) {
+		setSubmitState("error", "No model loaded — drop a GLB or select from pending assets.");
 		return;
 	}
-	div.innerHTML = issues
-		.map((i) => `<div class="val-item ${i.type}">${i.type === "error" ? "✕" : "⚠"} ${i.message}</div>`)
-		.join("");
-}
 
-// ── Export ──
-document.getElementById("btn-export")?.addEventListener("click", async () => {
-	const payload = generateExport(currentCarName || "unnamed", currentModelPath, getCurrentScale().x, getMarkers());
-	const result = await saveConfig(payload);
-	if (result.ok) alert("Config saved!");
-	else alert(`Save failed: ${result.error}`);
+	const markers = getMarkers();
+	const issues = validateMarkers(markers);
+	const errors = issues.filter((i) => i.type === "error");
+	if (errors.length > 0) {
+		const validEl = document.getElementById("export-validation");
+		if (validEl) {
+			validEl.textContent = "Fix errors: " + errors.map((i) => i.message).join("; ");
+			validEl.className = "export-validation visible";
+		}
+		return;
+	}
+
+	setSubmitState("baking");
+	try {
+		const bakeResult = await bakeModel(model, markers, {
+			includeMarkers: true,
+			applyObjectMarks: true,
+			bakeScale: true,
+		});
+		setSubmitState("uploading");
+
+		const state = getEditorState();
+		const formData = new FormData();
+		formData.append(
+			"model",
+			new Blob([bakeResult.glbBuffer], { type: "model/gltf-binary" }),
+			`${state.car.name || "car"}.glb`,
+		);
+		const s3Resp = await fetch(`${API_BASE}/s3/upload`, {
+			method: "POST",
+			body: formData,
+		});
+		if (!s3Resp.ok) {
+			const errBody = await s3Resp.text().catch(() => "(no body)");
+			throw new Error(`S3 upload failed (${s3Resp.status}): ${errBody}`);
+		}
+		const { key: s3Key } = await s3Resp.json();
+
+		setSubmitState("saving");
+
+		const exportPayload = generateExport(state.car.name || "unnamed", `s3:${s3Key}`, getCurrentScale().x, markers);
+		const physicsModal = document.querySelector("physics-modal") as PhysicsModal | null;
+		const physicsOverrides = physicsModal?.getOverrides?.() ?? getPhysicsOverrides();
+		const attribution = sidebarAttribution?.value || "";
+
+		const importResp = await fetch(`${API_BASE}/cars/import`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				config: exportPayload.chassis,
+				modelSchema: exportPayload.schema,
+				physicsOverrides,
+				attribution,
+				s3Key,
+			}),
+		});
+
+		if (!importResp.ok) {
+			let errMsg = `HTTP ${importResp.status}`;
+			try {
+				const body = await importResp.json();
+				if (body.error) errMsg = body.error;
+			} catch {
+				/* ignore */
+			}
+			throw new Error(errMsg);
+		}
+		const result = await importResp.json();
+		setSubmitState("success");
+		if (statusLine) statusLine.message = `Imported: ${state.car.name} (config #${result.configId})`;
+	} catch (err) {
+		setSubmitState("error", `Submit failed: ${err}`);
+	}
 });
 
-document.getElementById("btn-download")?.addEventListener("click", () => {
-	const payload = generateExport(currentCarName || "unnamed", currentModelPath, getCurrentScale().x, getMarkers());
-	downloadJSON(payload);
-});
+// ── Import flow (tutorial only — no submit) ──
+initImportFlow();
 
-// ── Import flow ──
-initImportFlow({
-	carName: currentCarName,
-	modelPath: currentModelPath,
-	modelScale: getCurrentScale().x,
-	sketchfabAttribution: "",
-	carMetadataId: null,
-});
-
-// ── Suspension preview callback ──
-onSuspPreviewChange(() => {
-	const model = getCurrentModel();
-	if (model) updatePreview(getMarkers(), getPhysicsOverrides());
-});
-
-// ── Initial UI state ──
+// ── Initial state ──
 refreshUI();
 
 function refreshUI() {
-	refreshMarkerList();
-	refreshValidation();
+	if (markerListEl) {
+		const entries = getMarkers().map((m) => ({
+			id: m.id,
+			type: m.type,
+			position: { x: m.position.x, y: m.position.y, z: m.position.z },
+			locked: m.locked,
+			pairId: m.pairId,
+			enabled: m.enabled,
+		}));
+		markerListEl.markers = entries;
+	}
+	if (validationEl) validationEl.issues = validateMarkers(getMarkers());
 	refreshObjectPanel(getCurrentModel());
 }

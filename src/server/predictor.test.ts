@@ -4,8 +4,14 @@ import { classify_era, getProfile, predict_specs } from "./predictor.ts";
 
 // Re-export GEAR_SETS for test access
 const GEAR_SETS_80S = { ratios: [3.6, 2.1, 1.4, 1.0, 0.8], final_drive: 4.1 };
-const GEAR_SETS_2000S_TURBO = { ratios: [3.3, 2.0, 1.4, 1.0, 0.75, 0.65], final_drive: 3.7 };
-const GEAR_SETS_2010S = { ratios: [3.5, 2.1, 1.5, 1.1, 0.85, 0.7], final_drive: 3.5 };
+const GEAR_SETS_2000S_TURBO = {
+	ratios: [3.3, 2.0, 1.4, 1.0, 0.75, 0.65],
+	final_drive: 3.7,
+};
+const GEAR_SETS_2010S = {
+	ratios: [3.5, 2.1, 1.5, 1.1, 0.85, 0.7],
+	final_drive: 3.5,
+};
 
 function makeCar(overrides: Partial<CarMetadata> = {}): CarMetadata {
 	return {
@@ -15,7 +21,14 @@ function makeCar(overrides: Partial<CarMetadata> = {}): CarMetadata {
 		year: 2020,
 		trim: null,
 		bodyType: "sedan",
-		dimensions: { length_m: 0, width_m: 0, height_m: 0, wheelbase_m: 0, track_width_m: 0, ground_clearance_m: 0 },
+		dimensions: {
+			length_m: 0,
+			width_m: 0,
+			height_m: 0,
+			wheelbase_m: 0,
+			track_width_m: 0,
+			ground_clearance_m: 0,
+		},
 		engine: {
 			displacement_l: 0,
 			cylinders: 0,
@@ -161,7 +174,11 @@ describe("Cd prediction", () => {
 
 describe("Wheelbase prediction", () => {
 	it("profile wheelbase", () => {
-		const car = makeCar({ bodyType: "roadster", drivetrain: "rwd", year: 1990 });
+		const car = makeCar({
+			bodyType: "roadster",
+			drivetrain: "rwd",
+			year: 1990,
+		});
 		const result = predict_specs(car);
 		expect(result.wheelbase_m).toBe(2.27);
 		expect(result.wheelbase_m_predicted).toBe(true);
@@ -213,7 +230,12 @@ describe("Weight distribution", () => {
 	});
 
 	it("not overwritten when exists", () => {
-		const car = makeCar({ bodyType: "sedan", drivetrain: "fwd", year: 2020, weightFrontPct: 55 });
+		const car = makeCar({
+			bodyType: "sedan",
+			drivetrain: "fwd",
+			year: 2020,
+			weightFrontPct: 55,
+		});
 		const result = predict_specs(car);
 		expect("weight_front_pct" in result).toBe(false);
 	});

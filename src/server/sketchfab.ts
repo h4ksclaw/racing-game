@@ -51,7 +51,9 @@ export interface ModelDetails {
 	description?: string;
 	license: { label: string; slug: string; requireAttribution?: boolean };
 	user: { displayName: string; username?: string };
-	thumbnails: { images: Array<{ url: string; width?: number; height?: number }> };
+	thumbnails: {
+		images: Array<{ url: string; width?: number; height?: number }>;
+	};
 	vertexCount: number;
 	faceCount: number;
 	likeCount: number;
@@ -221,7 +223,6 @@ export async function getDownloadUrl(
 	if (!apiKey) throw new Error("SKETCHFAB_API_KEY not configured");
 
 	const resp = await fetch(`${API_ROOT}/models/${uid}/download`, {
-		method: "POST",
 		headers: { Authorization: `Token ${apiKey}` },
 	});
 	if (!resp.ok) {
@@ -230,31 +231,20 @@ export async function getDownloadUrl(
 	}
 
 	const data = (await resp.json()) as Record<string, unknown>;
-	const gltf = (data.gltf ?? []) as Array<Record<string, unknown>>;
-	const files = (data.files ?? []) as Array<Record<string, unknown>>;
-	const allFormats = [...files, ...gltf];
 
-	// Find GLB format, prefer with size info
-	let best: { url: string; size: number; filename?: string } | null = null;
-	for (const f of allFormats) {
-		if (String(f.format ?? "").toLowerCase() === "glb") {
-			const url = String(f.url ?? "");
-			if (!url) continue;
-			const size = Number(f.size ?? 0);
-			const filename = f.filename ? String(f.filename) : undefined;
-			if (!best || (size > 0 && (best.size === 0 || size < best.size))) {
-				best = { url, size, filename };
-			}
-		}
-	}
+	// API v3 returns { glb: { url }, gltf: { url }, source: { url, size } }
+	const glb = data.glb as Record<string, unknown> | undefined;
+	const gltf = data.gltf as Record<string, unknown> | undefined;
+	const source = data.source as Record<string, unknown> | undefined;
 
-	// Fallback to generic URI
-	if (!best && data.uri) {
-		best = { url: String(data.uri), size: 0 };
-	}
+	// Prefer direct GLB, fall back to glTF, then source
+	const url = String(glb?.url ?? gltf?.url ?? source?.url ?? "");
+	if (!url) throw new Error("No download URL available");
 
-	if (!best) throw new Error("No GLB download format available");
-	return { url: best.url, format: "glb", size: best.size, filename: best.filename };
+	const size = Number(source?.size ?? 0);
+	const isGltf = !glb?.url && !!gltf?.url;
+
+	return { url, format: isGltf ? "gltf" : "glb", size, filename: undefined };
 }
 
 /**
@@ -271,12 +261,6 @@ export async function downloadModel(uid: string): Promise<{
 
 	if (!details.isDownloadable) {
 		throw new Error("Model is not downloadable");
-	}
-
-	if (!isCcLicense(details.license.slug)) {
-		throw new Error(
-			`Model license "${details.license.label}" is not Creative Commons. Only CC-licensed models can be downloaded.`,
-		);
 	}
 
 	// 2. Get download URL

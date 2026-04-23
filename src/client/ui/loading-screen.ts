@@ -5,47 +5,47 @@ export class LoadingScreen extends LitElement {
 	static override styles = [
 		themeStyles,
 		css`
-			:host {
-				position: fixed;
-				inset: 0;
-				display: none;
-				align-items: center;
-				justify-content: center;
-				flex-direction: column;
-				gap: 20px;
-				background: rgba(17, 19, 28, 1);
-				z-index: 1000;
-				pointer-events: none;
-				font-family: var(--ui-sans);
-			}
-			:host([visible]) {
-				display: flex;
-			}
+      :host {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 20px;
+        background: rgba(17, 19, 28, 1);
+        z-index: 1000;
+        pointer-events: none;
+        font-family: var(--ui-sans);
+      }
+      :host([visible]) {
+        display: flex;
+      }
 
-			.spinner {
-				width: 32px;
-				height: 32px;
-				border: 2px solid rgba(92, 158, 255, 0.12);
-				border-top-color: rgba(92, 158, 255, 0.6);
-				border-radius: 50%;
-				animation: spin 0.8s linear infinite;
-			}
+      .spinner {
+        width: 32px;
+        height: 32px;
+        border: 2px solid rgba(92, 158, 255, 0.12);
+        border-top-color: rgba(92, 158, 255, 0.6);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
 
-			@keyframes spin {
-				to {
-					transform: rotate(360deg);
-				}
-			}
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
 
-			.msg {
-				font-size: 13px;
-				font-weight: 500;
-				color: rgba(255, 255, 255, 0.35);
-				letter-spacing: 2px;
-				text-transform: uppercase;
-				font-family: var(--ui-mono);
-			}
-		`,
+      .msg {
+        font-size: 13px;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.35);
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        font-family: var(--ui-mono);
+      }
+    `,
 	];
 
 	declare message: string;
@@ -64,10 +64,16 @@ export class LoadingScreen extends LitElement {
 
 	override render() {
 		return html`
-			<div class="spinner"></div>
-			<span class="msg">${this.message}</span>
-		`;
+      <div class="spinner"></div>
+      <span class="msg">${this.message}</span>
+    `;
 	}
 }
 
 customElements.define("loading-screen", LoadingScreen);
+
+declare global {
+	interface HTMLElementTagNameMap {
+		"loading-screen": LoadingScreen;
+	}
+}

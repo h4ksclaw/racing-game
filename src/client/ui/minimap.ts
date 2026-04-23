@@ -5,33 +5,33 @@ export class RaceMinimap extends LitElement {
 	static override styles = [
 		themeStyles,
 		css`
-			:host {
-				position: fixed;
-				top: 36px;
-				right: 16px;
-				z-index: 100;
-				pointer-events: none;
-				background: var(--ui-panel);
-				backdrop-filter: blur(10px);
-				border: var(--ui-border);
-				padding: 6px;
-				width: 120px;
-			}
-			canvas {
-				width: 100%;
-				height: 100%;
-				border-radius: 2px;
-				background: rgba(92,158,255,0.03);
-			}
-			.coords {
-				margin-top: 4px;
-				font-family: var(--ui-mono);
-				font-size: 8px;
-				color: rgba(92,158,255,0.2);
-				letter-spacing: 1px;
-				text-align: center;
-			}
-		`,
+      :host {
+        position: fixed;
+        top: 36px;
+        right: 16px;
+        z-index: 100;
+        pointer-events: none;
+        background: var(--ui-panel);
+        backdrop-filter: blur(10px);
+        border: var(--ui-border);
+        padding: 6px;
+        width: 120px;
+      }
+      canvas {
+        width: 100%;
+        height: 100%;
+        border-radius: 2px;
+        background: rgba(92, 158, 255, 0.03);
+      }
+      .coords {
+        margin-top: 4px;
+        font-family: var(--ui-mono);
+        font-size: 8px;
+        color: rgba(92, 158, 255, 0.2);
+        letter-spacing: 1px;
+        text-align: center;
+      }
+    `,
 	];
 
 	declare playerX: number;
@@ -116,9 +116,17 @@ export class RaceMinimap extends LitElement {
 
 	override render() {
 		return html`
-			<canvas></canvas>
-			<div class="coords">X:${this.playerX.toFixed(0)} Z:${this.playerZ.toFixed(0)}</div>
-		`;
+      <canvas></canvas>
+      <div class="coords">
+        X:${this.playerX.toFixed(0)} Z:${this.playerZ.toFixed(0)}
+      </div>
+    `;
 	}
 }
 customElements.define("race-minimap", RaceMinimap);
+
+declare global {
+	interface HTMLElementTagNameMap {
+		"race-minimap": RaceMinimap;
+	}
+}

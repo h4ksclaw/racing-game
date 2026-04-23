@@ -284,3 +284,49 @@ npm run check        # tsc + biome + knip (full check)
 - Track generation in `shared/track.ts` is monolithic (~880 lines)
 - CarModel.ts still has `buildCarModel()` for backward compatibility — could remove when tests migrate
 - EngineAudio not yet tested with real Web Audio (tests mock AudioContext)
+
+## Marker System (Editor)
+
+### Overview
+The editor places physics markers on 3D car models for export. Each marker has a type (Wheel_FL, Headlight_L, etc.), position, and metadata.
+
+### Symmetric Pairs
+Most markers come in left/right pairs mirrored on the X-axis. When placing a marker (e.g., Wheel_FL), the system:
+1. Checks if the mirror type (Wheel_FR) already exists → links them as a pair
+2. If mirror doesn't exist and isn't optional → auto-creates the mirror at the reflected X position
+3. Both markers in a pair share `pairId` references and a `locked` state
+
+The `PAIR_MAP` constant defines all mirror relationships. `Exhaust_R` is the only optional marker.
+
+### Lock/Unlock
+When locked (default), dragging one marker mirrors its X movement to its pair. Unlock allows independent positioning. Lock state is always synchronized between both markers in a pair.
+
+### Optional Markers
+`Exhaust_R` is optional — skipped by default in the placement flow. The marker-list UI shows an enable/disable toggle for optional types. Disabled markers have `enabled: false`, are hidden (`mesh.visible = false`), and excluded from placement progression.
+
+### Auto-Place Flow
+1. **"+" button**: Shows the next unplaced type (from `getNextUnplacedType()`), places at origin, user moves via TransformControls
+2. **Light marking**: When an object is marked as headlight/taillight in the object panel, `autoSetupLightMaterial()` clones the material with emissive properties, and `autoPlaceLightMarker()` auto-places the corresponding marker at the mesh center
+3. **Auto-detect**: Toolbar button runs `autoDetect()` which scans model geometry for wheel/light/exhaust patterns
+
+### Key Files
+| File | Role |
+|------|------|
+| `marker-tool.ts` | Core placement logic, pair management, lock/enable toggles |
+| `marker-list.ts` | Lit component: marker list UI with lock/enable/move/delete actions |
+| `editor-ui.ts` | Wiring: connects marker-list events to marker-tool functions |
+| `editor-main.ts` | Exports `getModelCenter()` for symmetry mirroring |
+| `object-manager.ts` | `autoSetupLightMaterial()` for bloom material setup |
+
+### Data Model
+```typescript
+interface MarkerData {
+  id: string;           // "Wheel_FL_1712345678901"
+  type: string;         // MARKER_TYPES entry
+  position: THREE.Vector3;
+  mesh: THREE.Mesh;     // scene-visible sphere
+  locked: boolean;      // sync X movement with pair
+  pairId: string | null;
+  enabled: boolean;     // false = excluded from export
+}
+```

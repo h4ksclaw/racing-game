@@ -685,7 +685,11 @@ export function generateScenery(
 			for (let c = 0; c < clusterSize; c++) {
 				scenery.push({
 					type: ROCK_TYPES[Math.floor(rng() * ROCK_TYPES.length)],
-					position: v3Add(basePos, { x: (rng() - 0.5) * 6, y: 0, z: (rng() - 0.5) * 6 }),
+					position: v3Add(basePos, {
+						x: (rng() - 0.5) * 6,
+						y: 0,
+						z: (rng() - 0.5) * 6,
+					}),
 					rotation: rng() * Math.PI * 2,
 					scale: 0.4 + rng() * 1.0,
 				});
@@ -693,7 +697,11 @@ export function generateScenery(
 			for (let c = 0; c < 4; c++) {
 				scenery.push({
 					type: STONE_TYPES[Math.floor(rng() * STONE_TYPES.length)],
-					position: v3Add(basePos, { x: (rng() - 0.5) * 8, y: 0, z: (rng() - 0.5) * 8 }),
+					position: v3Add(basePos, {
+						x: (rng() - 0.5) * 8,
+						y: 0,
+						z: (rng() - 0.5) * 8,
+					}),
 					rotation: rng() * Math.PI * 2,
 					scale: 0.3 + rng() * 0.5,
 				});
@@ -817,7 +825,11 @@ export function generateScenery(
 			for (let c = 0; c < groveSize; c++) {
 				scenery.push({
 					type: FOREST_DETAIL[Math.floor(rng() * FOREST_DETAIL.length)],
-					position: v3Add(basePos, { x: (rng() - 0.5) * 8, y: 0, z: (rng() - 0.5) * 8 }),
+					position: v3Add(basePos, {
+						x: (rng() - 0.5) * 8,
+						y: 0,
+						z: (rng() - 0.5) * 8,
+					}),
 					rotation: rng() * Math.PI * 2,
 					scale: 0.5 + rng() * 0.9,
 				});
@@ -833,7 +845,11 @@ export function generateScenery(
 			for (let c = 0; c < clusterSize; c++) {
 				scenery.push({
 					type: "crop_pumpkin",
-					position: v3Add(basePos, { x: (rng() - 0.5) * 5, y: 0, z: (rng() - 0.5) * 5 }),
+					position: v3Add(basePos, {
+						x: (rng() - 0.5) * 5,
+						y: 0,
+						z: (rng() - 0.5) * 5,
+					}),
 					rotation: rng() * Math.PI * 2,
 					scale: 0.5 + rng() * 1.0,
 				});

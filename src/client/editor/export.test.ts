@@ -14,6 +14,9 @@ function makeMarker(type: string, x: number, y: number, z: number): MarkerData {
 		type,
 		position: new THREE.Vector3(x, y, z),
 		mesh: new THREE.Mesh(),
+		locked: false,
+		pairId: null,
+		enabled: true,
 	};
 }
 

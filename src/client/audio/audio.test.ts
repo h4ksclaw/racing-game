@@ -12,7 +12,12 @@ describe("AudioBus", () => {
 
 	it("acquire/release manages ref count", () => {
 		const MockAC = vi.fn(function AudioContext(this: Record<string, unknown>) {
-			Object.assign(this, { close: vi.fn(), currentTime: 0, sampleRate: 44100, listener: {} });
+			Object.assign(this, {
+				close: vi.fn(),
+				currentTime: 0,
+				sampleRate: 44100,
+				listener: {},
+			});
 		});
 		vi.stubGlobal("AudioContext", MockAC);
 		// Reset singleton so it picks up the mock
@@ -36,7 +41,11 @@ describe("deriveSoundConfig", () => {
 	});
 
 	it("respects turbo flag", () => {
-		const config = deriveSoundConfig({ idleRPM: 800, maxRPM: 6500, turbo: true });
+		const config = deriveSoundConfig({
+			idleRPM: 800,
+			maxRPM: 6500,
+			turbo: true,
+		});
 		expect(config.turbo).toBe(true);
 	});
 

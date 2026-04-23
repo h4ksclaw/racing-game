@@ -216,7 +216,10 @@ describe("BurnoutState", () => {
 			bs.update(false, true, 0, 0.016, "RWD", viableEngine({ currentGear: 1 }));
 
 			// Gearbox shifted to gear 2 — burnout should fade
-			runFrames(bs, 30, { throttle: true, engine: { currentGear: 2, gearRatio: 2.06 } });
+			runFrames(bs, 30, {
+				throttle: true,
+				engine: { currentGear: 2, gearRatio: 2.06 },
+			});
 			expect(bs.active).toBe(false);
 		});
 
@@ -226,7 +229,10 @@ describe("BurnoutState", () => {
 			bs.update(false, true, 0, 0.016, "RWD", viableEngine({ currentGear: 1 }));
 
 			// Gear still 1 but ratio changes (shift interpolation) — burnout stays
-			const r = runFrames(bs, 30, { throttle: true, engine: { gearRatio: 3.0 } });
+			const r = runFrames(bs, 30, {
+				throttle: true,
+				engine: { gearRatio: 3.0 },
+			});
 			expect(r.active).toBe(true);
 		});
 

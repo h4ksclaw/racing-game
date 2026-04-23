@@ -257,7 +257,12 @@ export class TerrainSampler {
 	getNearestSample(
 		x: number,
 		z: number,
-	): { sample: TrackSample; sampleIndex: number; dist: number; distFromCenter: number } {
+	): {
+		sample: TrackSample;
+		sampleIndex: number;
+		dist: number;
+		distFromCenter: number;
+	} {
 		const { sample, sampleIndex, dist } = this.nearestRoad(x, z);
 		// Cross-product lateral distance (tangent is normalized, so this is exact)
 		const toX = x - sample.point.x;
@@ -433,7 +438,13 @@ let terrainTextures: Record<string, THREE.Texture> | null = null;
 let loadedBiome: string | null = null;
 
 async function loadTerrainTextures(biome: {
-	textures: { grass: string; dirt: string; rock: string; snow: string; moss: string };
+	textures: {
+		grass: string;
+		dirt: string;
+		rock: string;
+		snow: string;
+		moss: string;
+	};
 	name: string;
 }): Promise<Record<string, THREE.Texture>> {
 	// Reload if biome changed
@@ -972,10 +983,14 @@ export async function buildTerrain(
 			uDirtTint: { value: new THREE.Color(...biome.dirtTint) },
 			uRockTint: { value: new THREE.Color(...biome.rockTint) },
 			uSnowThreshold: { value: biome.snowThreshold },
-			uSnowTint: { value: new THREE.Color(...(biome.snowTint ?? [1.3, 1.3, 1.35])) },
+			uSnowTint: {
+				value: new THREE.Color(...(biome.snowTint ?? [1.3, 1.3, 1.35])),
+			},
 			uRockThreshold: { value: biome.rockThreshold },
 			uStreetLightCount: { value: 0 },
-			uStreetLightPos: { value: Array.from({ length: 4 }, () => new THREE.Vector3()) },
+			uStreetLightPos: {
+				value: Array.from({ length: 4 }, () => new THREE.Vector3()),
+			},
 			uStreetLightColor: {
 				value: Array.from({ length: 4 }, () => new THREE.Vector3(1, 0.95, 0.8)),
 			},

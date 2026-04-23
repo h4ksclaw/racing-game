@@ -90,9 +90,21 @@ export class VehicleRenderer {
 
 			result.push({
 				name: pivot.name,
-				worldPos: { x: +wp.x.toFixed(3), y: +wp.y.toFixed(3), z: +wp.z.toFixed(3) },
-				pivotRot: { x: +pivot.rotation.x.toFixed(3), y: +pivot.rotation.y.toFixed(3), z: +pivot.rotation.z.toFixed(3) },
-				worldBBox: { x: +size.x.toFixed(3), y: +size.y.toFixed(3), z: +size.z.toFixed(3) },
+				worldPos: {
+					x: +wp.x.toFixed(3),
+					y: +wp.y.toFixed(3),
+					z: +wp.z.toFixed(3),
+				},
+				pivotRot: {
+					x: +pivot.rotation.x.toFixed(3),
+					y: +pivot.rotation.y.toFixed(3),
+					z: +pivot.rotation.z.toFixed(3),
+				},
+				worldBBox: {
+					x: +size.x.toFixed(3),
+					y: +size.y.toFixed(3),
+					z: +size.z.toFixed(3),
+				},
 				children,
 			});
 		}
@@ -310,7 +322,11 @@ export class VehicleRenderer {
 			const wheelClone = pivot.children[0];
 			if (!wheelClone) continue;
 
-			const discs: { mesh: THREE.Mesh; axleDir: THREE.Vector3; baseQuat: THREE.Quaternion }[] = [];
+			const discs: {
+				mesh: THREE.Mesh;
+				axleDir: THREE.Vector3;
+				baseQuat: THREE.Quaternion;
+			}[] = [];
 			wheelClone.traverse((child) => {
 				if (!(child instanceof THREE.Mesh)) return;
 				const mat = child.material;
@@ -465,7 +481,10 @@ export class VehicleRenderer {
 
 			const tireGeom = new THREE.CylinderGeometry(radius, radius, width, 16);
 			tireGeom.rotateZ(Math.PI / 2);
-			const tireMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
+			const tireMat = new THREE.MeshStandardMaterial({
+				color: 0x1a1a1a,
+				roughness: 0.9,
+			});
 			const tireMesh = new THREE.Mesh(tireGeom, tireMat);
 
 			const rimGeom = new THREE.CylinderGeometry(radius * 0.7, radius * 0.7, width * 0.85, 8);
@@ -506,11 +525,11 @@ export class VehicleRenderer {
 	}
 
 	/** Delegate: get headlight world-space positions for terrain shader. */
-	getHeadlightData(physicsForward?: {
-		x: number;
-		y: number;
-		z: number;
-	}): { positions: THREE.Vector3[]; directions: THREE.Vector3[]; intensity: number } | null {
+	getHeadlightData(physicsForward?: { x: number; y: number; z: number }): {
+		positions: THREE.Vector3[];
+		directions: THREE.Vector3[];
+		intensity: number;
+	} | null {
 		this.model?.updateMatrixWorld(true);
 		return this.lights.getHeadlightData(physicsForward);
 	}

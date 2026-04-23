@@ -116,7 +116,10 @@ export function buildCloudLayer(): THREE.Group {
 // ── Particle systems ────────────────────────────────────────────────────
 
 /** Build rain particle system. Returns the Points mesh and a velocity array for animation. */
-export function buildRainSystem(): { points: THREE.Points; velocities: Float32Array } {
+export function buildRainSystem(): {
+	points: THREE.Points;
+	velocities: Float32Array;
+} {
 	const count = 6000;
 	const positions = new Float32Array(count * 3);
 	const velocities = new Float32Array(count);
@@ -144,7 +147,10 @@ export function buildRainSystem(): { points: THREE.Points; velocities: Float32Ar
 }
 
 /** Build snow particle system. Returns the Points mesh and a drift array for animation. */
-export function buildSnowSystem(): { points: THREE.Points; drifts: Float32Array } {
+export function buildSnowSystem(): {
+	points: THREE.Points;
+	drifts: Float32Array;
+} {
 	const count = 4000;
 	const positions = new Float32Array(count * 3);
 	const drifts = new Float32Array(count * 2);
@@ -240,12 +246,48 @@ interface CloudWeatherSetting {
 }
 
 const CLOUD_SETTINGS: Record<string, CloudWeatherSetting> = {
-	clear: { visible: false, opacity: 0, color: [0.92, 0.92, 0.95], scale: 1, yOffset: 0 },
-	cloudy: { visible: true, opacity: 0.55, color: [0.85, 0.85, 0.88], scale: 1.3, yOffset: -20 },
-	rain: { visible: true, opacity: 0.75, color: [0.5, 0.5, 0.55], scale: 1.8, yOffset: -60 },
-	heavy_rain: { visible: true, opacity: 0.9, color: [0.3, 0.3, 0.35], scale: 2.5, yOffset: -100 },
-	snow: { visible: true, opacity: 0.65, color: [0.72, 0.73, 0.78], scale: 1.6, yOffset: -40 },
-	fog: { visible: true, opacity: 0.8, color: [0.65, 0.65, 0.68], scale: 2.0, yOffset: -80 },
+	clear: {
+		visible: false,
+		opacity: 0,
+		color: [0.92, 0.92, 0.95],
+		scale: 1,
+		yOffset: 0,
+	},
+	cloudy: {
+		visible: true,
+		opacity: 0.55,
+		color: [0.85, 0.85, 0.88],
+		scale: 1.3,
+		yOffset: -20,
+	},
+	rain: {
+		visible: true,
+		opacity: 0.75,
+		color: [0.5, 0.5, 0.55],
+		scale: 1.8,
+		yOffset: -60,
+	},
+	heavy_rain: {
+		visible: true,
+		opacity: 0.9,
+		color: [0.3, 0.3, 0.35],
+		scale: 2.5,
+		yOffset: -100,
+	},
+	snow: {
+		visible: true,
+		opacity: 0.65,
+		color: [0.72, 0.73, 0.78],
+		scale: 1.6,
+		yOffset: -40,
+	},
+	fog: {
+		visible: true,
+		opacity: 0.8,
+		color: [0.65, 0.65, 0.68],
+		scale: 2.0,
+		yOffset: -80,
+	},
 };
 
 function applyCloudWeather(weather: WeatherType, cloudLayer: THREE.Group): void {
@@ -324,7 +366,15 @@ export function applyWeather(weather: WeatherType): void {
 	const fog = sc.fog as THREE.Fog;
 
 	const WEATHER_FOG: Partial<
-		Record<WeatherType, { turbidity: number; far: number; near: number; color?: [number, number, number] }>
+		Record<
+			WeatherType,
+			{
+				turbidity: number;
+				far: number;
+				near: number;
+				color?: [number, number, number];
+			}
+		>
 	> = {
 		clear: { turbidity: 0, far: Infinity, near: 0 },
 		cloudy: { turbidity: 10, far: Infinity, near: 0 },

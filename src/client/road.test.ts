@@ -27,7 +27,15 @@ describe("validateGuardrailConfig", () => {
 	it("rejects rail y >= postHeight", () => {
 		const cfg: GuardrailConfig = {
 			...DEFAULT_GUARDRAIL_CONFIG,
-			rails: [{ y: 2.0, halfWidth: 0.02, color: [1, 1, 1], metalness: 0.5, roughness: 0.5 }],
+			rails: [
+				{
+					y: 2.0,
+					halfWidth: 0.02,
+					color: [1, 1, 1],
+					metalness: 0.5,
+					roughness: 0.5,
+				},
+			],
 			railCount: 1,
 		};
 		expect(validateGuardrailConfig(cfg)).toMatch("postHeight");
@@ -41,7 +49,15 @@ describe("validateGuardrailConfig", () => {
 	it("rejects halfWidth <= 0", () => {
 		const cfg: GuardrailConfig = {
 			...DEFAULT_GUARDRAIL_CONFIG,
-			rails: [{ y: 0.5, halfWidth: 0, color: [1, 1, 1], metalness: 0.5, roughness: 0.5 }],
+			rails: [
+				{
+					y: 0.5,
+					halfWidth: 0,
+					color: [1, 1, 1],
+					metalness: 0.5,
+					roughness: 0.5,
+				},
+			],
 			railCount: 1,
 		};
 		expect(validateGuardrailConfig(cfg)).toMatch("halfWidth");
@@ -50,7 +66,15 @@ describe("validateGuardrailConfig", () => {
 	it("rejects color values outside 0-1", () => {
 		const cfg: GuardrailConfig = {
 			...DEFAULT_GUARDRAIL_CONFIG,
-			rails: [{ y: 0.5, halfWidth: 0.02, color: [1.5, 0, 0], metalness: 0.5, roughness: 0.5 }],
+			rails: [
+				{
+					y: 0.5,
+					halfWidth: 0.02,
+					color: [1.5, 0, 0],
+					metalness: 0.5,
+					roughness: 0.5,
+				},
+			],
 			railCount: 1,
 		};
 		expect(validateGuardrailConfig(cfg)).toMatch("color");
@@ -59,7 +83,15 @@ describe("validateGuardrailConfig", () => {
 	it("rejects metalness outside 0-1", () => {
 		const cfg: GuardrailConfig = {
 			...DEFAULT_GUARDRAIL_CONFIG,
-			rails: [{ y: 0.5, halfWidth: 0.02, color: [1, 1, 1], metalness: 1.5, roughness: 0.5 }],
+			rails: [
+				{
+					y: 0.5,
+					halfWidth: 0.02,
+					color: [1, 1, 1],
+					metalness: 1.5,
+					roughness: 0.5,
+				},
+			],
 			railCount: 1,
 		};
 		expect(validateGuardrailConfig(cfg)).toMatch("metalness");
@@ -68,7 +100,15 @@ describe("validateGuardrailConfig", () => {
 	it("rejects roughness outside 0-1", () => {
 		const cfg: GuardrailConfig = {
 			...DEFAULT_GUARDRAIL_CONFIG,
-			rails: [{ y: 0.5, halfWidth: 0.02, color: [1, 1, 1], metalness: 0.5, roughness: -0.1 }],
+			rails: [
+				{
+					y: 0.5,
+					halfWidth: 0.02,
+					color: [1, 1, 1],
+					metalness: 0.5,
+					roughness: -0.1,
+				},
+			],
 			railCount: 1,
 		};
 		expect(validateGuardrailConfig(cfg)).toMatch("roughness");

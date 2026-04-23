@@ -106,7 +106,10 @@ describe("Attribution CRUD", () => {
 
 	test("getAttributionByConfig returns matching attribution", () => {
 		const configId = seedCarConfig();
-		const id = insertAttribution({ car_config_id: configId, model_name: "Car B" });
+		const id = insertAttribution({
+			car_config_id: configId,
+			model_name: "Car B",
+		});
 		const attr = getAttributionByConfig(configId);
 
 		expect(attr).toBeDefined();

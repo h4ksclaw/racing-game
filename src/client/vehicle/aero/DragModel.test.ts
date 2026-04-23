@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DragModel } from "./DragModel.ts";
 
-const makeConfig = (rollingResistance = 10, aeroDrag = 0.5) => ({ rollingResistance, aeroDrag });
+const makeConfig = (rollingResistance = 10, aeroDrag = 0.5) => ({
+	rollingResistance,
+	aeroDrag,
+});
 
 describe("DragModel", () => {
 	it("returns 0 at zero speed", () => {

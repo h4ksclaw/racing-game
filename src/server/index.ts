@@ -8,9 +8,8 @@
  * - Serves frontend static files from dist/ in production
  */
 
-import crypto from "node:crypto";
 import fs from "node:fs";
-import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
@@ -20,6 +19,7 @@ import { generateTrack } from "../shared/track.ts";
 import { createUploadMiddleware, processUploadedFile, promoteAsset, serveAsset } from "./assets.ts";
 import { _getDbForTesting, insertCarImport } from "./db.js";
 import {
+	deleteAsset,
 	deleteAttribution,
 	filterCars,
 	getAllAttributions,
@@ -54,7 +54,11 @@ function applyPredictions(car: ReturnType<typeof getCarById>, p: ReturnType<type
 			gear_ratios: p.gear_ratios.ratios,
 			final_drive: p.gear_ratios.final_drive,
 		};
-	if (p.suspension_front != null) result.suspension = { ...result.suspension, front_type: p.suspension_front };
+	if (p.suspension_front != null)
+		result.suspension = {
+			...result.suspension,
+			front_type: p.suspension_front,
+		};
 	if (p.suspension_rear != null) result.suspension = { ...result.suspension, rear_type: p.suspension_rear };
 	return result;
 }
@@ -245,11 +249,32 @@ app.get("/api/assets/pending", (_req, res) => {
 			const hash = path.basename(f, ".glb");
 			const dbAsset = getAssetByHash(hash);
 			const stat = fs.statSync(path.join(pendingDir, f));
+			// Parse attribution from metadata_json
+			let attribution: string | null = null;
+			let attributionData: Record<string, unknown> | null = null;
+			if (dbAsset?.metadata_json) {
+				try {
+					attributionData = JSON.parse(dbAsset.metadata_json);
+					// Build attribution string from parsed data
+					if (attributionData && (attributionData.name || attributionData.author)) {
+						attribution = `"${attributionData.name || "Unknown"}" by ${attributionData.author || "Unknown"}`;
+						if (attributionData.license) attribution += ` (${attributionData.license})`;
+						if (attributionData.sourceUrl) attribution += ` - ${attributionData.sourceUrl}`;
+					}
+				} catch {
+					/* ignore parse errors */
+				}
+			}
+			// Fallback to DB attribution column
+			if (!attribution && dbAsset?.attribution) {
+				attribution = dbAsset.attribution;
+			}
 			return {
 				hash,
 				originalName: dbAsset?.original_name ?? f,
 				status: dbAsset?.status ?? "untracked",
 				sourceUrl: dbAsset?.source_url ?? null,
+				attribution,
 				size: stat.size,
 			};
 		});
@@ -269,8 +294,49 @@ app.get("/api/assets/:id", (req, res) => {
 	res.json(asset);
 });
 
+/** Delete an asset by hash (removes file + DB record + attributions). */
+app.delete("/api/assets/:hash", (req, res) => {
+	const hash = req.params.hash as string;
+	try {
+		const dbAsset = getAssetByHash(hash);
+		if (!dbAsset) {
+			res.status(404).json({ error: "Asset not found" });
+			return;
+		}
+		// Delete DB record + related data
+		deleteAsset(dbAsset.id);
+		// Delete the file from disk
+		const filePath = dbAsset.filepath;
+		if (filePath && fs.existsSync(filePath)) {
+			fs.unlinkSync(filePath);
+		}
+		// Also delete .meta.json if it exists
+		const metaPath = filePath.replace(/\.glb$/, ".meta.json");
+		if (fs.existsSync(metaPath)) {
+			fs.unlinkSync(metaPath);
+		}
+		res.json({ status: "deleted", hash });
+	} catch (err) {
+		res.status(500).json({ error: String(err) });
+	}
+});
+
 /** Serve asset file by hash. */
 app.get("/api/assets/file/:hash", serveAsset);
+
+/** Serve a baked car GLB from S3 (or local fallback). */
+app.get("/api/assets/s3/:key", async (req: express.Request, res: express.Response) => {
+	const key = req.params.key as string;
+	try {
+		const { getFromS3 } = await import("./s3.js");
+		const buffer = await getFromS3(key);
+		res.setHeader("Content-Type", "model/gltf-binary");
+		res.setHeader("Cache-Control", "public, max-age=31536000");
+		res.send(buffer);
+	} catch (err) {
+		res.status(404).json({ error: `S3 object not found: ${key}` });
+	}
+});
 
 /** Proxy Sketchfab search — CC-licensed, downloadable models only. */
 app.get("/api/sketchfab/search", async (req, res) => {
@@ -305,28 +371,36 @@ app.post("/api/sketchfab/download", async (req, res) => {
 	}
 
 	try {
-		const { buffer, filename, size, attribution } = await downloadModel(uid);
+		const { buffer, filename, attribution } = await downloadModel(uid);
 
-		// Write to pending directory
-		const pendingDir = process.env.ASSET_DIR
-			? path.join(process.env.ASSET_DIR, "pending")
-			: path.join(process.cwd(), "data", "assets", "pending");
-		fs.mkdirSync(pendingDir, { recursive: true });
-
-		const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
-		const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-		const destPath = path.join(pendingDir, `${safeName}`);
-		fs.writeFileSync(destPath, buffer);
+		// Use the same hash-based storage as file uploads
+		const tmpPath = path.join(os.tmpdir(), `sketchfab-${Date.now()}.glb`);
+		fs.writeFileSync(tmpPath, buffer);
+		const processed = processUploadedFile(tmpPath, filename);
+		fs.unlinkSync(tmpPath);
 
 		// Register in DB with full attribution
+		const existing = getAssetByHash(processed.hash);
+		if (existing) {
+			res.json({
+				assetId: existing.id,
+				hash: processed.hash,
+				name: processed.originalName,
+				size: processed.size,
+				status: existing.status,
+				attribution,
+				message: "Already downloaded",
+			});
+			return;
+		}
 		const assetId = insertAsset({
-			filepath: destPath,
-			sha256_hash: sha256,
+			filepath: processed.filePath,
+			sha256_hash: processed.hash,
 			source_url: attribution.sourceUrl,
 			source_type: "sketchfab",
 			license: attribution.license,
 			attribution: `"${attribution.name}" by ${attribution.author}`,
-			original_name: safeName,
+			original_name: processed.originalName,
 			status: "pending",
 			metadata_json: JSON.stringify(attribution),
 		});
@@ -346,9 +420,9 @@ app.post("/api/sketchfab/download", async (req, res) => {
 
 		res.json({
 			assetId,
-			hash: sha256,
-			name: safeName,
-			size,
+			hash: processed.hash,
+			name: processed.originalName,
+			size: processed.size,
 			status: "pending",
 			attribution,
 			message: "Downloaded to pending — open in editor to classify",
@@ -392,6 +466,100 @@ app.post("/api/cars/import", (req, res) => {
 	} catch (err) {
 		res.status(500).json({ error: String(err) });
 	}
+});
+
+/** Get a full playable CarConfig assembled from saved import data. */
+app.get("/api/cars/playable/:id", (req, res) => {
+	const config = getCarConfigById(Number(req.params.id));
+	if (!config) {
+		res.status(404).json({ error: "Config not found" });
+		return;
+	}
+
+	// Parse stored data
+	const chassis = JSON.parse(config.config_json);
+	const schema = config.model_schema_json ? JSON.parse(config.model_schema_json) : undefined;
+	const physicsOverrides = config.physics_overrides_json ? JSON.parse(config.physics_overrides_json) : undefined;
+
+	// Find the S3 key from the asset
+	const asset = getAssetById(config.asset_id);
+	const s3Key = asset?.s3_key;
+	if (!s3Key) {
+		res.status(500).json({ error: "No S3 key for this car" });
+		return;
+	}
+
+	// Enrich with car metadata if linked
+	let meta = null;
+	if (config.car_metadata_id) {
+		meta = getCarById(config.car_metadata_id);
+	}
+
+	// Build full CarConfig
+	const predicted = meta ? predict_specs(meta) : {};
+	const engine = meta?.engine;
+	const weight = meta?.weightKg ?? chassis.mass ?? 1200;
+
+	const fullConfig: Record<string, unknown> = {
+		name: asset?.original_name?.replace(/\.glb$/, "") ?? "Imported Car",
+		drivetrain: meta?.drivetrain ?? "RWD",
+		modelPath: `/api/assets/s3/${s3Key}`,
+		modelScale: 1, // scale is baked into the GLB
+		engine: {
+			torqueNm: engine?.torque_nm ?? 150,
+			idleRPM: 850,
+			maxRPM: engine?.max_rpm ?? 6500,
+			redlinePct: 0.85,
+			finalDrive: 4.1,
+			torqueCurve: [
+				[850, 0.3],
+				[1500, 0.55],
+				[3000, 0.85],
+				[4800, 1.0],
+				[6200, 0.98],
+				[7600, 0.85],
+			],
+			engineBraking: 0.25,
+		},
+		gearbox: {
+			gearRatios: predicted.gear_ratios ?? [3.59, 2.06, 1.38, 1.0, 0.85],
+			shiftTime: 0.15,
+			downshiftThresholds: [15, 35, 55, 75, 100],
+		},
+		brakes: {
+			maxBrakeG: 0.8,
+			handbrakeG: 1.2,
+			brakeBias: 0.55,
+		},
+		tires: {
+			corneringStiffnessFront: 80000,
+			corneringStiffnessRear: 75000,
+			peakFriction: 1.0,
+			tractionPct: 0.25,
+		},
+		drag: {
+			rollingResistance: 1.5,
+			aeroDrag: predicted.cd ?? 0.44,
+		},
+		chassis: {
+			...chassis,
+			mass: weight,
+			cgHeight: chassis.cgHeight ?? 0.35,
+			weightFront: predicted.weight_front_pct ?? meta?.weightFrontPct ?? chassis.weightFront ?? 0.55,
+		},
+	};
+
+	// Merge physics overrides on top
+	if (physicsOverrides) {
+		fullConfig.physicsOverrides = physicsOverrides;
+	}
+
+	// Include schema for VehicleRenderer
+	if (schema) {
+		fullConfig.schema = schema;
+	}
+
+	res.json(fullConfig);
 });
 
 /** Get saved car configs for an asset. */
@@ -560,7 +728,8 @@ app.get("/api/cars/random", (req, res) => {
 app.get("/api/cars/game", (_req, res) => {
 	const db = _getDbForTesting();
 	const rows = db
-		.prepare(`
+		.prepare(
+			`
 			SELECT cc.id AS configId, cc.asset_id AS assetId,
 				cc.config_json, cc.model_schema_json, cc.physics_overrides_json,
 				a.s3_key
@@ -568,7 +737,8 @@ app.get("/api/cars/game", (_req, res) => {
 			JOIN assets a ON a.id = cc.asset_id
 			WHERE a.s3_key IS NOT NULL
 			ORDER BY cc.created_date DESC
-		`)
+		`,
+		)
 		.all() as Record<string, unknown>[];
 	res.json(rows);
 });
@@ -603,14 +773,19 @@ app.get(/^\/api\/s3\/(.+)$/, async (req, res) => {
 	}
 });
 
-/** Upload a GLB to S3 under cars/{hash}.glb. */
-app.post("/api/s3/upload", upload.single("model"), async (req, res) => {
+/** Upload a GLB to S3 under cars/{hash}.glb. Uses memory storage — no disk write needed. */
+const s3Upload = multer({
+	storage: multer.memoryStorage(),
+	limits: { fileSize: 50 * 1024 * 1024 },
+});
+
+app.post("/api/s3/upload", s3Upload.single("model"), async (req, res) => {
 	if (!req.file) {
 		res.status(400).json({ error: "No file uploaded (use field name 'model')" });
 		return;
 	}
 	try {
-		const buf = await readFile(req.file.path);
+		const buf = req.file.buffer;
 		const key = carModelKey(buf);
 		await uploadToS3(key, buf);
 		res.json({ key, size: buf.length });

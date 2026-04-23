@@ -21,7 +21,11 @@ function createTestServer(app: express.Express) {
 	const base = `http://127.0.0.1:${port}`;
 
 	async function get(path: string) {
-		return new Promise<{ status: number; body: unknown; headers: Record<string, string> }>((resolve, reject) => {
+		return new Promise<{
+			status: number;
+			body: unknown;
+			headers: Record<string, string>;
+		}>((resolve, reject) => {
 			http
 				.get(`${base}${path}`, (res) => {
 					let data = "";
@@ -52,7 +56,10 @@ function createTestServer(app: express.Express) {
 				`${base}${path}`,
 				{
 					method: "POST",
-					headers: { "Content-Type": contentType, "Content-Length": Buffer.byteLength(bodyStr) },
+					headers: {
+						"Content-Type": contentType,
+						"Content-Length": Buffer.byteLength(bodyStr),
+					},
 				},
 				(res) => {
 					let data = "";
@@ -83,7 +90,11 @@ function createTestServer(app: express.Express) {
 
 describe("Express server", () => {
 	let close: () => Promise<void>;
-	let get: (path: string) => Promise<{ status: number; body: unknown; headers: Record<string, string> }>;
+	let get: (path: string) => Promise<{
+		status: number;
+		body: unknown;
+		headers: Record<string, string>;
+	}>;
 	let post: (path: string, payload: unknown, contentType?: string) => Promise<{ status: number; body: unknown }>;
 
 	beforeAll(async () => {

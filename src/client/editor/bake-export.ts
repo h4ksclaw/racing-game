@@ -41,15 +41,25 @@ const MARKER_NAME_MAP: Record<string, string> = {
 	Exhaust_R: "Exhaust_R",
 };
 
+/** Map editor markedAs values to baked wheel marker names for reparenting. */
+const BRAKE_TO_WHEEL: Record<string, string> = {
+	brake_disc_FL: "WheelRig_FrontLeft",
+	brake_disc_FR: "WheelRig_FrontRight",
+	brake_disc_RL: "WheelRig_RearLeft",
+	brake_disc_RR: "WheelRig_RearRight",
+};
+
 export async function bakeModel(
 	model: THREE.Group,
 	markers: MarkerData[],
 	options?: {
 		includeMarkers?: boolean;
 		applyObjectMarks?: boolean;
+		/** Bake model.scale into geometry so output has scale=1. Default true. */
+		bakeScale?: boolean;
 	},
 ): Promise<BakeResult> {
-	const { includeMarkers = true, applyObjectMarks = true } = options ?? {};
+	const { includeMarkers = true, applyObjectMarks = true, bakeScale = true } = options ?? {};
 
 	const clone = model.clone(true);
 	clone.traverse((child) => {
@@ -63,6 +73,29 @@ export async function bakeModel(
 			}
 		}
 	});
+
+	// Bake model scale into geometry so the output GLB has scale=1
+	if (bakeScale) {
+		clone.updateMatrixWorld(true);
+		clone.traverse((child) => {
+			if ((child as THREE.Mesh).isMesh) {
+				const mesh = child as THREE.Mesh;
+				mesh.geometry.applyMatrix4(child.matrixWorld);
+				child.position.set(0, 0, 0);
+				child.rotation.set(0, 0, 0);
+				child.scale.set(1, 1, 1);
+				// Also clear parent transforms
+				if (child.parent && child.parent !== clone) {
+					child.position.copy(child.position); // already 0,0,0
+				}
+			}
+		});
+		// Reset root transform
+		clone.position.set(0, 0, 0);
+		clone.rotation.set(0, 0, 0);
+		clone.scale.set(1, 1, 1);
+		clone.updateMatrixWorld(true);
+	}
 
 	if (applyObjectMarks) {
 		clone.traverse((child) => {
@@ -88,6 +121,22 @@ export async function bakeModel(
 	}
 
 	if (includeMarkers) {
+		// Auto-generate PhysicsMarker from wheel positions (ground plane reference)
+		const wheelTypes = ["Wheel_FL", "Wheel_FR", "Wheel_RL", "Wheel_RR"];
+		const wheelMarkers = wheelTypes.map((t) => markers.find((m) => m.type === t)).filter((m): m is MarkerData => !!m);
+
+		if (wheelMarkers.length === 4) {
+			// PhysicsMarker goes at center of wheelbase, at wheel bottom (ground plane)
+			const centerX = (wheelMarkers[0].position.x + wheelMarkers[1].position.x) / 2;
+			const centerZ = (wheelMarkers[2].position.z + wheelMarkers[3].position.z) / 2;
+			const groundY = Math.min(...wheelMarkers.map((w) => w.position.y));
+			const empty = new THREE.Object3D();
+			empty.name = "PhysicsMarker";
+			empty.position.set(centerX, groundY, centerZ);
+			clone.add(empty);
+		}
+
+		// Bake user-placed markers (wheels, lights, exhaust)
 		for (const marker of markers) {
 			const markerName = MARKER_NAME_MAP[marker.type] ?? marker.type;
 			const empty = new THREE.Object3D();
@@ -95,6 +144,46 @@ export async function bakeModel(
 			empty.position.copy(marker.position);
 			clone.add(empty);
 		}
+	}
+
+	// Reparent brake disc meshes under their wheel pivots so suspension works at runtime.
+	// Find meshes marked brake_disc_XX and move them under the corresponding WheelRig marker.
+	const wheelPivots = new Map<string, THREE.Object3D>();
+	clone.traverse((child) => {
+		if (child.name && Object.values(BRAKE_TO_WHEEL).includes(child.name)) {
+			wheelPivots.set(child.name, child);
+		}
+	});
+	const toReparent: THREE.Object3D[] = [];
+	clone.traverse((child) => {
+		if (!(child as THREE.Mesh).isMesh) return;
+		const markedAs = child.userData.markedAs as string | undefined;
+		if (!markedAs || !BRAKE_TO_WHEEL[markedAs]) return;
+		const wheelMarkerName = BRAKE_TO_WHEEL[markedAs];
+		const pivot = wheelPivots.get(wheelMarkerName);
+		if (pivot && child.parent !== pivot) {
+			toReparent.push(child);
+		}
+	});
+	for (const mesh of toReparent) {
+		const markedAs = mesh.userData.markedAs as string;
+		const wheelMarkerName = BRAKE_TO_WHEEL[markedAs];
+		const pivot = wheelPivots.get(wheelMarkerName)!;
+		// Bake world transform into geometry before reparenting
+		mesh.updateWorldMatrix(true, false);
+		const wm = mesh.matrixWorld.clone();
+		(mesh as THREE.Mesh).geometry.applyMatrix4(wm);
+		mesh.position.set(0, 0, 0);
+		mesh.rotation.set(0, 0, 0);
+		mesh.scale.set(1, 1, 1);
+		// Convert world position to pivot-local
+		const worldPos = new THREE.Vector3();
+		mesh.getWorldPosition(worldPos);
+		pivot.updateMatrixWorld(true);
+		const localPos = pivot.worldToLocal(worldPos.clone());
+		mesh.position.copy(localPos);
+		pivot.add(mesh);
+		console.log(`[bake] Reparented brake disc "${mesh.name}" under ${wheelMarkerName}`);
 	}
 
 	const exporter = new GLTFExporter();
