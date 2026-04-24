@@ -319,21 +319,43 @@ app.delete("/api/assets/:hash", (req, res) => {
 	const hash = req.params.hash as string;
 	try {
 		const dbAsset = getAssetByHash(hash);
-		if (!dbAsset) {
+		let deleted = false;
+
+		// Delete DB record if it exists
+		if (dbAsset) {
+			deleteAsset(dbAsset.id);
+			const filePath = dbAsset.filepath;
+			if (filePath && fs.existsSync(filePath)) {
+				fs.unlinkSync(filePath);
+			}
+			const metaPath = filePath?.replace(/\.glb$/, ".meta.json");
+			if (metaPath && fs.existsSync(metaPath)) {
+				fs.unlinkSync(metaPath);
+			}
+			deleted = true;
+		}
+
+		// Also check pending directory (filesystem-only assets without DB records)
+		const pendingPath = path.join(PROJECT_ROOT, "data", "assets", "pending", `${hash}.glb`);
+		if (fs.existsSync(pendingPath)) {
+			fs.unlinkSync(pendingPath);
+			const pendingMeta = pendingPath.replace(/\.glb$/, ".meta.json");
+			if (fs.existsSync(pendingMeta)) {
+				fs.unlinkSync(pendingMeta);
+			}
+			deleted = true;
+		}
+
+		// Check ready directory too
+		const readyPath = path.join(PROJECT_ROOT, "data", "assets", "ready", `${hash}.glb`);
+		if (fs.existsSync(readyPath)) {
+			fs.unlinkSync(readyPath);
+			deleted = true;
+		}
+
+		if (!deleted) {
 			res.status(404).json({ error: "Asset not found" });
 			return;
-		}
-		// Delete DB record + related data
-		deleteAsset(dbAsset.id);
-		// Delete the file from disk
-		const filePath = dbAsset.filepath;
-		if (filePath && fs.existsSync(filePath)) {
-			fs.unlinkSync(filePath);
-		}
-		// Also delete .meta.json if it exists
-		const metaPath = filePath.replace(/\.glb$/, ".meta.json");
-		if (fs.existsSync(metaPath)) {
-			fs.unlinkSync(metaPath);
 		}
 		res.json({ status: "deleted", hash });
 	} catch (err) {
