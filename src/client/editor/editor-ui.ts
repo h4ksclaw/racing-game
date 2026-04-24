@@ -73,7 +73,6 @@ const wheelAnimator = new WheelAnimator();
 let _animatorFrameUnsub: (() => void) | null = null;
 
 function initWheelAnimator(model: import("three").Group | null): void {
-	console.log(`[Editor] initWheelAnimator called, model=${!!model}`);
 	// Unsubscribe previous frame callback
 	if (_animatorFrameUnsub) {
 		_animatorFrameUnsub();
@@ -82,7 +81,6 @@ function initWheelAnimator(model: import("three").Group | null): void {
 	if (model) {
 		wheelAnimator.init(model);
 		const cb = wheelAnimator.getFrameCallback();
-		console.log(`[Editor] wheelAnimator frameCallback=${!!cb}`);
 		if (cb) _animatorFrameUnsub = onRenderFrame(cb);
 	}
 }
@@ -98,9 +96,10 @@ function showSidebar(): void {
 	// Update viewport position to account for sidebar
 	const viewportEl = document.getElementById("viewport") as HTMLElement | null;
 	if (viewportEl) viewportEl.style.left = "280px";
-	// Trigger Three.js renderer resize after layout change
+	// Trigger Three.js renderer resize after layout settles
 	import("./editor-main.js").then(({ triggerResize }) => {
-		requestAnimationFrame(() => triggerResize());
+		// Double-rAF to ensure the browser has reflowed after sidebar appears
+		requestAnimationFrame(() => requestAnimationFrame(() => triggerResize()));
 	});
 }
 
@@ -640,7 +639,6 @@ function refreshUI() {
 	wireSuspParam(suspStiffnessSlider, suspStiffnessVal, "suspensionStiffness", "", 0);
 
 	// ── Wheel Spin Test ──
-	console.log(`[Editor] spinBtn=${!!spinBtn}, spinSpeedSlider=${!!spinSpeedSlider}`);
 	if (spinBtn) {
 		spinBtn.addEventListener("click", () => {
 			const spinning = !wheelAnimator.isSpinning();

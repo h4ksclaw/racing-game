@@ -143,7 +143,6 @@ export function setRefPrismDims(length: number, width: number, height: number) {
 	refPrism.name = "__ref_car";
 	refPrism.position.set(0, height / 2, 0);
 	scene.add(refPrism);
-	console.log(`[editor] Reference prism updated: ${length}m × ${width}m × ${height}m`);
 }
 
 export function setModelScale(sx: number, sy: number, sz: number) {
@@ -334,7 +333,6 @@ export function init(container: HTMLElement) {
 	refPrism.name = "__ref_car";
 	refPrism.position.set(0, refDims.height / 2, 0);
 	scene.add(refPrism);
-	console.log(`[editor] Reference prism: ${refDims.length}m × ${refDims.width}m × ${refDims.height}m`);
 
 	// Controls
 	orbitControls = new OrbitControls(camera, renderer.domElement);
@@ -367,10 +365,11 @@ export function init(container: HTMLElement) {
 	function onResize() {
 		const w = container.clientWidth;
 		const h = container.clientHeight;
-		if (w === 0 || h === 0) return; // skip if not laid out yet
-		camera.aspect = w / h;
-		camera.updateProjectionMatrix();
-		renderer.setSize(w, h);
+		if (w > 0 && h > 0) {
+			camera.aspect = w / h;
+			camera.updateProjectionMatrix();
+			renderer.setSize(w, h);
+		}
 	}
 	window.addEventListener("resize", onResize);
 	onResize();

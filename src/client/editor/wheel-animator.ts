@@ -52,7 +52,6 @@ export class WheelAnimator {
 	}
 
 	init(model: THREE.Group): void {
-		console.log("[WheelAnimator v6] init called");
 		this.stop();
 		this.model = model;
 		this.scanWheels();
@@ -74,8 +73,6 @@ export class WheelAnimator {
 
 	private scanWheels(): void {
 		if (!this.model) return;
-
-		console.log(`[WA] model="${this.model.name}" pos=(${f(this.model.position)}) scale=(${f(this.model.scale)})`);
 
 		this.model.updateMatrixWorld(true);
 		let wheelCount = 0;
@@ -106,10 +103,6 @@ export class WheelAnimator {
 			if (wheelSize.y < wheelSize.x && wheelSize.y < wheelSize.z) axleAxis.set(0, 1, 0);
 			else if (wheelSize.z < wheelSize.x && wheelSize.z < wheelSize.y) axleAxis.set(0, 0, 1);
 
-			console.log(
-				`[WA] Wheel ${i} (${label}): ${wheelMeshes.length} wheels, ${discMeshes.length} discs, size=(${f(wheelSize)}), axle=(${f(axleAxis)})`,
-			);
-
 			// Build mesh data with bbox centers
 			const wheels: WheelMeshData[] = [];
 			for (const m of wheelMeshes) {
@@ -123,7 +116,6 @@ export class WheelAnimator {
 					originalPos: m.position.clone(),
 					axleAxis,
 				});
-				console.log(`[WA]   ${m.name}: worldCenter=(${f(worldCenter)}) localCenter=(${f(localCenter)})`);
 			}
 
 			const discs: WheelMeshData[] = [];
@@ -138,7 +130,6 @@ export class WheelAnimator {
 					originalPos: m.position.clone(),
 					axleAxis,
 				});
-				console.log(`[WA]   ${m.name}: worldCenter=(${f(worldCenter)}) localCenter=(${f(localCenter)})`);
 			}
 
 			// Group center = average of all mesh centers
@@ -147,19 +138,15 @@ export class WheelAnimator {
 			for (const c of allCenters) groupCenter.add(c);
 			groupCenter.divideScalar(allCenters.length);
 
-			console.log(`[WA]   groupCenter=(${f(groupCenter)})`);
-
 			this.groups[i] = { wheels, discs, axleAxis, center: groupCenter };
 		}
 
-		console.log(`[WA] scanWheels done: ${wheelCount} wheel meshes`);
 		if (wheelCount > 0) {
 			this.onFrame = () => this.tick(performance.now() / 1000);
 		}
 	}
 
 	setSpinning(on: boolean): void {
-		console.log(`[WA] setSpinning(${on})`);
 		this.state.spinning = on;
 		if (on) this.lastTime = performance.now() / 1000;
 	}
@@ -255,8 +242,4 @@ export class WheelAnimator {
 			}
 		}
 	}
-}
-
-function f(v: THREE.Vector3 | THREE.Euler): string {
-	return `${v.x.toFixed(4)}, ${v.y.toFixed(4)}, ${v.z.toFixed(4)}`;
 }
