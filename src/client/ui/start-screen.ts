@@ -13,6 +13,7 @@ const API_BASE = "/api";
 interface CarEntry {
 	id: number;
 	name: string;
+	carName?: string | null;
 	status: string;
 	s3Key?: string;
 	createdAt: string;
@@ -23,6 +24,8 @@ interface PendingAsset {
 	hash: string;
 	originalName: string;
 	size: number;
+	status: string;
+	sourceUrl?: string;
 	attribution?: string;
 }
 
@@ -637,6 +640,8 @@ export class StartScreen extends LitElement {
 			}
 			const raw = (await resp.json()) as CarEntry[];
 			this._editCars = raw.map((c) => {
+				// Prefer carName if set, otherwise try to extract from attribution
+				if (c.carName && c.carName.trim()) return { ...c, name: c.carName.trim() };
 				if (/^[a-f0-9]{12,}$/.test(c.name) && c.attribution) {
 					const parsed = c.attribution.replace(/^"|"$/g, "").split(" by ")[0]?.trim();
 					if (parsed && parsed.length > 3) return { ...c, name: parsed };
