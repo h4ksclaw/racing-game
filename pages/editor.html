@@ -110,7 +110,7 @@
 
 		/* Spin button inline */
 		.susp-spin-btn { padding: 3px 8px; font-size: 10px; flex-shrink: 0; }
-		.susp-spin-status { font-size: 10px; color: var(--ui-text-dim); flex-shrink: 0; width: 20px; }
+		.susp-spin-btn.active { background: var(--ui-accent); color: #fff; border-color: var(--ui-accent); }
 		.susp-speed-slider { max-width: 80px; }
 
 		.editor-btn {
@@ -377,7 +377,6 @@
 				<!-- Wheel spin test -->
 				<div class="susp-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--ui-border);">
 					<button id="btn-wheel-spin" class="editor-btn susp-spin-btn" title="Toggle wheel spin">Spin Wheels</button>
-					<span id="wheel-spin-status" class="susp-spin-status">Off</span>
 					<input type="range" class="susp-param susp-speed-slider" id="spin-speed-slider" min="1" max="80" step="1" value="15">
 					<div class="susp-val" id="spin-speed-value">15 rad/s</div>
 				</div>
@@ -409,6 +408,7 @@
 	<status-line id="status-line" message=""></status>
 
 	<div id="viewport"></div>
+	<div id="viewport-debug" style="position:fixed;top:40px;right:8px;z-index:9999;background:rgba(0,0,0,0.8);color:#0f0;padding:6px 10px;font:11px monospace;border-radius:4px;pointer-events:none;"></div>
 
 	<script type="module" src="/src/client/editor/editor-ui.ts"></script>
 </body>

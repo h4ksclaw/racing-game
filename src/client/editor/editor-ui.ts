@@ -63,7 +63,6 @@ const suspCompressVal = document.getElementById("susp-compress-val");
 const suspStiffnessSlider = document.getElementById("susp-stiffness") as HTMLInputElement | null;
 const suspStiffnessVal = document.getElementById("susp-stiffness-val");
 const spinBtn = document.getElementById("btn-wheel-spin") as HTMLButtonElement | null;
-const spinStatus = document.getElementById("wheel-spin-status");
 const spinSpeedSlider = document.getElementById("spin-speed-slider") as HTMLInputElement | null;
 const spinSpeedValue = document.getElementById("spin-speed-value");
 let currentConfigId: number | null = null;
@@ -119,6 +118,27 @@ if (!viewport) {
 	init(viewport);
 }
 
+// ── Viewport debug overlay ──
+(function viewportDebug() {
+	const dbg = document.getElementById("viewport-debug")!;
+	function update() {
+		const vp = document.getElementById("viewport");
+		const canvas = vp?.querySelector("canvas");
+		const r = vp?.getBoundingClientRect();
+		const cr = canvas?.getBoundingClientRect();
+		const cs = getComputedStyle(vp || document.body);
+		dbg.textContent = [
+			`viewport: ${r?.width}×${r?.height} @ (${r?.x},${r?.y})`,
+			`canvas: ${cr?.width}×${cr?.height} @ (${cr?.x},${cr?.y})`,
+			`viewport CSS: left=${cs.left} top=${cs.top} pos=${cs.position}`,
+			`canvas size: ${canvas?.width}×${canvas?.height} (drawingBuffer)`,
+			`sidebar visible: ${document.getElementById("sidebar")?.classList.contains("visible")}`,
+		].join("\n");
+		requestAnimationFrame(update);
+	}
+	update();
+})();
+
 /** Load a model, clear markers, and refresh the UI. */
 export async function loadModelAndReset(path: string, name: string, attribution?: string): Promise<void> {
 	currentConfigId = null; // reset — new model, not editing existing
@@ -127,8 +147,8 @@ export async function loadModelAndReset(path: string, name: string, attribution?
 	wheelAnimator.setSpinning(false);
 	if (spinBtn) {
 		spinBtn.classList.remove("active");
+		spinBtn.textContent = "Spin Wheels";
 	}
-	if (spinStatus) spinStatus.textContent = "Off";
 	resetTravelSlider();
 	setCarSelection({ modelPath: path, name });
 	if (statusLine) statusLine.message = `Loading ${name}...`;
@@ -643,8 +663,8 @@ function refreshUI() {
 		spinBtn.addEventListener("click", () => {
 			const spinning = !wheelAnimator.isSpinning();
 			wheelAnimator.setSpinning(spinning);
-			if (spinStatus) spinStatus.textContent = spinning ? "Spinning" : "Off";
 			spinBtn.classList.toggle("active", spinning);
+			spinBtn.textContent = spinning ? "Stop Spinning" : "Spin Wheels";
 		});
 	}
 	if (spinSpeedSlider) {
