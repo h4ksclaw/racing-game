@@ -18,6 +18,7 @@ export { SessionBadge } from "./session-badge.ts";
 export { SliderRow } from "./slider-row.ts";
 export { SpeedDisplay } from "./speed-display.ts";
 export { SpeedTrap } from "./speed-trap.ts";
+export { StartScreen } from "./start-screen.ts";
 export { StatusLine } from "./status-line.ts";
 export { SteerIndicator } from "./steer-indicator.ts";
 export { SystemBar } from "./system-bar.ts";

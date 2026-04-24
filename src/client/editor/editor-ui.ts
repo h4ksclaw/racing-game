@@ -1,20 +1,25 @@
 /**
  * Editor UI — wires Lit components and editor modules together.
  */
-import type { DropZone } from "../ui/drop-zone.js";
-import "../ui/car-manager.js";
 import { bakeModel } from "./bake-export.js";
 import { clearGhost, updateDimensions } from "./dimension-overlay.js";
-import { API_BASE, getCurrentModel, handleSelectClick, init, loadGLB, onRenderFrame } from "./editor-main.js";
+import {
+	API_BASE,
+	getCurrentModel,
+	handleSelectClick,
+	init,
+	loadGLB,
+	onRenderFrame,
+	setRefPrismDims,
+} from "./editor-main.js";
 import { getEditorState, setCarSelection } from "./editor-state.js";
 import { generateExport, validateMarkers } from "./export.js";
-import { initImportFlow } from "./import-flow.js";
 import { getMarkers, handleViewportClick } from "./marker-tool.js";
 import { initObjectPanel, refreshObjectPanel } from "./object-panel.js";
 import { getPhysicsOverrides } from "./physics-editor.js";
 import type { PhysicsModal } from "./physics-modal.js";
 import { getCurrentScale, initScaleControls, setScaleFromCar } from "./scale-controls.js";
-import { collapseSketchfabPanel, initSketchfabPanel, loadPendingAssets } from "./sketchfab-panel.js";
+import { initSketchfabPanel } from "./sketchfab-panel.js";
 import { WheelAnimator } from "./wheel-animator.js";
 import { initExportWiring } from "./wire-export.js";
 import { initKeyboardWiring } from "./wire-keyboard.js";
@@ -25,13 +30,16 @@ import { initToolbarWiring } from "./wire-toolbar.js";
 
 // ── DOM references ──
 const viewport = document.getElementById("viewport");
-const dropZone = document.querySelector("drop-zone");
+const sidebar = document.getElementById("sidebar");
+const startScreen = document.getElementById("start-screen");
 const toolbar = document.querySelector("editor-toolbar");
 const markerListEl = document.querySelector("marker-list");
-const validationEl = document.querySelector("validation-display");
 const statusLine = document.querySelector("status-line");
 const sidebarAttribution = document.getElementById("sidebar-attribution") as HTMLTextAreaElement | null;
 const sidebarSubmitBtn = document.getElementById("btn-submit") as HTMLButtonElement | null;
+const collapseAllBtn = document.getElementById("btn-collapse-all");
+
+// ── loadCarForEditing (hoisted so start-screen events can reference it) ──
 // Travel slider state (module-level so resetTravelSlider is accessible from loadModelAndReset)
 let travelValue = 0;
 let travelMaxCompress = 0.3;
@@ -84,38 +92,28 @@ export function getWheelAnimator(): WheelAnimator {
 	return wheelAnimator;
 }
 
+// ── Show/hide sidebar ──
+function showSidebar(): void {
+	sidebar?.classList.add("visible");
+	// Update viewport position to account for sidebar
+	const viewportEl = document.getElementById("viewport") as HTMLElement | null;
+	if (viewportEl) viewportEl.style.left = "280px";
+}
+
+function updateViewportPosition(): void {
+	const viewportEl = document.getElementById("viewport") as HTMLElement | null;
+	const sidebarEl = document.getElementById("sidebar") as HTMLElement | null;
+	if (viewportEl && sidebarEl) {
+		const sidebarWidth = sidebarEl.classList.contains("visible") ? sidebarEl.offsetWidth : 0;
+		viewportEl.style.left = `${sidebarWidth}px`;
+	}
+}
+
 // ── Init scene ──
-if (!viewport || !dropZone) {
+if (!viewport) {
 	console.error("Editor: required DOM elements missing");
 } else {
 	init(viewport);
-	setupDropZone(dropZone);
-}
-
-function setupDropZone(dz: DropZone): void {
-	dz.addEventListener("file-drop", async (e: Event) => {
-		const file = (e as CustomEvent<File>).detail;
-		if (statusLine) statusLine.message = `Uploading ${file.name}...`;
-		dz.setLoading(true);
-		try {
-			const formData = new FormData();
-			formData.append("model", file);
-			const resp = await fetch(`${API_BASE}/assets/upload`, {
-				method: "POST",
-				body: formData,
-			});
-			if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`);
-			const data = await resp.json();
-			if (data.hash) {
-				await loadModelAndReset(`/api/assets/file/${data.hash}`, file.name.replace(/\.(glb|gltf)$/i, ""));
-			}
-		} catch (err) {
-			if (statusLine) statusLine.message = `Upload failed: ${err}`;
-			console.error("Upload failed:", err);
-		} finally {
-			dz.setLoading(false);
-		}
-	});
 }
 
 /** Load a model, clear markers, and refresh the UI. */
@@ -174,10 +172,8 @@ if (toolbar) initToolbarWiring(toolbar as any);
 if (markerListEl && toolbar) initMarkerWiring(markerListEl as any, toolbar as any, refreshUI);
 initScaleControls();
 initSketchfabPanel((path, name, attribution) => {
-	collapseSketchfabPanel();
 	return loadModelAndReset(path, name, attribution);
 });
-loadPendingAssets();
 
 const objectPanel = document.getElementById("object-panel");
 if (objectPanel) initObjectPanel(objectPanel);
@@ -220,6 +216,187 @@ viewport?.addEventListener("auxclick", (e) => {
 	}
 });
 
+// ── Collapse All ──
+collapseAllBtn?.addEventListener("click", () => {
+	const panels = document.querySelectorAll("editor-panel");
+	for (const p of panels) {
+		(p as any).collapsed = true;
+	}
+});
+
+// ── Load car for editing (module-scope so start-screen events can call it) ──
+async function loadCarForEditing(configId: number, s3Key: string, carName: string): Promise<void> {
+	if (!configId || !s3Key) return;
+
+	try {
+		const configResp = await fetch(`${API_BASE}/cars/imported/${configId}`);
+		if (!configResp.ok) throw new Error(`HTTP ${configResp.status}`);
+		const data = await configResp.json();
+
+		currentConfigId = configId;
+
+		setCarSelection({
+			modelPath: `/api/assets/s3/${s3Key}`,
+			name: carName,
+		});
+
+		if (statusLine) statusLine.message = `Loading ${carName} for editing (#${configId})...`;
+
+		// Load the GLB
+		await loadGLB(`/api/assets/s3/${s3Key}`);
+		const { clearMarkers } = await import("./marker-tool.js");
+		clearMarkers();
+		clearGhost();
+		updateDimensions();
+
+		// Restore markers from schema markerPositions, or reconstruct from config
+		if (data.schema?.markerPositions) {
+			const { placeMarker } = await import("./marker-tool.js");
+			const { Vector3 } = await import("three");
+			for (const [type, pos] of Object.entries(data.schema.markerPositions)) {
+				const p = pos as { x: number; y: number; z: number };
+				placeMarker(type, new Vector3(p.x, p.y, p.z));
+			}
+		} else if (data.config?.wheelPositions && data.schema?.markers) {
+			const { placeMarker } = await import("./marker-tool.js");
+			const { Vector3 } = await import("three");
+			const { markers: markerNames } = data.schema;
+			const wheelPos = data.config.wheelPositions as Array<{ x: number; y: number; z: number }>;
+			if (wheelPos.length >= 4) {
+				const cx = (wheelPos[0].x + wheelPos[1].x) / 2;
+				const cy = wheelPos[0].y;
+				const cz = (wheelPos[0].z + wheelPos[2].z) / 2;
+				placeMarker("PhysicsMarker", new Vector3(cx, cy, cz));
+			}
+			const wheelNames = markerNames.wheels as string[];
+			wheelNames.forEach((name: string, i: number) => {
+				if (wheelPos[i]) placeMarker(name, new Vector3(wheelPos[i].x, wheelPos[i].y, wheelPos[i].z));
+			});
+			if (markerNames.escapePipes) {
+				const ep = markerNames.escapePipes as { left?: string; right?: string };
+				const rearZ = Math.min(...wheelPos.map((w) => w.z));
+				const exY = wheelPos[0].y - 0.15;
+				if (ep.left) placeMarker(ep.left, new Vector3(0.25, exY, rearZ - 0.1));
+				if (ep.right) placeMarker(ep.right, new Vector3(-0.25, exY, rearZ - 0.1));
+			}
+		}
+
+		// Restore physics overrides if available
+		if (data.physicsOverrides) {
+			const { setPhysicsOverrides } = await import("./physics-editor.js");
+			setPhysicsOverrides(data.physicsOverrides);
+		}
+
+		// Restore attribution
+		if (data.attribution && sidebarAttribution) sidebarAttribution.value = data.attribution;
+
+		// Update submit button to show overwrite
+		if (sidebarSubmitBtn) sidebarSubmitBtn.textContent = "Bake & Overwrite";
+		if (statusLine) statusLine.message = `Editing: ${carName} (#${configId})`;
+
+		// Initialize wheel animator after markers are placed
+		initWheelAnimator(getCurrentModel());
+
+		refreshUI();
+	} catch (err) {
+		console.error("[editor] Failed to load car for editing:", err);
+		if (statusLine) statusLine.message = `Failed to load car #${configId}`;
+	}
+}
+
+// ── Start Screen Events ──
+startScreen?.addEventListener("start-edit", ((e: CustomEvent) => {
+	const { configId, s3Key, name } = e.detail;
+	// Show sidebar immediately, then load
+	showSidebar();
+	updateViewportPosition();
+	loadCarForEditing(configId, s3Key, name);
+}) as EventListener);
+
+startScreen?.addEventListener("start-create", ((e: CustomEvent) => {
+	const { carData, modelPath, modelName, attribution } = e.detail;
+	showSidebar();
+	updateViewportPosition();
+
+	// Apply car data if provided
+	if (carData) {
+		setCarSelection({
+			name: carData.name || modelName,
+			dims: carData.dims,
+		});
+
+		// Update reference prism
+		if (carData.dims) {
+			setRefPrismDims(carData.dims.length_m, carData.dims.width_m, carData.dims.height_m);
+		}
+
+		// Push physics
+		const carPhysics: Record<string, number> = {};
+		if (carData.weightKg) carPhysics.mass = carData.weightKg;
+		if (carData.weightFrontPct != null) carPhysics.weightFront = carData.weightFrontPct;
+		if (Object.keys(carPhysics).length > 0) {
+			import("./physics-editor.js").then(({ setPhysicsOverrides, setCarBaseline }) => {
+				setPhysicsOverrides(carPhysics as any);
+				setCarBaseline(carPhysics as any);
+			});
+		}
+	}
+
+	loadModelAndReset(modelPath, modelName, attribution);
+}) as EventListener);
+
+startScreen?.addEventListener("start-pending", ((e: CustomEvent) => {
+	const { path, name, attribution } = e.detail;
+	showSidebar();
+	updateViewportPosition();
+	loadModelAndReset(path, name, attribution);
+}) as EventListener);
+
+// ── Submit Button Validation Tooltip ──
+function updateSubmitButtonValidation(): void {
+	if (!sidebarSubmitBtn) return;
+	const markers = getMarkers();
+	const issues = validateMarkers(markers);
+	const errors = issues.filter((i) => i.type === "error");
+
+	// Remove existing tooltip
+	const existingTooltip = sidebarSubmitBtn.parentElement?.querySelector(".submit-tooltip");
+	if (existingTooltip) existingTooltip.remove();
+
+	if (errors.length > 0) {
+		sidebarSubmitBtn.disabled = true;
+		sidebarSubmitBtn.classList.add("has-validation-issues");
+
+		// Create tooltip
+		const tooltip = document.createElement("div");
+		tooltip.className = "submit-tooltip";
+		tooltip.innerHTML = `
+			<div class="submit-tooltip-title">Fix before submitting</div>
+			${errors.map((err) => `<div class="submit-tooltip-item error">• ${err.message}</div>`).join("")}
+		`;
+		// Show on hover when disabled
+		sidebarSubmitBtn.addEventListener("mouseenter", () => {
+			if (sidebarSubmitBtn?.disabled) tooltip.classList.add("visible");
+		});
+		sidebarSubmitBtn.addEventListener("mouseleave", () => {
+			tooltip.classList.remove("visible");
+		});
+		// Insert tooltip relative to the button's container
+		const actionsDiv = sidebarSubmitBtn.closest(".export-actions") as HTMLElement | null;
+		if (actionsDiv) {
+			actionsDiv.style.position = "relative";
+			actionsDiv.appendChild(tooltip);
+		}
+	} else {
+		// Only re-enable if not in a submit state
+		const submitStates = ["baking", "uploading", "saving"];
+		if (!submitStates.includes(sidebarSubmitBtn.dataset.state || "")) {
+			sidebarSubmitBtn.disabled = false;
+		}
+		sidebarSubmitBtn.classList.remove("has-validation-issues");
+	}
+}
+
 // ── Sidebar Submit (bake + upload + save config) ──
 type SubmitState = "idle" | "baking" | "uploading" | "saving" | "success" | "error";
 const SUBMIT_LABELS: Record<SubmitState, string> = {
@@ -233,17 +410,14 @@ const SUBMIT_LABELS: Record<SubmitState, string> = {
 
 function setSubmitState(state: SubmitState, extra?: string): void {
 	if (!sidebarSubmitBtn) return;
+	sidebarSubmitBtn.dataset.state = state;
 	sidebarSubmitBtn.disabled = state !== "idle" && state !== "success" && state !== "error";
 	sidebarSubmitBtn.textContent = SUBMIT_LABELS[state];
 	sidebarSubmitBtn.className = "btn-primary" + (state === "success" ? " success" : state === "error" ? " error" : "");
 	const errorEl = document.getElementById("export-error");
-	const validEl = document.getElementById("export-validation");
 	if (errorEl) {
 		errorEl.textContent = state === "error" ? extra || "" : "";
 		errorEl.className = "export-error" + (state === "error" && extra ? " visible" : "");
-	}
-	if (validEl) {
-		validEl.className = "export-validation";
 	}
 	if (state === "error") setTimeout(() => setSubmitState("idle"), 4000);
 }
@@ -251,7 +425,7 @@ function setSubmitState(state: SubmitState, extra?: string): void {
 sidebarSubmitBtn?.addEventListener("click", async () => {
 	const model = getCurrentModel();
 	if (!model) {
-		setSubmitState("error", "No model loaded — drop a GLB or select from pending assets.");
+		setSubmitState("error", "No model loaded — use the start screen to pick or upload a model.");
 		return;
 	}
 
@@ -259,10 +433,11 @@ sidebarSubmitBtn?.addEventListener("click", async () => {
 	const issues = validateMarkers(markers);
 	const errors = issues.filter((i) => i.type === "error");
 	if (errors.length > 0) {
-		const validEl = document.getElementById("export-validation");
-		if (validEl) {
-			validEl.textContent = "Fix errors: " + errors.map((i) => i.message).join("; ");
-			validEl.className = "export-validation visible";
+		// Tooltip should already be visible on hover, but flash it briefly
+		const tooltip = sidebarSubmitBtn?.closest(".export-actions")?.querySelector(".submit-tooltip");
+		if (tooltip) {
+			tooltip.classList.add("visible");
+			setTimeout(() => tooltip.classList.remove("visible"), 2000);
 		}
 		return;
 	}
@@ -332,9 +507,6 @@ sidebarSubmitBtn?.addEventListener("click", async () => {
 	}
 });
 
-// ── Import flow (tutorial only — no submit) ──
-initImportFlow();
-
 // ── Initial state ──
 refreshUI();
 
@@ -344,20 +516,20 @@ function refreshUI() {
 	if (model) initWheelAnimator(model);
 
 	if (markerListEl) {
-		if (markerListEl) {
-			const entries = getMarkers().map((m) => ({
-				id: m.id,
-				type: m.type,
-				position: { x: m.position.x, y: m.position.y, z: m.position.z },
-				locked: m.locked,
-				pairId: m.pairId,
-				enabled: m.enabled,
-			}));
-			markerListEl.markers = entries;
-		}
-		if (validationEl) validationEl.issues = validateMarkers(getMarkers());
-		refreshObjectPanel(getCurrentModel());
+		const entries = getMarkers().map((m) => ({
+			id: m.id,
+			type: m.type,
+			position: { x: m.position.x, y: m.position.y, z: m.position.z },
+			locked: m.locked,
+			pairId: m.pairId,
+			enabled: m.enabled,
+		}));
+		markerListEl.markers = entries;
 	}
+	refreshObjectPanel(getCurrentModel());
+
+	// Update submit button validation state
+	updateSubmitButtonValidation();
 
 	// ── Custom Travel Slider ──
 	let travelDragging = false;
@@ -470,107 +642,13 @@ function refreshUI() {
 		});
 	}
 
-	// ── Car Manager Modal ──
-	async function loadCarForEditing(configId: number, s3Key: string, carName: string): Promise<void> {
-		if (!configId || !s3Key) return;
-
-		try {
-			const configResp = await fetch(`${API_BASE}/cars/imported/${configId}`);
-			if (!configResp.ok) throw new Error(`HTTP ${configResp.status}`);
-			const data = await configResp.json();
-
-			currentConfigId = configId;
-
-			setCarSelection({
-				modelPath: `/api/assets/s3/${s3Key}`,
-				name: carName,
-			});
-
-			if (statusLine) statusLine.message = `Loading ${carName} for editing (#${configId})...`;
-
-			// Load the GLB
-			await loadGLB(`/api/assets/s3/${s3Key}`);
-			const { clearMarkers } = await import("./marker-tool.js");
-			clearMarkers();
-			clearGhost();
-			updateDimensions();
-
-			// Restore markers from schema markerPositions, or reconstruct from config
-			if (data.schema?.markerPositions) {
-				const { placeMarker } = await import("./marker-tool.js");
-				const { Vector3 } = await import("three");
-				for (const [type, pos] of Object.entries(data.schema.markerPositions)) {
-					const p = pos as { x: number; y: number; z: number };
-					placeMarker(type, new Vector3(p.x, p.y, p.z));
-				}
-			} else if (data.config?.wheelPositions && data.schema?.markers) {
-				const { placeMarker } = await import("./marker-tool.js");
-				const { Vector3 } = await import("three");
-				const { markers: markerNames } = data.schema;
-				const wheelPos = data.config.wheelPositions as Array<{ x: number; y: number; z: number }>;
-				if (wheelPos.length >= 4) {
-					const cx = (wheelPos[0].x + wheelPos[1].x) / 2;
-					const cy = wheelPos[0].y;
-					const cz = (wheelPos[0].z + wheelPos[2].z) / 2;
-					placeMarker("PhysicsMarker", new Vector3(cx, cy, cz));
-				}
-				const wheelNames = markerNames.wheels as string[];
-				wheelNames.forEach((name: string, i: number) => {
-					if (wheelPos[i]) placeMarker(name, new Vector3(wheelPos[i].x, wheelPos[i].y, wheelPos[i].z));
-				});
-				if (markerNames.escapePipes) {
-					const ep = markerNames.escapePipes as { left?: string; right?: string };
-					const rearZ = Math.min(...wheelPos.map((w) => w.z));
-					const exY = wheelPos[0].y - 0.15;
-					if (ep.left) placeMarker(ep.left, new Vector3(0.25, exY, rearZ - 0.1));
-					if (ep.right) placeMarker(ep.right, new Vector3(-0.25, exY, rearZ - 0.1));
-				}
-			}
-
-			// Restore physics overrides if available
-			if (data.physicsOverrides) {
-				const { setPhysicsOverrides } = await import("./physics-editor.js");
-				setPhysicsOverrides(data.physicsOverrides);
-			}
-
-			// Restore attribution
-			if (data.attribution && sidebarAttribution) sidebarAttribution.value = data.attribution;
-
-			// Update submit button to show overwrite
-			if (sidebarSubmitBtn) sidebarSubmitBtn.textContent = "Bake & Overwrite";
-			if (statusLine) statusLine.message = `Editing: ${carName} (#${configId})`;
-
-			// Initialize wheel animator after markers are placed
-			initWheelAnimator(getCurrentModel());
-
-			refreshUI();
-		} catch (err) {
-			console.error("[editor] Failed to load car for editing:", err);
-			if (statusLine) statusLine.message = `Failed to load car #${configId}`;
-		}
-	}
-
-	const carManager = document.getElementById("car-manager");
-	const manageCarsBtn = document.getElementById("btn-manage-cars");
-	if (carManager && manageCarsBtn) {
-		manageCarsBtn.addEventListener("click", () => {
-			(carManager as any).show();
-		});
-		carManager.addEventListener("car-load", ((e: CustomEvent) => {
-			const { id, s3Key, name } = e.detail;
-			loadCarForEditing(id, s3Key, name);
-		}) as EventListener);
-	}
-
-	// ── Test in Practice ──// ── Test in Practice ──
+	// ── Test in Practice ──
 	const testPracticeBtn = document.getElementById("btn-test-practice");
 	testPracticeBtn?.addEventListener("click", () => {
-		// TODO: Admin-only guard — only allow testing for admin users
 		if (currentConfigId) {
 			window.open(`/practice?car=${currentConfigId}`, "_blank");
 		} else {
-			// No config ID yet — prompt to submit first
 			if (statusLine) statusLine.message = "Submit the car first, then test in practice.";
 		}
 	});
-} // end else (viewport + dropZone)
+}

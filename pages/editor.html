@@ -48,7 +48,9 @@
 			background: var(--ui-panel-solid);
 			border-right: 1px solid var(--ui-border);
 			overflow-y: auto; z-index: 10;
+			display: none; /* hidden until start screen completes */
 		}
+		#sidebar.visible { display: block; }
 		#sidebar-resize {
 			position: fixed; top: 0; left: 280px; width: 5px; height: 100%;
 			cursor: col-resize; z-index: 11;
@@ -61,6 +63,31 @@
 		}
 		#sidebar::-webkit-scrollbar { width: 3px; }
 		#sidebar::-webkit-scrollbar-thumb { background: var(--ui-accent-ghost); border-radius: 2px; }
+
+		/* Collapse-all button */
+		.collapse-all-btn {
+			display: flex;
+			align-items: center;
+			gap: 5px;
+			padding: 6px 14px;
+			border: none;
+			border-bottom: 1px solid var(--ui-border);
+			background: none;
+			color: var(--ui-text);
+			cursor: pointer;
+			font-size: 10px;
+			font-family: var(--ui-sans);
+			transition: color 0.12s, background 0.12s;
+			width: 100%;
+			text-align: left;
+		}
+		.collapse-all-btn:hover {
+			color: var(--ui-accent);
+			background: var(--ui-accent-ghost);
+		}
+		.collapse-all-btn svg { opacity: 0.6; }
+		.collapse-all-btn:hover svg { opacity: 1; }
+
 		/* ── Suspension widget ── */
 		.susp-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 		.susp-row:last-child { margin-bottom: 0; }
@@ -78,10 +105,6 @@
 		.susp-thumb { position: absolute; top: 50%; left: 50%; width: 14px; height: 14px; border-radius: 50%; background: var(--ui-accent); border: 2px solid var(--ui-bg); transform: translate(-50%, -50%); cursor: grab; box-shadow: 0 0 6px rgba(92,158,255,0.5); transition: box-shadow 0.15s; }
 		.susp-thumb:hover { box-shadow: 0 0 10px rgba(92,158,255,0.7); }
 		.susp-thumb:active { cursor: grabbing; }
-
-		/* Limit markers on the track */
-		.susp-limit { position: absolute; top: -3px; width: 2px; height: 10px; background: var(--ui-text-dim); border-radius: 1px; pointer-events: none; }
-		.susp-limit-label { position: absolute; top: -14px; font-size: 8px; color: var(--ui-text-dim); transform: translateX(-50%); pointer-events: none; white-space: nowrap; }
 
 		/* Spin button inline */
 		.susp-spin-btn { padding: 3px 8px; font-size: 10px; flex-shrink: 0; }
@@ -112,7 +135,7 @@
 		.sidebar-header .accent { color: var(--ui-accent); }
 
 		/* Viewport */
-		#viewport { position: fixed; top: 0; left: 280px; right: 0; bottom: 0; }
+		#viewport { position: fixed; top: 0; left: 0; right: 0; bottom: 0; }
 		#viewport canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
 		/* Export buttons */
@@ -121,87 +144,77 @@
 			width: 100%; padding: 7px; background: var(--ui-accent-dim); border: 1px solid var(--ui-accent);
 			border-radius: 3px; color: var(--ui-text-white); cursor: pointer; font-size: 11px;
 			font-weight: 600; font-family: var(--ui-sans); transition: background 0.12s, border-color 0.12s;
+			position: relative;
 		}
-		.btn-primary:hover { background: var(--ui-accent); }
+		.btn-primary:hover:not(:disabled) { background: var(--ui-accent); }
 		.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 		.btn-primary.success { background: var(--ui-green-dim); border-color: var(--ui-green); color: var(--ui-green); }
 		.btn-primary.error { background: var(--ui-red-dim); border-color: var(--ui-red); color: var(--ui-red); }
+
+		/* Validation tooltip on submit button */
+		.submit-tooltip {
+			position: absolute;
+			bottom: calc(100% + 8px);
+			left: 50%;
+			transform: translateX(-50%);
+			background: var(--ui-panel-solid);
+			border: 1px solid var(--ui-red-dim);
+			border-radius: 5px;
+			padding: 8px 12px;
+			min-width: 240px;
+			max-width: 320px;
+			z-index: 100;
+			box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+			display: none;
+		}
+		.submit-tooltip.visible { display: block; }
+		.submit-tooltip::after {
+			content: '';
+			position: absolute;
+			top: 100%;
+			left: 50%;
+			transform: translateX(-50%);
+			border: 6px solid transparent;
+			border-top-color: var(--ui-red-dim);
+		}
+		.submit-tooltip-title {
+			font-size: 10px;
+			font-weight: 600;
+			color: var(--ui-red);
+			margin-bottom: 4px;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+		}
+		.submit-tooltip-item {
+			font-size: 10px;
+			color: var(--ui-text-bright);
+			line-height: 1.5;
+			padding: 1px 0;
+		}
+		.submit-tooltip-item.error { color: var(--ui-red); }
+		.submit-tooltip-item.warn { color: var(--ui-orange); }
+
+		.btn-primary:disabled.has-validation-issues {
+			opacity: 0.7;
+			border-color: var(--ui-red-dim);
+			background: var(--ui-red-dim);
+		}
+		.btn-primary:disabled.has-validation-issues:hover .submit-tooltip {
+			display: block;
+		}
+
 		.export-error {
 			font-size: 10px; color: var(--ui-red); margin-top: 6px; line-height: 1.4;
 			padding: 6px 8px; background: var(--ui-red-dim); border-radius: 3px;
 			display: none;
 		}
 		.export-error.visible { display: block; }
-		.export-validation {
-			font-size: 10px; color: var(--ui-orange); margin-top: 6px; line-height: 1.4;
-			padding: 6px 8px; background: var(--ui-orange-faint); border-radius: 3px;
-			display: none;
-		}
-		.export-validation.visible { display: block; }
 		.btn-secondary {
 			width: 100%; padding: 6px; background: transparent; border: 1px solid var(--ui-border);
 			border-radius: 3px; color: var(--ui-text); cursor: pointer; font-size: 11px;
 			margin-top: 5px; font-family: var(--ui-sans); transition: all 0.12s;
 		}
 		.btn-secondary:hover { border-color: var(--ui-accent-dim); color: var(--ui-text-bright); }
-
-		/* Pending items */
-		.pending-item {
-			padding: 5px 7px; margin-bottom: 3px; background: var(--ui-bg); border: 1px solid var(--ui-border);
-			border-radius: 3px; cursor: pointer; font-size: 11px; display: flex;
-			justify-content: space-between; align-items: center; transition: all 0.12s;
-		}
-		.pending-item:hover { border-color: var(--ui-accent-dim); background: var(--ui-accent-ghost); }
-		.pending-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ui-text-bright); cursor: pointer; transition: opacity 0.2s; }
-		.pending-name.loading { opacity: 0.5; pointer-events: none; }
-		.pending-size { color: var(--ui-text); font-family: var(--ui-mono); font-size: 10px; margin-left: 8px; }
-		.pending-delete-btn {
-			background: none; border: none; color: var(--ui-red); font-size: 16px; font-weight: bold;
-			cursor: pointer; padding: 0 4px; line-height: 1; border-radius: 3px;
-			opacity: 0.5; transition: opacity 0.15s;
-		}
-		.pending-delete-btn:hover { opacity: 1; background: rgba(255,60,60,0.15); }
-
-		/* Car info (displayed after search selection) */
-		#car-info { display: none; font-size: 11px; font-family: var(--ui-mono); margin-top: 6px; }
-		#car-info.active { display: block; }
-		.info-row { display: flex; justify-content: space-between; padding: 2px 0; }
-		.info-label { color: var(--ui-text); }
-		.info-val { color: var(--ui-text-bright); }
-
-		/* Sketchfab */
-		.sf-input-row { display: flex; gap: 4px; margin-bottom: 6px; align-items: center; }
-		.sf-input-row select {
-			background: var(--ui-bg); color: var(--ui-text-bright); border: 1px solid var(--ui-border);
-			padding: 2px 4px; font-size: 11px; border-radius: 3px; font-family: var(--ui-sans);
-		}
-		#sf-results { max-height: 300px; overflow-y: auto; }
-		#sf-results::-webkit-scrollbar { width: 3px; }
-		#sf-results::-webkit-scrollbar-thumb { background: var(--ui-accent-ghost); border-radius: 2px; }
-		.sf-item {
-			padding: 6px 7px; margin-bottom: 3px; background: var(--ui-bg); border: 1px solid var(--ui-border);
-			border-radius: 3px; cursor: pointer; font-size: 11px; transition: all 0.12s;
-		}
-		.sf-item:hover { border-color: var(--ui-accent-dim); background: var(--ui-accent-ghost); }
-		.sf-name { font-weight: 600; color: var(--ui-text-bright); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-		.sf-meta { color: var(--ui-text); font-size: 10px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-		.sf-meta a { color: var(--ui-accent); text-decoration: none; }
-		.sf-meta a:hover { text-decoration: underline; }
-		.sf-thumb { width: 44px; height: 44px; border-radius: 3px; object-fit: cover; margin-right: 7px; float: left; }
-		.sf-download-btn {
-			background: var(--ui-accent-dim); color: var(--ui-text-white); border: 1px solid var(--ui-accent);
-			padding: 2px 7px; border-radius: 2px; font-size: 10px; cursor: pointer; font-family: var(--ui-sans);
-		}
-		.sf-download-btn:hover { background: var(--ui-accent); }
-		.sf-download-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-		.sf-download-status { font-size: 10px; color: var(--ui-text); }
-		.sf-load-more { text-align: center; padding: 5px; color: var(--ui-text); font-size: 10px; cursor: pointer; }
-		.sf-load-more:hover { color: var(--ui-accent); }
-		.cc-badge {
-			background: rgba(163,230,53,0.12); color: var(--ui-green); padding: 1px 5px; border-radius: 3px;
-			font-size: 10px; font-weight: 600;
-		}
-		.sf-empty { color: var(--ui-text); font-size: 11px; padding: 4px 0; }
 
 		/* Object panel */
 		#object-panel { max-height: 240px; overflow-y: auto; }
@@ -269,43 +282,6 @@
 		.ctx-item.danger:hover { background: var(--ui-red-dim); }
 		.ctx-sep { height: 1px; background: var(--ui-border); margin: 2px 0; }
 
-		/* Import flow */
-		#import-section {
-			position: fixed; bottom: 24px; right: 16px; z-index: 50;
-			background: var(--ui-panel); backdrop-filter: blur(12px);
-			border: 1px solid var(--ui-border); border-radius: 6px;
-			padding: 14px 16px; width: 320px;
-			font-family: var(--ui-sans);
-		}
-		.import-title {
-			font-size: 12px; font-weight: 600; color: var(--ui-text-white);
-			margin-bottom: 8px; letter-spacing: 0.3px;
-			display: flex; align-items: center; justify-content: space-between;
-		}
-		.import-title .close-btn { background: none; border: none; color: var(--ui-text); font-size: 18px; cursor: pointer; padding: 0 4px; border-radius: 3px; line-height: 1; }
-		.import-title .close-btn:hover { background: var(--ui-accent-ghost); color: var(--ui-text-bright); }
-		.import-steps-bar { display: flex; gap: 3px; margin-bottom: 10px; }
-		.import-step {
-			flex: 1; text-align: center; font-size: 9px; color: var(--ui-text);
-			padding: 3px; border-radius: 3px; cursor: pointer;
-			font-family: var(--ui-mono); letter-spacing: 0.5px;
-		}
-		.import-step.active { color: var(--ui-accent); background: var(--ui-accent-ghost); }
-		.import-step.done { color: var(--ui-green); }
-		.import-panels { height: 110px; overflow: hidden; }
-		.import-panel { font-size: 11px; color: var(--ui-text); }
-		.import-hint { color: var(--ui-text); font-size: 11px; margin: 0 0 5px 0; line-height: 1.45; }
-		.import-hint:last-child { margin-bottom: 0; }
-		.import-nav { display: flex; gap: 6px; margin-top: 10px; justify-content: flex-end; }
-		kbd { background: var(--ui-bg); border: 1px solid var(--ui-border); border-radius: 3px; padding: 1px 5px; font-family: var(--ui-mono); font-size: 10px; color: var(--ui-accent); }
-		.import-attribution {
-			width: 100%; min-height: 54px; background: var(--ui-bg); color: var(--ui-text-bright);
-			border: 1px solid var(--ui-border); border-radius: 3px; padding: 6px; font-size: 11px;
-			resize: vertical; font-family: var(--ui-mono); outline: none;
-		}
-		.import-attribution:focus { border-color: var(--ui-accent-dim); }
-		.import-attribution::placeholder { color: var(--ui-text); }
-		.import-label { color: var(--ui-text); font-size: 11px; display: block; margin-bottom: 4px; }
 		/* Physics modal is now a standalone Lit component */
 		.toast.info    { border-left: 3px solid var(--ui-accent); }
 		.toast.success { border-left: 3px solid var(--ui-green); }
@@ -316,50 +292,34 @@
 		.toast.out { animation: toast-out 0.3s forwards; }
 		@keyframes toast-in { to { opacity: 1; transform: translateY(0); } }
 		@keyframes toast-out { to { opacity: 0; transform: translateY(-10px); } }
+
+		kbd { background: var(--ui-bg); border: 1px solid var(--ui-border); border-radius: 3px; padding: 1px 5px; font-family: var(--ui-mono); font-size: 10px; color: var(--ui-accent); }
+		.import-attribution {
+			width: 100%; min-height: 54px; background: var(--ui-bg); color: var(--ui-text-bright);
+			border: 1px solid var(--ui-border); border-radius: 3px; padding: 6px; font-size: 11px;
+			resize: vertical; font-family: var(--ui-mono); outline: none;
+		}
+		.import-attribution:focus { border-color: var(--ui-accent-dim); }
+		.import-attribution::placeholder { color: var(--ui-text); }
+		.import-label { color: var(--ui-text); font-size: 11px; display: block; margin-bottom: 4px; }
 	</style>
 </head>
 <body>
 	<!-- UI Components (registers custom elements) -->
 	<script type="module">import "/src/client/ui/index.ts";</script>
 
+	<!-- Start Screen Modal (shown first, hides when user picks a flow) -->
+	<start-screen id="start-screen"></start-screen>
+
 	<div id="sidebar">
 		<div id="sidebar-resize"></div>
 		<div class="sidebar-header">Car <span class="accent">Editor</span></div>
 
-		<editor-panel title="Open Existing">
-			<button class="btn-secondary" id="btn-manage-cars" style="width:100%;">Manage Saved Cars</button>
-		</editor-panel>
-
-		<editor-panel title="Load Model">
-			<drop-zone id="drop-zone"></drop-zone>
-		</editor-panel>
-
-		<editor-panel title="Pending Assets">
-			<div id="pending-assets"></div>
-		</editor-panel>
-
-		<editor-panel title="Car Database">
-			<car-search id="car-search"></car-search>
-			<div id="car-info">
-				<div class="info-row"><span class="info-label">Dimensions</span><span class="info-val" id="car-dims"></span></div>
-				<div class="info-row"><span class="info-label">Weight</span><span class="info-val" id="car-weight"></span></div>
-				<div class="info-row"><span class="info-label">Price</span><span class="info-val" id="car-price"></span></div>
-				<div class="info-row"><span class="info-label">Model</span><span class="info-val" id="car-model"></span></div>
-			</div>
-		</editor-panel>
-
-		<editor-panel title="Sketchfab">
-			<div class="sf-input-row">
-				<span id="sf-search-label" style="flex:1;color:var(--ui-text);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Select a car above</span>
-				<select id="sf-sort">
-					<option value="-likeCount">Most liked</option>
-					<option value="-viewCount">Most viewed</option>
-					<option value="-createdAt">Newest</option>
-					<option value="-downloadCount">Most downloaded</option>
-				</select>
-			</div>
-			<div id="sf-results"></div>
-		</editor-panel>
+		<!-- Collapse All button -->
+		<button class="collapse-all-btn" id="btn-collapse-all" title="Collapse all panels">
+			<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 9 8 5 4 1"/><polyline points="4 17 8 13 4 9" style="opacity:0"/></svg>
+			Collapse All
+		</button>
 
 		<editor-panel title="Scale">
 			<div id="scale-controls"></div>
@@ -371,10 +331,6 @@
 
 		<editor-panel title="Markers">
 			<marker-list id="marker-list"></marker-list>
-		</editor-panel>
-
-		<editor-panel title="Validation">
-			<validation-display id="validation"></validation-display>
 		</editor-panel>
 
 		<editor-panel title="Suspension">
@@ -431,63 +387,11 @@
 			<button class="btn-secondary" id="btn-physics">Physics</button>
 			<button class="btn-primary" id="btn-submit">Bake & Submit</button>
 			<div class="export-error" id="export-error"></div>
-			<div class="export-validation" id="export-validation"></div>
 			<button class="btn-secondary" id="btn-download">Download JSON</button>
 		</div>
 
 		<div style="padding: 0 8px 8px; border-top: 1px solid var(--ui-border);">
 			<button class="btn-secondary" id="btn-test-practice" style="width:100%;">Test in Practice</button>
-		</div>
-	</div>
-
-	<!-- Quick Tutorial (disposable overlay) -->
-	<div id="import-section">
-		<span class="import-title">Quick Start <button class="close-btn" id="import-close-btn" title="Close">&times;</button></span>
-		<div class="import-steps-bar">
-			<div class="import-step active" data-step="0"><span class="step-num">1</span> Load</div>
-			<div class="import-step" data-step="1"><span class="step-num">2</span> Mark</div>
-			<div class="import-step" data-step="2"><span class="step-num">3</span> Adjust</div>
-			<div class="import-step" data-step="3"><span class="step-num">4</span> Check</div>
-			<div class="import-step" data-step="4"><span class="step-num">5</span> Submit</div>
-		</div>
-
-		<div class="import-panels">
-		<div class="import-panel" data-panel="0">
-			<p class="import-hint"><strong>1. Select a car</strong> from the database → auto-loads real dimensions, weight & physics.</p>
-			<p class="import-hint"><strong>2. Pick a 3D model</strong> from Pending Assets or Sketchfab panel, or drag & drop a GLB file onto the viewport.</p>
-			<p class="import-hint">The model auto-scales to match the selected car's real size. Attribution auto-fills from Sketchfab metadata.</p>
-		</div>
-
-		<div class="import-panel" data-panel="1" style="display:none;">
-			<p class="import-hint"><strong>Place wheel markers</strong> — press <kbd>R</kbd>, then click each wheel center on the mesh. Select which marker in the marker list first, or it auto-picks the next unplaced one.</p>
-			<p class="import-hint"><strong>Assign object marks</strong> — press <kbd>A</kbd> to open the component picker, then left-click meshes to mark (headlights, taillights, brake discs). Middle-click to remove a mark.</p>
-			<p class="import-hint"><strong>Auto-detect</strong> — press <kbd>Shift+A</kbd> to auto-find wheels and lights by name/geometry.</p>
-		</div>
-
-		<div class="import-panel" data-panel="2" style="display:none;">
-			<p class="import-hint"><strong>Scale</strong> — use scale controls to match the green reference prism to the car's real proportions.</p>
-			<p class="import-hint"><strong>Move markers</strong> — press <kbd>W</kbd>, select a marker, drag it. Paired markers (FL/FR) move in sync when locked.</p>
-			<p class="import-hint"><strong>Physics</strong> — click the Physics button to tweak mass, suspension, damping. "Reset Defaults" restores the selected car's values.</p>
-		</div>
-
-		<div class="import-panel" data-panel="3" style="display:none;">
-			<p class="import-hint"><strong>Validation panel</strong> — check that all required markers are placed and all errors are resolved.</p>
-			<p class="import-hint"><strong>Objects panel</strong> — verify badges (wheel, headlight, taillight, brake disc) are on the correct meshes.</p>
-			<p class="import-hint"><strong>Attribution</strong> — confirm the attribution field in the sidebar is filled (auto-populated from Sketchfab).</p>
-		</div>
-
-		<div class="import-panel" data-panel="4" style="display:none;">
-			<p class="import-hint">Hit <strong>Bake & Submit</strong> in the sidebar → exports GLB with markers baked in, uploads to S3, saves car config. Done!</p>
-			<p class="import-hint" style="margin-top:6px;border-top:1px solid var(--ui-border);padding-top:6px;color:var(--ui-text);">
-				<strong style="color:var(--ui-text);">Shortcuts:</strong>
-				<kbd>Q</kbd> orbit · <kbd>Shift+Q</kbd> select · <kbd>R</kbd> place marker · <kbd>A</kbd> assign · <kbd>W</kbd> move · <kbd>E</kbd> explode · <kbd>X</kbd> wireframe · <kbd>H</kbd> highlights · <kbd>0</kbd> fit · <kbd>Esc</kbd> cancel
-			</p>
-		</div>
-		</div>
-
-		<div class="import-nav">
-			<button class="btn-secondary" id="import-prev-btn" style="display:none;">← Back</button>
-			<button class="btn-primary" id="import-next-btn">Next →</button>
 		</div>
 	</div>
 
@@ -497,11 +401,9 @@
 
 	<div id="toast-container"></div>
 
-	<status-line id="status-line" message=""></status></status-line>
+	<status-line id="status-line" message=""></status>
 
 	<div id="viewport"></div>
-
-	<car-manager id="car-manager"></car-manager>
 
 	<script type="module" src="/src/client/editor/editor-ui.ts"></script>
 </body>
