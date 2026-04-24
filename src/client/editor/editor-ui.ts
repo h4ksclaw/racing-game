@@ -98,6 +98,10 @@ function showSidebar(): void {
 	// Update viewport position to account for sidebar
 	const viewportEl = document.getElementById("viewport") as HTMLElement | null;
 	if (viewportEl) viewportEl.style.left = "280px";
+	// Trigger Three.js renderer resize after layout change
+	import("./editor-main.js").then(({ triggerResize }) => {
+		requestAnimationFrame(() => triggerResize());
+	});
 }
 
 function updateViewportPosition(): void {
@@ -217,11 +221,14 @@ viewport?.addEventListener("auxclick", (e) => {
 });
 
 // ── Collapse All ──
+let _allCollapsed = false;
 collapseAllBtn?.addEventListener("click", () => {
+	_allCollapsed = !_allCollapsed;
 	const panels = document.querySelectorAll("editor-panel");
 	for (const p of panels) {
-		(p as any).collapsed = true;
+		(p as any).collapsed = _allCollapsed;
 	}
+	collapseAllBtn.classList.toggle("active", _allCollapsed);
 });
 
 // ── Load car for editing (module-scope so start-screen events can call it) ──

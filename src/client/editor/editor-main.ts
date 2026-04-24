@@ -281,6 +281,12 @@ export function onRenderFrame(cb: () => void): () => void {
 	};
 }
 
+/** Trigger a renderer resize (call after layout changes like sidebar show/hide). */
+let _resizeFn: (() => void) | null = null;
+export function triggerResize() {
+	_resizeFn?.();
+}
+
 export function init(container: HTMLElement) {
 	scene = new THREE.Scene();
 	scene.background = new THREE.Color(0x11131c);
@@ -367,6 +373,7 @@ export function init(container: HTMLElement) {
 	}
 	window.addEventListener("resize", onResize);
 	onResize();
+	_resizeFn = onResize;
 
 	// Sidebar resize handle
 	const sidebar = document.getElementById("sidebar");
