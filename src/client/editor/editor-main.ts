@@ -367,6 +367,7 @@ export function init(container: HTMLElement) {
 	function onResize() {
 		const w = container.clientWidth;
 		const h = container.clientHeight;
+		if (w === 0 || h === 0) return; // skip if not laid out yet
 		camera.aspect = w / h;
 		camera.updateProjectionMatrix();
 		renderer.setSize(w, h);
@@ -374,6 +375,8 @@ export function init(container: HTMLElement) {
 	window.addEventListener("resize", onResize);
 	onResize();
 	_resizeFn = onResize;
+	// Safety: re-run resize after first paint in case layout wasn't ready
+	requestAnimationFrame(() => requestAnimationFrame(() => onResize()));
 
 	// Sidebar resize handle
 	const sidebar = document.getElementById("sidebar");
