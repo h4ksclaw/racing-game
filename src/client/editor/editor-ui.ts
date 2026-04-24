@@ -353,39 +353,46 @@ startScreen?.addEventListener("start-pending", ((e: CustomEvent) => {
 }) as EventListener);
 
 // ── Submit Button Validation Tooltip ──
+let _validationTooltip: HTMLElement | null = null;
+let _validationListenersAttached = false;
+
 function updateSubmitButtonValidation(): void {
 	if (!sidebarSubmitBtn) return;
 	const markers = getMarkers();
 	const issues = validateMarkers(markers);
 	const errors = issues.filter((i) => i.type === "error");
 
-	// Remove existing tooltip
-	const existingTooltip = sidebarSubmitBtn.parentElement?.querySelector(".submit-tooltip");
-	if (existingTooltip) existingTooltip.remove();
-
-	if (errors.length > 0) {
-		sidebarSubmitBtn.disabled = true;
-		sidebarSubmitBtn.classList.add("has-validation-issues");
-
-		// Create tooltip
+	// Ensure tooltip DOM exists and listeners are wired exactly once
+	if (!_validationTooltip && sidebarSubmitBtn) {
 		const tooltip = document.createElement("div");
 		tooltip.className = "submit-tooltip";
-		tooltip.innerHTML = `
-			<div class="submit-tooltip-title">Fix before submitting</div>
-			${errors.map((err) => `<div class="submit-tooltip-item error">• ${err.message}</div>`).join("")}
-		`;
-		// Show on hover when disabled
-		sidebarSubmitBtn.addEventListener("mouseenter", () => {
-			if (sidebarSubmitBtn?.disabled) tooltip.classList.add("visible");
-		});
-		sidebarSubmitBtn.addEventListener("mouseleave", () => {
-			tooltip.classList.remove("visible");
-		});
-		// Insert tooltip relative to the button's container
 		const actionsDiv = sidebarSubmitBtn.closest(".export-actions") as HTMLElement | null;
 		if (actionsDiv) {
 			actionsDiv.style.position = "relative";
 			actionsDiv.appendChild(tooltip);
+		}
+		_validationTooltip = tooltip;
+	}
+	if (!_validationListenersAttached && sidebarSubmitBtn && _validationTooltip) {
+		sidebarSubmitBtn.addEventListener("mouseenter", () => {
+			if (sidebarSubmitBtn?.disabled && sidebarSubmitBtn?.classList.contains("has-validation-issues")) {
+				_validationTooltip?.classList.add("visible");
+			}
+		});
+		sidebarSubmitBtn.addEventListener("mouseleave", () => {
+			_validationTooltip?.classList.remove("visible");
+		});
+		_validationListenersAttached = true;
+	}
+
+	if (errors.length > 0) {
+		sidebarSubmitBtn.disabled = true;
+		sidebarSubmitBtn.classList.add("has-validation-issues");
+		if (_validationTooltip) {
+			_validationTooltip.innerHTML = `
+				<div class="submit-tooltip-title">Fix before submitting</div>
+				${errors.map((err) => `<div class="submit-tooltip-item error">• ${err.message}</div>`).join("")}
+			`;
 		}
 	} else {
 		// Only re-enable if not in a submit state
@@ -394,6 +401,7 @@ function updateSubmitButtonValidation(): void {
 			sidebarSubmitBtn.disabled = false;
 		}
 		sidebarSubmitBtn.classList.remove("has-validation-issues");
+		_validationTooltip?.classList.remove("visible");
 	}
 }
 
