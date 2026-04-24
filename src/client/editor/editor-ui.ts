@@ -6,6 +6,7 @@ import { clearGhost, updateDimensions } from "./dimension-overlay.js";
 import {
 	API_BASE,
 	getCurrentModel,
+	getScene,
 	handleSelectClick,
 	init,
 	loadGLB,
@@ -105,9 +106,11 @@ function showSidebar(): void {
 function updateViewportPosition(): void {
 	const viewportEl = document.getElementById("viewport") as HTMLElement | null;
 	const sidebarEl = document.getElementById("sidebar") as HTMLElement | null;
+	const toolbarEl = document.getElementById("toolbar") as HTMLElement | null;
 	if (viewportEl && sidebarEl) {
 		const sidebarWidth = sidebarEl.classList.contains("visible") ? sidebarEl.offsetWidth : 0;
 		viewportEl.style.left = `${sidebarWidth}px`;
+		if (toolbarEl) toolbarEl.style.left = `${sidebarWidth + 14}px`;
 	}
 }
 
@@ -155,6 +158,13 @@ export async function loadModelAndReset(path: string, name: string, attribution?
 
 	const dims = getEditorState().car.dims;
 	await loadGLB(path, dims ? { dims } : undefined);
+
+	// Debug: verify model loaded
+	const vp = document.getElementById("viewport");
+	const canvas = vp?.querySelector("canvas");
+	console.error(
+		`[DEBUG] model=${!!getCurrentModel()} scene.children=${getScene().children.length} canvas=${canvas?.width}x${canvas?.height} viewport=${vp?.clientWidth}x${vp?.clientHeight} canvasRect=${canvas?.getBoundingClientRect().width}x${canvas?.getBoundingClientRect().height}`,
+	);
 
 	const model = getCurrentModel();
 	if (model && dims) {

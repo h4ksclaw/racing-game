@@ -392,11 +392,18 @@ export function init(container: HTMLElement) {
 			const newWidth = Math.max(220, Math.min(500, e.clientX));
 			sidebar.style.width = newWidth + "px";
 			sidebarResize.style.left = newWidth + "px";
+			// Move viewport and toolbar to match sidebar width
+			const vp = document.getElementById("viewport");
+			if (vp) vp.style.left = newWidth + "px";
+			const tb = document.getElementById("toolbar");
+			if (tb) tb.style.left = newWidth + 14 + "px";
 		};
 		const onMouseUp = () => {
 			if (!isDragging) return;
 			isDragging = false;
 			sidebarResize.classList.remove("active");
+			// Trigger renderer resize after drag ends
+			_resizeFn?.();
 		};
 		sidebarResize.addEventListener("mousedown", onMouseDown);
 		window.addEventListener("mousemove", onMouseMove);
