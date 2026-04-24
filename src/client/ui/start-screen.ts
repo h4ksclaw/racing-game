@@ -769,7 +769,16 @@ export class StartScreen extends LitElement {
 	}
 
 	private _onCarSearchNext() {
+		// Auto-populate Sketchfab search from selected car
+		if (this._selectedCar) {
+			this._sfQuery = `${this._selectedCar.make} ${this._selectedCar.model}`;
+			this._sfResults = [];
+		}
 		this._goTo("create-model");
+		// Auto-trigger Sketchfab search if we have a car name
+		if (this._sfQuery.length >= 2) {
+			this._doSketchfabSearch();
+		}
 	}
 
 	private _onModelSourceBack() {
