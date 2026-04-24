@@ -498,7 +498,8 @@ app.get("/api/cars/imported", (req, res) => {
 			name = `${meta.make} ${meta.model}`;
 		} else {
 			const attr = c.attribution ?? asset?.attribution ?? "";
-			const parsed = attr.replace(/^"|"$/g, "").split(" by ")[0]?.trim();
+			const parsed =
+				attr.replace(/^"([^"]*)".*$/, "$1").trim() || attr.split(" by ")[0]?.replace(/"/g, "").trim() || "";
 			if (parsed && parsed.length > 3) {
 				name = parsed;
 			} else {

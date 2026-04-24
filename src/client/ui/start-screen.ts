@@ -643,7 +643,10 @@ export class StartScreen extends LitElement {
 				// Prefer carName if set, otherwise try to extract from attribution
 				if (c.carName && c.carName.trim()) return { ...c, name: c.carName.trim() };
 				if (/^[a-f0-9]{12,}$/.test(c.name) && c.attribution) {
-					const parsed = c.attribution.replace(/^"|"$/g, "").split(" by ")[0]?.trim();
+					const parsed =
+						c.attribution.replace(/^"([^"]*)".*$/, "$1").trim() ||
+						c.attribution.split(" by ")[0]?.replace(/"/g, "").trim() ||
+						"";
 					if (parsed && parsed.length > 3) return { ...c, name: parsed };
 				}
 				return c;
