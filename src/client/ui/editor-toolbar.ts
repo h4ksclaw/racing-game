@@ -20,6 +20,7 @@ const MODES: ToolDef[] = [
 	{ mode: "assign", label: "Assign (A)", paths: icons.tag },
 	{ mode: "move", label: "Move (W)", paths: icons.move },
 	{ mode: "delete", label: "Delete (Del)", paths: icons.delete },
+	{ mode: "face-select", label: "Face Select (F)", paths: icons.pentagon },
 ];
 
 const VIEWS: ToolDef[] = [
@@ -113,7 +114,6 @@ export class EditorToolbar extends LitElement {
 		pendingPlaceType: { type: String },
 		wireframe: { type: Boolean },
 		dimensions: { type: Boolean },
-		exploded: { type: Boolean },
 		highlights: { type: Boolean },
 	};
 
@@ -122,7 +122,6 @@ export class EditorToolbar extends LitElement {
 	declare pendingPlaceType: string;
 	declare wireframe: boolean;
 	declare dimensions: boolean;
-	declare exploded: boolean;
 	declare highlights: boolean;
 
 	constructor() {
@@ -130,7 +129,6 @@ export class EditorToolbar extends LitElement {
 		this.mode = "select";
 		this.wireframe = false;
 		this.dimensions = false;
-		this.exploded = false;
 		this.highlights = true;
 	}
 
@@ -185,11 +183,11 @@ export class EditorToolbar extends LitElement {
         ${svgIcon(icons.brain, 15)}
       </button>
       <button
-        class="btn${this.exploded ? " active" : ""}"
-        @click=${this._onExplode}
-        title="Explode/Reassemble (E)"
+        class="btn"
+        @click=${this._onSplit}
+        title="Split Selected Mesh (E)"
       >
-        ${svgIcon(icons.explode, 16)}
+        ${svgIcon(icons.split, 16)}
       </button>
       ${this.mode === "assign" ? html`<span class="assign-label">Assign: ${this.assignType}</span>` : ""}
       ${
@@ -197,6 +195,18 @@ export class EditorToolbar extends LitElement {
 					? html`<span class="assign-label"
             >Place: ${this.pendingPlaceType}</span
           >`
+					: ""
+			}
+      ${
+				this.mode === "face-select"
+					? html`<button
+            class="btn"
+            data-action="create-vg"
+            @click=${this._onCreateVG}
+            title="Create Virtual Group (Enter)"
+          >
+            ${svgIcon(icons.tag)}
+          </button>`
 					: ""
 			}
       <span class="sep"></span>
@@ -252,11 +262,15 @@ export class EditorToolbar extends LitElement {
 		this.dispatchEvent(new CustomEvent("auto-detect", { bubbles: true, composed: true }));
 	}
 
-	private _onExplode() {
-		this.exploded = !this.exploded;
+	private _onSplit() {
+		this.dispatchEvent(new CustomEvent("explode", { bubbles: true, composed: true }));
+	}
+
+	private _onCreateVG(e: Event) {
+		const ce = e as MouseEvent;
 		this.dispatchEvent(
-			new CustomEvent("explode", {
-				detail: this.exploded,
+			new CustomEvent("create-vg", {
+				detail: { x: ce.clientX, y: ce.clientY },
 				bubbles: true,
 				composed: true,
 			}),

@@ -49,6 +49,14 @@ const BRAKE_TO_WHEEL: Record<string, string> = {
 	brake_disc_RR: "WheelRig_RearRight",
 };
 
+/** Map editor wheel markedAs values to WheelRig pivot names. */
+const WHEEL_TO_PIVOT: Record<string, string> = {
+	wheel_FL: "WheelRig_FrontLeft",
+	wheel_FR: "WheelRig_FrontRight",
+	wheel_RL: "WheelRig_RearLeft",
+	wheel_RR: "WheelRig_RearRight",
+};
+
 export async function bakeModel(
 	model: THREE.Group,
 	markers: MarkerData[],
@@ -97,24 +105,98 @@ export async function bakeModel(
 		clone.updateMatrixWorld(true);
 	}
 
+	// ── Persist virtual groups via extras (GLTFExporter reads object.extras) ──
+	clone.traverse((child) => {
+		const mesh = child as THREE.Mesh;
+		if (!mesh.isMesh) return;
+		const vg = mesh.userData.virtualGroups as Record<string, { name: string; markedAs: string | null; faces: number[] }> | undefined;
+		if (vg && Object.keys(vg).length > 0) {
+			// Merge with existing extras if any
+			const existing = (child as any).extras ?? {};
+			existing.virtualGroups = vg;
+			(child as any).extras = existing;
+		}
+		// Also preserve whole-mesh bloom tag if set
+		if (mesh.userData.bloom) {
+			const existing = (child as any).extras ?? {};
+			existing.bloom = true;
+			(child as any).extras = existing;
+		}
+	});
+
 	if (applyObjectMarks) {
+		// ── Pass 1: Strip editor highlights + set up light materials ──
+		// The editor's highlightObject() clones materials and sets emissiveIntensity=0.4.
+		// We restore pre-highlight values, then configure light materials for runtime.
 		clone.traverse((child) => {
 			if (!(child as THREE.Mesh).isMesh) return;
 			const mesh = child as THREE.Mesh;
-			const name = child.name.toLowerCase();
-			if (name.includes("light") || name.includes("headlight") || name.includes("taillight")) {
-				if (Array.isArray(mesh.material)) {
-					mesh.material = mesh.material.map((m) => {
-						const c = m.clone();
-						if ("emissive" in c) {
-							(c as THREE.MeshStandardMaterial).emissive = new THREE.Color(0xffffff);
-							(c as THREE.MeshStandardMaterial).emissiveIntensity = 2.0;
-						}
-						return c;
-					});
-				} else if ("emissive" in mesh.material) {
-					(mesh.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(0xffffff);
-					(mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 2.0;
+			const marked = mesh.userData.markedAs as string | undefined;
+			const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+
+			// Debug: log any mesh with markedAs
+			if (marked) {
+				console.log(`[bake] Pass1 mesh "${mesh.name}" markedAs=${marked} emissive=(${mats.map(m => m instanceof THREE.MeshStandardMaterial ? `${m.emissive.getHex().toString(16)}@${m.emissiveIntensity}` : 'non-std').join(', ')})`);
+			}
+
+			for (const m of mats) {
+				if (!(m instanceof THREE.MeshStandardMaterial)) continue;
+
+				// Strip editor highlight by restoring pre-highlight emissive.
+				// highlightObject() stores _prevEmissive (hex color) on material userData.
+				// It does NOT store the original intensity — so we force-intensity to 0
+				// and let the light setup below override if needed.
+				const prevEmissive = m.userData._prevEmissive as number | undefined;
+				if (prevEmissive !== undefined) {
+					m.emissive.setHex(prevEmissive);
+					m.emissiveIntensity = 0; // clear highlight; light setup overrides below
+					delete m.userData._prevEmissive;
+				}
+
+				// Set up light materials for runtime control (NOT permanently on)
+				// IMPORTANT: Three.js GLTFLoader does NOT support KHR_materials_emissive_strength.
+				// It ignores emissiveStrength and defaults emissiveIntensity to 1.0.
+				// So we must bake the effective emissive into emissiveFactor (the color) itself.
+				// For "off" lights: set emissiveFactor = [0,0,0] (black = no glow regardless of intensity).
+				// For "dim" lights (taillights): set emissiveFactor to a very dim color.
+				// VehicleLights.applyHeadlightEmissive/TaillightEmissive will override at runtime.
+				const isHeadlight = marked?.includes("headlight");
+				const isTaillight = marked?.includes("taillight");
+				if (isHeadlight) {
+					m.emissive.setHex(0x000000); // OFF — black emissive, no glow
+					m.emissiveIntensity = 1.0; // must be 1.0 to match GLTFLoader default
+					m.name = m.name || "front_light_1";
+				} else if (isTaillight) {
+					m.emissive.setHex(0x1a0000); // very dim red base (0.1 * red)
+					m.emissiveIntensity = 1.0;
+					m.color.setHex(0x330000);
+					m.name = m.name || "back_light";
+				}
+			}
+
+			// NOTE: We do NOT hide wheel-marked meshes here.
+			// Wheel meshes are part of the car model and should remain visible.
+			// External wheel GLBs are loaded separately at runtime and positioned
+			// at WheelRig markers — they overlay (not replace) baked wheel geometry.
+			// If the user wants to hide specific meshes, they can do so in the editor.
+		});
+
+		// ── Pass 2: Force-black ALL headlight emissive color ──
+		// Safety net: ensure no headlight-marked mesh has non-black emissive in the GLB.
+		// Three.js GLTFLoader ignores KHR_materials_emissive_strength, so we must
+		// bake the "off" state into emissiveFactor (the color) itself.
+		clone.traverse((child) => {
+			if (!(child as THREE.Mesh).isMesh) return;
+			const mesh = child as THREE.Mesh;
+			const marked = mesh.userData.markedAs as string | undefined;
+			if (!marked?.includes("headlight")) return;
+			const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+			for (const m of mats) {
+				if (!(m instanceof THREE.MeshStandardMaterial)) continue;
+				const maxC = Math.max(m.emissive.r, m.emissive.g, m.emissive.b);
+				if (maxC > 0.01) {
+					console.warn(`[bake] Force-blacking headlight emissive on "${mesh.name}" (was [${m.emissive.r},${m.emissive.g},${m.emissive.b}])`);
+					m.emissive.setHex(0x000000);
 				}
 			}
 		});
@@ -146,29 +228,31 @@ export async function bakeModel(
 		}
 	}
 
-	// Reparent brake disc meshes under their wheel pivots so suspension works at runtime.
-	// Find meshes marked brake_disc_XX and move them under the corresponding WheelRig marker.
+	// Reparent wheel meshes + brake disc meshes under their wheel pivots.
+	// This ensures wheels spin with the WheelRig at runtime.
 	const wheelPivots = new Map<string, THREE.Object3D>();
 	clone.traverse((child) => {
-		if (child.name && Object.values(BRAKE_TO_WHEEL).includes(child.name)) {
+		if (child.name && Object.values(WHEEL_TO_PIVOT).includes(child.name)) {
 			wheelPivots.set(child.name, child);
 		}
 	});
-	const toReparent: THREE.Object3D[] = [];
+
+	// Collect meshes to reparent: both wheels and brake discs
+	const toReparent: { mesh: THREE.Object3D; pivotName: string; kind: string }[] = [];
 	clone.traverse((child) => {
 		if (!(child as THREE.Mesh).isMesh) return;
 		const markedAs = child.userData.markedAs as string | undefined;
-		if (!markedAs || !BRAKE_TO_WHEEL[markedAs]) return;
-		const wheelMarkerName = BRAKE_TO_WHEEL[markedAs];
-		const pivot = wheelPivots.get(wheelMarkerName);
+		if (!markedAs) return;
+		const pivotName = WHEEL_TO_PIVOT[markedAs] || BRAKE_TO_WHEEL[markedAs];
+		if (!pivotName) return;
+		const pivot = wheelPivots.get(pivotName);
 		if (pivot && child.parent !== pivot) {
-			toReparent.push(child);
+			toReparent.push({ mesh: child, pivotName, kind: WHEEL_TO_PIVOT[markedAs] ? 'wheel' : 'brake disc' });
 		}
 	});
-	for (const mesh of toReparent) {
-		const markedAs = mesh.userData.markedAs as string;
-		const wheelMarkerName = BRAKE_TO_WHEEL[markedAs];
-		const pivot = wheelPivots.get(wheelMarkerName)!;
+
+	for (const { mesh, pivotName, kind } of toReparent) {
+		const pivot = wheelPivots.get(pivotName)!;
 		// Bake world transform into geometry before reparenting
 		mesh.updateWorldMatrix(true, false);
 		const wm = mesh.matrixWorld.clone();
@@ -183,8 +267,22 @@ export async function bakeModel(
 		const localPos = pivot.worldToLocal(worldPos.clone());
 		mesh.position.copy(localPos);
 		pivot.add(mesh);
-		console.log(`[bake] Reparented brake disc "${mesh.name}" under ${wheelMarkerName}`);
+		console.log(`[bake] Reparented ${kind} "${mesh.name}" under ${pivotName}`);
 	}
+
+	// ── Debug: Verify headlight emissive right before export ──
+	clone.traverse((child) => {
+		if (!(child as THREE.Mesh).isMesh) return;
+		const mesh = child as THREE.Mesh;
+		const marked = mesh.userData.markedAs as string | undefined;
+		if (!marked?.includes("headlight")) return;
+		const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+		for (const m of mats) {
+			if (m instanceof THREE.MeshStandardMaterial) {
+				console.log(`[bake] PRE-EXPORT "${mesh.name}" material="${m.name}" emissive=[${m.emissive.r},${m.emissive.g},${m.emissive.b}] intensity=${m.emissiveIntensity}`);
+			}
+		}
+	});
 
 	const exporter = new GLTFExporter();
 	// parseAsync may not be in the type defs — use the callback-based API

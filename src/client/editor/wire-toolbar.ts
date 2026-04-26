@@ -25,7 +25,13 @@ export function initToolbarWiring(
 		if (mode !== "assign") {
 			import("./assign-mode.js").then(({ exitAssignMode }) => exitAssignMode());
 		}
-		setMode(mode as "orbit" | "select" | "place" | "move" | "delete" | "assign");
+		// Exit face-select mode when switching to other modes
+		if (mode !== "face-select") {
+			import("./face-select.js").then(({ exitFaceSelectMode }) => exitFaceSelectMode());
+		} else {
+			import("./face-select.js").then(({ enterFaceSelectMode }) => enterFaceSelectMode());
+		}
+		setMode(mode as "orbit" | "select" | "place" | "move" | "delete" | "assign" | "face-select");
 		toolbar.mode = mode;
 		toolbar.assignType = "";
 		if (mode === "move") {
@@ -153,8 +159,11 @@ export function initToolbarWiring(
 		});
 	});
 
-	toolbar.addEventListener("explode", (e: Event) => {
-		import("./editor-main.js").then(({ setExploded }) => setExploded((e as CustomEvent<boolean>).detail));
+	toolbar.addEventListener("explode", () => {
+		import("./editor-main.js").then(({ splitSelectedMesh }) => {
+			const count = splitSelectedMesh();
+			if (count === 0) console.log("[editor] Nothing to split — mesh is already a single piece (or nothing selected)");
+		});
 	});
 
 	toolbar.addEventListener("assign-open", (e: Event) => {
@@ -202,6 +211,22 @@ export function initToolbarWiring(
 				},
 				{ binary: true },
 			);
+		});
+	});
+
+	toolbar.addEventListener("create-vg", (e: Event) => {
+		const { x, y } = (e as CustomEvent<{ x: number; y: number }>).detail;
+		import("./face-select.js").then(({ showGroupDialog, getSelectedFaces }) => {
+			if (getSelectedFaces().size === 0) {
+				document.dispatchEvent(
+					new CustomEvent("toast", {
+						detail: { message: "No faces selected — click on a mesh first", type: "warning" },
+						bubbles: true,
+					}),
+				);
+				return;
+			}
+			showGroupDialog(x, y);
 		});
 	});
 

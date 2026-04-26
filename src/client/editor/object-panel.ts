@@ -3,6 +3,8 @@
  */
 import type * as THREE from "three";
 import { getModelObjects, type ObjectInfo } from "./object-manager.js";
+import { showVirtualGroupContextMenu, selectVirtualGroup } from "./face-select.js";
+import type { VirtualGroup } from "./face-select.js";
 
 let container: HTMLElement;
 let currentModel: THREE.Group | null = null;
@@ -66,6 +68,46 @@ export function refreshObjectPanel(model: THREE.Group | null): void {
 		});
 
 		container.appendChild(div);
+
+		// Render virtual groups as indented children under the mesh
+		if (obj.type === "mesh") {
+			const mesh = findMeshByUUID(model, obj.uuid);
+			if (mesh?.userData.virtualGroups) {
+				const groups = mesh.userData.virtualGroups as Record<string, VirtualGroup>;
+				for (const [key, group] of Object.entries(groups)) {
+					const vgDiv = document.createElement("div");
+					vgDiv.className = "obj-item vg-item";
+					vgDiv.dataset.vgKey = key;
+					vgDiv.dataset.parentUuid = obj.uuid;
+
+					const vgBadge = group.markedAs
+						? `<span class="obj-badge ${group.markedAs}">${group.markedAs}</span>`
+						: "";
+
+					vgDiv.innerHTML = `
+						<span class="obj-name vg-name" title="${group.name}">├─ ${group.name}</span>
+						<span class="obj-tris">${group.faces.length} faces</span>
+						${vgBadge}
+						<button class="obj-actions-btn" title="Actions">...</button>
+					`;
+
+					vgDiv.querySelector(".vg-name")?.addEventListener("click", () => {
+						if (!mesh) return;
+						selectVirtualGroup(mesh, key);
+					});
+
+					const vgActionsBtn = vgDiv.querySelector<HTMLButtonElement>(".obj-actions-btn");
+					vgActionsBtn?.addEventListener("click", (e) => {
+						e.stopPropagation();
+						if (mesh && vgActionsBtn) {
+							showVirtualGroupContextMenu(vgActionsBtn, mesh, key);
+						}
+					});
+
+					container.appendChild(vgDiv);
+				}
+			}
+		}
 	}
 }
 
@@ -165,4 +207,14 @@ export function highlightListItem(uuids: string | string[] | null): void {
 		el.classList.add("blink");
 		setTimeout(() => el.classList.remove("blink"), 1200);
 	}
+}
+
+function findMeshByUUID(model: THREE.Group, uuid: string): THREE.Mesh | null {
+	let found: THREE.Mesh | null = null;
+	model.traverse((child) => {
+		if (child.uuid === uuid && (child as THREE.Mesh).isMesh) {
+			found = child as THREE.Mesh;
+		}
+	});
+	return found;
 }

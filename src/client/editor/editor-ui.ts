@@ -6,7 +6,6 @@ import { clearGhost, updateDimensions } from "./dimension-overlay.js";
 import {
 	API_BASE,
 	getCurrentModel,
-	getScene,
 	handleSelectClick,
 	init,
 	loadGLB,
@@ -95,7 +94,10 @@ function showSidebar(): void {
 	sidebar?.classList.add("visible");
 	// Update viewport position to account for sidebar
 	const viewportEl = document.getElementById("viewport") as HTMLElement | null;
-	if (viewportEl) viewportEl.style.left = "280px";
+	if (viewportEl) {
+		viewportEl.style.left = "280px";
+		viewportEl.style.width = `calc(100% - 280px)`;
+	}
 	// Trigger Three.js renderer resize after layout settles
 	import("./editor-main.js").then(({ triggerResize }) => {
 		// Double-rAF to ensure the browser has reflowed after sidebar appears
@@ -110,6 +112,7 @@ function updateViewportPosition(): void {
 	if (viewportEl && sidebarEl) {
 		const sidebarWidth = sidebarEl.classList.contains("visible") ? sidebarEl.offsetWidth : 0;
 		viewportEl.style.left = `${sidebarWidth}px`;
+		viewportEl.style.width = sidebarWidth > 0 ? `calc(100% - ${sidebarWidth}px)` : "100%";
 		if (toolbarEl) toolbarEl.style.left = `${sidebarWidth + 14}px`;
 	}
 }
@@ -120,27 +123,6 @@ if (!viewport) {
 } else {
 	init(viewport);
 }
-
-// ── Viewport debug overlay ──
-(function viewportDebug() {
-	const dbg = document.getElementById("viewport-debug")!;
-	function update() {
-		const vp = document.getElementById("viewport");
-		const canvas = vp?.querySelector("canvas");
-		const r = vp?.getBoundingClientRect();
-		const cr = canvas?.getBoundingClientRect();
-		const cs = getComputedStyle(vp || document.body);
-		dbg.textContent = [
-			`viewport: ${r?.width}×${r?.height} @ (${r?.x},${r?.y})`,
-			`canvas: ${cr?.width}×${cr?.height} @ (${cr?.x},${cr?.y})`,
-			`viewport CSS: left=${cs.left} top=${cs.top} pos=${cs.position}`,
-			`canvas size: ${canvas?.width}×${canvas?.height} (drawingBuffer)`,
-			`sidebar visible: ${document.getElementById("sidebar")?.classList.contains("visible")}`,
-		].join("\n");
-		requestAnimationFrame(update);
-	}
-	update();
-})();
 
 /** Load a model, clear markers, and refresh the UI. */
 export async function loadModelAndReset(path: string, name: string, attribution?: string): Promise<void> {
@@ -158,13 +140,6 @@ export async function loadModelAndReset(path: string, name: string, attribution?
 
 	const dims = getEditorState().car.dims;
 	await loadGLB(path, dims ? { dims } : undefined);
-
-	// Debug: verify model loaded
-	const vp = document.getElementById("viewport");
-	const canvas = vp?.querySelector("canvas");
-	console.error(
-		`[DEBUG] model=${!!getCurrentModel()} scene.children=${getScene().children.length} canvas=${canvas?.width}x${canvas?.height} viewport=${vp?.clientWidth}x${vp?.clientHeight} canvasRect=${canvas?.getBoundingClientRect().width}x${canvas?.getBoundingClientRect().height}`,
-	);
 
 	const model = getCurrentModel();
 	if (model && dims) {
@@ -204,6 +179,11 @@ export async function loadModelAndReset(path: string, name: string, attribution?
 if (toolbar) initToolbarWiring(toolbar as any);
 if (markerListEl && toolbar) initMarkerWiring(markerListEl as any, toolbar as any, refreshUI);
 initScaleControls();
+
+// Sync face-select overlay transform every frame
+import("./face-select.js").then(({ syncOverlay }) => {
+	onRenderFrame(syncOverlay);
+});
 initSketchfabPanel((path, name, attribution) => {
 	return loadModelAndReset(path, name, attribution);
 });
@@ -233,13 +213,29 @@ initSearchWiring(loadModelAndReset);
 // ── Viewport clicks ──
 viewport?.addEventListener("pointerdown", (e) => {
 	import("./assign-mode.js").then(({ onPointerDown }) => onPointerDown(e));
+	import("./face-select.js").then(({ onPointerDown: onFSPtrDown }) => onFSPtrDown(e));
 });
+viewport?.addEventListener("pointerup", (e) => {
+	import("./face-select.js").then(({ onPointerUp }) => onPointerUp(e));
+});
+viewport?.addEventListener("pointermove", (e) => {
+	import("./face-select.js").then(({ onPointerMove }) => onPointerMove(e));
+});
+viewport?.addEventListener("wheel", (e) => {
+	import("./face-select.js").then(({ handleWheel }) => {
+		handleWheel(e);
+	});
+}, { passive: false });
 viewport?.addEventListener("click", (e) => {
 	if (handleSelectClick(e)) return;
-	// Check assign mode first
-	import("./assign-mode.js").then(({ handleAssignClick }) => {
-		if (handleAssignClick(e)) return;
-		handleViewportClick(e);
+	// Check face-select mode
+	import("./face-select.js").then(({ handleFaceSelectClick }) => {
+		if (handleFaceSelectClick(e)) return;
+		// Check assign mode first
+		import("./assign-mode.js").then(({ handleAssignClick }) => {
+			if (handleAssignClick(e)) return;
+			handleViewportClick(e);
+		});
 	});
 });
 // Middle click for assign mode remove
@@ -329,6 +325,38 @@ async function loadCarForEditing(configId: number, s3Key: string, carName: strin
 		// Update submit button to show overwrite
 		if (sidebarSubmitBtn) sidebarSubmitBtn.textContent = "Bake & Overwrite";
 		if (statusLine) statusLine.message = `Editing: ${carName} (#${configId})`;
+
+		// Re-run auto-detect classification to restore mesh markings (userData.markedAs)
+		// Loading a saved car only restores marker positions, not mesh markings.
+		// We only need the classification part — markers are already restored above.
+		const model = getCurrentModel();
+		if (model) {
+			try {
+				const { autoDetect } = await import("./auto-detect.js");
+				const { markObjectAs, highlightObject } = await import("./object-manager.js");
+				// autoDetect places markers too, but placeMarker() handles duplicates (removes old first).
+				// The positions should match what we already restored.
+				const result = autoDetect(model);
+				// Only re-mark meshes — skip marker placement (already done from saved data)
+				const allItems = [
+					...result.wheels,
+					...result.brakeDiscs,
+					...result.headlights,
+					...result.taillights,
+				];
+				for (const item of allItems) {
+					markObjectAs(model, item.mesh.uuid, item.type);
+					highlightObject(model, item.mesh.uuid);
+				}
+				console.log(`[editor] Auto-restored mesh markings: ${allItems.length} items (${result.wheels.length} wheels, ${result.headlights.length} headlights, ${result.taillights.length} taillights, ${result.brakeDiscs.length} brake discs)`);
+				const { refreshObjectPanel } = await import("./object-panel.js");
+				refreshObjectPanel(model);
+				const { ensureHighlightsVisible } = await import("./editor-main.js");
+				ensureHighlightsVisible();
+			} catch (err) {
+				console.warn("[editor] Auto-detect restore failed:", err);
+			}
+		}
 
 		// Initialize wheel animator after markers are placed
 		initWheelAnimator(getCurrentModel());

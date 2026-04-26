@@ -705,6 +705,7 @@ export class StartScreen extends LitElement {
 			const resp = await fetch(`${API_BASE}/cars/imported/${id}`, { method: "DELETE" });
 			if (resp.ok) {
 				this._editCars = this._editCars.filter((c) => c.id !== id);
+				this.requestUpdate();
 				this.dispatchEvent(new CustomEvent("car-deleted", { detail: { id }, bubbles: true, composed: true }));
 			}
 		} catch {
@@ -724,17 +725,25 @@ export class StartScreen extends LitElement {
 		this._carSearchQuery = (e.target as HTMLInputElement).value;
 		this._carSearchOpen = true;
 		this._carSearchLoading = true;
-		this.requestUpdate();
 		clearTimeout(this._searchTimer);
 		if (this._carSearchQuery.length < 2) {
 			this._carSearchResults = [];
 			this._carSearchLoading = false;
+			// Hide results without re-rendering the input
+			const box = this.shadowRoot?.querySelector('.create-search-results');
+			if (box) box.classList.remove('open');
 			return;
 		}
 		this._searchTimer = window.setTimeout(() => this._doCarSearch(), 300);
 	}
 
 	private async _doCarSearch() {
+		// Save input focus before re-render
+		const input = this.shadowRoot?.querySelector<HTMLInputElement>('.create-search-wrap input');
+		const wasFocused = input === document.activeElement;
+		const selStart = input?.selectionStart ?? -1;
+		const selEnd = input?.selectionEnd ?? -1;
+
 		try {
 			const resp = await fetch(
 				`${API_BASE}/cars/search?q=${encodeURIComponent(this._carSearchQuery)}&limit=20&predict=true`,
@@ -746,6 +755,15 @@ export class StartScreen extends LitElement {
 		} finally {
 			this._carSearchLoading = false;
 			this.requestUpdate();
+			// Restore focus after Lit re-render destroys/recreates the input
+			if (wasFocused) {
+				await this.updateComplete;
+				const newInput = this.shadowRoot?.querySelector<HTMLInputElement>('.create-search-wrap input');
+				if (newInput) {
+					newInput.focus();
+					if (selStart >= 0) newInput.setSelectionRange(selStart, selEnd);
+				}
+			}
 		}
 	}
 

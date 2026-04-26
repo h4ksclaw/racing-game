@@ -32,7 +32,7 @@ function isTyping(e: KeyboardEvent): boolean {
 	return false;
 }
 
-export function initKeyboardWiring(toolbar: HTMLElement & { mode?: string; highlights?: boolean }): void {
+export function initKeyboardWiring(toolbar: HTMLElement & { mode?: string; highlights?: boolean; bloom?: boolean }): void {
 	document.addEventListener("keydown", (e: KeyboardEvent) => {
 		if (isTyping(e)) return;
 
@@ -92,9 +92,22 @@ export function initKeyboardWiring(toolbar: HTMLElement & { mode?: string; highl
 				(toolbar as any).pendingPlaceType = placeType.replace(/_/g, " ");
 				break;
 			}
-			case "f":
-				frameModel();
+			case "f": {
+				if (getMode() === "face-select") {
+					// Enter: create virtual group
+					import("./face-select.js").then(({ showGroupDialog, getSelectedFaces, getLastMousePos }) => {
+						if (getSelectedFaces().size === 0) {
+							frameModel();
+							return;
+						}
+						const { x, y } = getLastMousePos();
+						showGroupDialog(x, y);
+					});
+				} else {
+					frameModel();
+				}
 				break;
+			}
 			case "delete":
 			case "backspace": {
 				const markerList = document.querySelector("marker-list") as any;
@@ -141,11 +154,21 @@ export function initKeyboardWiring(toolbar: HTMLElement & { mode?: string; highl
 					toolbar.highlights = visible;
 				});
 				break;
+			case "b":
+				toolbar.dispatchEvent(
+					new CustomEvent("toggle", {
+						detail: "bloom",
+						bubbles: true,
+						composed: true,
+					}),
+				);
+				break;
 			case "escape":
 				setMode("select");
 				setMarkerPendingType(null);
 				toolbar.mode = "select";
 				import("./assign-mode.js").then(({ exitAssignMode }) => exitAssignMode());
+				import("./face-select.js").then(({ exitFaceSelectMode }) => exitFaceSelectMode());
 				break;
 			case "1":
 				toolbar.dispatchEvent(

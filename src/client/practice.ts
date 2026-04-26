@@ -27,6 +27,7 @@ import { type CarConfig, SPORTS_CAR } from "./vehicle/configs.ts";
 import { DEFAULT_INPUT, RapierVehicleController, type VehicleInput } from "./vehicle/index.ts";
 import { VehicleRenderer } from "./vehicle/VehicleRenderer.ts";
 import { updateWeather } from "./weather.ts";
+import { prepareBloomPass, restoreBloomMaterials } from "./effects.ts";
 import { buildWorld, type WorldResult } from "./world.ts";
 
 // ── Config (from URL) ───────────────────────────────────────────────────
@@ -569,7 +570,10 @@ function animate(): void {
 	}
 
 	if (state.composer) {
+		renderer?.lights.updateOverlays();
+		if (state.scene) prepareBloomPass(state.scene);
 		state.composer.render();
+		restoreBloomMaterials();
 	} else if (world && state.scene) {
 		world.renderer.render(state.scene, world.camera);
 	}

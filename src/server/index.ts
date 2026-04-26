@@ -402,7 +402,6 @@ app.post("/api/sketchfab/download", async (req, res) => {
 		const tmpPath = path.join(os.tmpdir(), `sketchfab-${Date.now()}.glb`);
 		fs.writeFileSync(tmpPath, buffer);
 		const processed = processUploadedFile(tmpPath, filename);
-		fs.unlinkSync(tmpPath);
 
 		// Register in DB with full attribution
 		const existing = getAssetByHash(processed.hash);
@@ -887,7 +886,7 @@ app.get(/^\/api\/s3\/(.+)$/, async (req, res) => {
 /** Upload a GLB to S3 under cars/{hash}.glb. Uses memory storage — no disk write needed. */
 const s3Upload = multer({
 	storage: multer.memoryStorage(),
-	limits: { fileSize: 50 * 1024 * 1024 },
+	limits: { fileSize: 200 * 1024 * 1024 },
 });
 
 app.post("/api/s3/upload", s3Upload.single("model"), async (req, res) => {
@@ -895,6 +894,7 @@ app.post("/api/s3/upload", s3Upload.single("model"), async (req, res) => {
 		res.status(400).json({ error: "No file uploaded (use field name 'model')" });
 		return;
 	}
+	console.log(`[s3] Upload: ${(req.file.size / 1048576).toFixed(1)} MB, field=${req.file.fieldname}, mimetype=${req.file.mimetype}`);
 	try {
 		const buf = req.file.buffer;
 		const key = carModelKey(buf);

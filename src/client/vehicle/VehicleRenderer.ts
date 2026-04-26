@@ -158,6 +158,15 @@ export class VehicleRenderer {
 			}
 		});
 
+		// ── Copy bloom tags + virtual groups from GLTF extras to userData ──
+		this.model.traverse((child) => {
+			if (!(child instanceof THREE.Mesh)) return;
+			const extras = (child as any).extras;
+			if (!extras) return;
+			if (extras.bloom) child.userData.bloom = true;
+			if (extras.virtualGroups) child.userData.virtualGroups = extras.virtualGroups;
+		});
+
 		// ── Find light meshes and escape pipes ──
 		this.lights.findLightMeshes(this.model);
 		this.findEscapePipes();
@@ -209,6 +218,33 @@ export class VehicleRenderer {
 		if (markers.some((m) => !m)) {
 			console.warn(`[VehicleRenderer] Wheel markers not found: ${wheelNames.filter((_, i) => !markers[i]).join(", ")}`);
 			return false;
+		}
+
+		// If WheelRig pivots already have children (baked wheel meshes),
+		// use those instead of loading an external wheel GLB.
+		const hasBakedWheels = markers.every((m) => m && m.children.length > 0);
+		if (hasBakedWheels) {
+			// Use baked wheel meshes as the spinning wheel groups.
+			for (let i = 0; i < 4; i++) {
+				const pivot = markers[i]!;
+				this.wheelMeshes.push(pivot);
+				this._wheelBasePos[i].copy(pivot.position);
+				// Compute visual radius from baked wheel geometry
+				const bb = new THREE.Box3().setFromObject(pivot);
+				const bsize = new THREE.Vector3();
+				bb.getSize(bsize);
+				this._visualWheelRadii[i] = Math.max(bsize.y, bsize.z) / 2;
+				console.log(
+					`[VehicleRenderer] wheel ${i}: baked under ${wheelNames[i]}, ` +
+						`local=(${pivot.position.x.toFixed(3)}, ${pivot.position.y.toFixed(3)}, ${pivot.position.z.toFixed(3)}) ` +
+						`bbox=(${bsize.x.toFixed(3)}, ${bsize.y.toFixed(3)}, ${bsize.z.toFixed(3)}) ` +
+						`visualRadius=${this._visualWheelRadii[i].toFixed(3)}`,
+				);
+			}
+			this._suspRestLength = this.config.chassis.suspensionRestLength;
+			// No model raise needed — baked wheels are already at correct positions
+			console.log("[VehicleRenderer] Using baked wheel meshes (no external GLB)");
+			return true;
 		}
 
 		try {
@@ -388,6 +424,14 @@ export class VehicleRenderer {
 			return;
 		}
 
+		// If the config already has valid wheel data (from a previous bake/save),
+		// use those values instead of re-deriving from markers. The marker-based
+		// radius calculation (distance from PhysicsMarker to wheel center) fails
+		// when the PhysicsMarker is at wheel-center height instead of ground level.
+		const configRadius = this.config.chassis.wheelRadius;
+		const configPositions = this.config.chassis.wheelPositions;
+		const useConfigWheelData = configRadius > 0.01 && configPositions?.length === 4;
+
 		const markerPos = new THREE.Vector3();
 		physicsMarker.getWorldPosition(markerPos);
 		const pmY = markerPos.y;
@@ -400,7 +444,18 @@ export class VehicleRenderer {
 		}
 
 		const radii = wheelWorldPositions.map((wp) => Math.abs(wp.y - pmY));
-		const avgRadius = radii.reduce((a, b) => a + b, 0) / radii.length;
+		let avgRadius = radii.reduce((a, b) => a + b, 0) / radii.length;
+
+		// If marker-based radius is near-zero (PhysicsMarker at wheel height
+		// instead of ground level), fall back to config's existing wheelRadius
+		// or estimate from wheel bounding box.
+		if (avgRadius < 0.01 && this.config.chassis.wheelRadius > 0.01) {
+			console.warn(
+				`[VehicleRenderer] autoDerive: marker-based wheelRadius=${avgRadius.toFixed(3)} is invalid, ` +
+					`falling back to config wheelRadius=${this.config.chassis.wheelRadius.toFixed(3)}`,
+			);
+			avgRadius = this.config.chassis.wheelRadius;
+		}
 
 		const frontZ = (wheelWorldPositions[0].z + wheelWorldPositions[1].z) / 2;
 		const rearZ = (wheelWorldPositions[2].z + wheelWorldPositions[3].z) / 2;
@@ -431,17 +486,22 @@ export class VehicleRenderer {
 		const bodyAboveWheels = bodyTop - wheelCenterY;
 		const chassisHalfH = bodyAboveWheels / 2;
 
+		// Use config wheel data if available (baked car), otherwise use marker-derived values
+		const finalRadius = useConfigWheelData ? configRadius : avgRadius;
+		const finalWheelPositions = useConfigWheelData
+			? configPositions
+			: wheelWorldPositions.map((wp) => ({ x: wp.x - rootPos.x, y: wp.y - rootPos.y, z: wp.z - rootPos.z }));
+		const finalWheelBase = useConfigWheelData
+			? this.config.chassis.wheelBase
+			: wheelBase;
+
 		this.config = {
 			...this.config,
 			chassis: {
 				...this.config.chassis,
-				wheelRadius: avgRadius,
-				wheelBase,
-				wheelPositions: wheelWorldPositions.map((wp) => ({
-					x: wp.x - rootPos.x,
-					y: wp.y - rootPos.y,
-					z: wp.z - rootPos.z,
-				})),
+				wheelRadius: finalRadius,
+				wheelBase: finalWheelBase,
+				wheelPositions: finalWheelPositions,
 				halfExtents: [bodySize.x / 2, chassisHalfH, bodySize.z / 2],
 				cgHeight,
 			},
@@ -450,9 +510,10 @@ export class VehicleRenderer {
 		this._modelGroundOffset = chassisHalfH - bodyTop;
 
 		console.log(
-			`[VehicleRenderer] autoDerive: wheelRadius=${avgRadius.toFixed(3)}, wheelBase=${wheelBase.toFixed(3)}, ` +
+			`[VehicleRenderer] autoDerive: wheelRadius=${finalRadius.toFixed(3)}, wheelBase=${finalWheelBase.toFixed(3)}, ` +
 				`chassisHalfH=${chassisHalfH.toFixed(3)}, wheelCenterY=${wheelCenterY.toFixed(3)}, bodyTop=${bodyTop.toFixed(3)}, ` +
-				`groundOffset=${this._modelGroundOffset.toFixed(3)}, pmY=${pmY.toFixed(3)}`,
+				`groundOffset=${this._modelGroundOffset.toFixed(3)}, pmY=${pmY.toFixed(3)}` +
+				(useConfigWheelData ? " (using config wheel data)" : " (marker-derived)"),
 		);
 	}
 

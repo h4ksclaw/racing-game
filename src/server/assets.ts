@@ -52,7 +52,17 @@ export function getReadyPath(hash: string): string {
 export function promoteAsset(hash: string): string {
 	const pending = getPendingPath(hash);
 	const ready = getReadyPath(hash);
-	fs.renameSync(pending, ready);
+	fs.mkdirSync(path.dirname(ready), { recursive: true });
+	try {
+		fs.renameSync(pending, ready);
+	} catch (err: any) {
+		if (err.code === 'EXDEV') {
+			fs.copyFileSync(pending, ready);
+			fs.unlinkSync(pending);
+		} else {
+			throw err;
+		}
+	}
 	return ready;
 }
 
@@ -71,7 +81,7 @@ export function createUploadMiddleware(): multer.Multer {
 
 	return multer({
 		storage,
-		limits: { fileSize: 40 * 1024 * 1024 },
+		limits: { fileSize: 100 * 1024 * 1024 },
 		fileFilter: (_req, file, cb) => {
 			const ext = path.extname(file.originalname).toLowerCase();
 			if (ext === ".glb" || ext === ".gltf") {
@@ -97,9 +107,16 @@ export function processUploadedFile(tempPath: string, originalName: string): Pro
 
 	if (tempPath !== hashPath) {
 		fs.mkdirSync(path.dirname(hashPath), { recursive: true });
-		fs.renameSync(tempPath, hashPath);
-		if (fs.existsSync(tempPath) && tempPath !== hashPath) {
-			fs.unlinkSync(tempPath);
+		try {
+			fs.renameSync(tempPath, hashPath);
+		} catch (err: any) {
+			if (err.code === 'EXDEV') {
+				// Cross-device link — copy + delete instead of rename
+				fs.copyFileSync(tempPath, hashPath);
+				fs.unlinkSync(tempPath);
+	} else {
+				throw err;
+			}
 		}
 	}
 

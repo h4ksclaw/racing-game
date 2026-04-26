@@ -7,7 +7,7 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { updateBloomSize } from "./effects.ts";
+import { prepareBloomPass, restoreBloomMaterials, updateBloomSize } from "./effects.ts";
 import { state } from "./scene.ts";
 import { applyTimeOfDay } from "./sky.ts";
 import type { WeatherType } from "./utils.ts";
@@ -237,7 +237,9 @@ function animate(): void {
 	updateFlyover(delta);
 	if (state.scene && state.camera) {
 		if (state.composer) {
+			prepareBloomPass(state.scene);
 			state.composer.render();
+			restoreBloomMaterials();
 		} else {
 			world?.renderer.render(state.scene, state.camera);
 		}
