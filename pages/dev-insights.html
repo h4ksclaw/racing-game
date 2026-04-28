@@ -321,6 +321,61 @@
 		.col-type { color: var(--text-dim); }
 		.col-pk { color: var(--yellow); font-size: 9px; }
 
+		/* ── Symbols section ── */
+		#symbol-list { padding: 4px 0; }
+		.symbol-item {
+			padding: 4px 0;
+			cursor: pointer;
+			border-radius: 4px;
+			transition: background 0.1s;
+		}
+		.symbol-item:hover { background: rgba(92, 158, 255, 0.06); }
+		.symbol-header {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			font-size: 12px;
+		}
+		.symbol-icon {
+			font-family: var(--mono);
+			font-size: 14px;
+			color: var(--accent);
+			width: 18px;
+			text-align: center;
+		}
+		.symbol-name {
+			font-family: var(--mono);
+			color: var(--text-bright);
+			flex: 1;
+		}
+		.symbol-refcount {
+			font-size: 10px;
+			font-family: var(--mono);
+			padding: 1px 5px;
+			border-radius: 3px;
+			background: rgba(92, 158, 255, 0.12);
+			color: var(--accent);
+		}
+		.symbol-item.expanded .symbol-refcount { background: rgba(167, 139, 250, 0.15); color: var(--purple); }
+		.symbol-refs {
+			margin: 4px 0 4px 24px;
+			max-height: 200px;
+			overflow-y: auto;
+		}
+		.symbol-ref {
+			font-family: var(--mono);
+			font-size: 10px;
+			color: var(--text-dim);
+			padding: 2px 4px;
+			border-radius: 3px;
+			cursor: pointer;
+			transition: all 0.1s;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+		.symbol-ref:hover { background: rgba(92, 158, 255, 0.1); color: var(--accent); }
+
 		/* ── Endpoints ── */
 		.endpoint-item { padding: 3px 16px; font-size: 11px; font-family: var(--mono); color: var(--text); }
 		.ep-method { font-weight: 600; display: inline-block; width: 48px; }

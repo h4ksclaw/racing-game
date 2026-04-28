@@ -7,6 +7,15 @@
 
 import type { DepcruiseResult, GraphEdge, GraphNode } from "./types.ts";
 
+interface SymbolInfo {
+	name: string;
+	kind: string;
+	kindIcon: string;
+	filePath: string;
+	line: number;
+	references: Array<{ filePath: string; line: number; column: number }>;
+}
+
 const GROUP_COLORS = {
 	client: "#5c9eff",
 	server: "#a78bfa",
@@ -524,9 +533,52 @@ export class ForceGraph {
 					)
 					.join("")}
 			</ul>
+			<div class="section-title">Exported Symbols</div>
+			<div id="symbol-list"><span style="color:#888">Loading…</span></div>
 		`;
 
 		detail.classList.add("visible");
+
+		// Fetch and render exported symbols asynchronously
+		this.loadSymbols(node.id);
+	}
+
+	private async loadSymbols(filePath: string) {
+		const container = document.getElementById("symbol-list");
+		if (!container) return;
+
+		try {
+			const resp = await fetch(`/api/dev-insights/references?file=${encodeURIComponent(filePath)}`);
+			if (!resp.ok) {
+				container.innerHTML = `<span style="color:#888">No symbol data available</span>`;
+				return;
+			}
+			const data = (await resp.json()) as { symbols: SymbolInfo[] };
+			const symbols = data.symbols;
+
+			if (symbols.length === 0) {
+				container.innerHTML = `<span style="color:#888">No exported symbols</span>`;
+				return;
+			}
+
+			container.innerHTML = symbols
+				.map(
+					(sym) => `
+					<div class="symbol-item" onclick="window._toggleSymbolRefs(this)">
+						<span class="symbol-header">
+							<span class="symbol-icon" title="${sym.kind}">${sym.kindIcon}</span>
+							<span class="symbol-name">${sym.name}</span>
+							<span class="symbol-refcount" title="${sym.references.length} references">${sym.references.length}</span>
+						</span>
+						<div class="symbol-refs" style="display:none">
+							${sym.references.length === 0 ? '<span style="color:#666;font-size:11px">No cross-file references</span>' : sym.references.map((ref) => `<div class="symbol-ref" onclick="event.stopPropagation(); window._navigateTo('${ref.filePath}')" title="${ref.filePath}:${ref.line}">${ref.filePath}:${ref.line}</div>`).join("")}
+						</div>
+					</div>`,
+				)
+				.join("");
+		} catch {
+			container.innerHTML = `<span style="color:#888">Failed to load symbols</span>`;
+		}
 	}
 
 	private waitForLayout(cb: () => void) {
@@ -604,4 +656,13 @@ export class ForceGraph {
 	detail.classList.remove("visible");
 	// Dispatch a custom event that app.ts can pick up
 	window.dispatchEvent(new CustomEvent("graph:navigate", { detail: nodeId }));
+};
+
+// Global helper to toggle symbol reference expansion
+(window as unknown as Record<string, unknown>)._toggleSymbolRefs = (el: HTMLElement) => {
+	const refs = el.querySelector(".symbol-refs") as HTMLElement | null;
+	if (!refs) return;
+	const visible = refs.style.display !== "none";
+	refs.style.display = visible ? "none" : "block";
+	el.classList.toggle("expanded", !visible);
 };

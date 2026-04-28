@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
+import { getExportedSymbols, searchSymbols } from "./reference-finder.ts";
 import * as schema from "./schema.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -149,5 +150,46 @@ function extractRoutes(app: express.Express): Array<{ method: string; path: stri
 
 	return routes.sort((a, b) => `${a.method} ${a.path}`.localeCompare(`${b.method} ${b.path}`));
 }
+
+/**
+ * GET /api/dev-insights/references?file=src/client/dev-insights/graph.ts
+ *
+ * Returns all exported symbols from the specified file with their
+ * cross-file references.
+ */
+router.get("/references", (req, res) => {
+	const filePath = req.query.file as string | undefined;
+	if (!filePath) {
+		res.status(400).json({ error: "Missing ?file= query parameter" });
+		return;
+	}
+	try {
+		const symbols = getExportedSymbols(filePath);
+		res.json({ symbols });
+	} catch (err: unknown) {
+		const msg = err instanceof Error ? err.message : String(err);
+		res.status(500).json({ error: msg });
+	}
+});
+
+/**
+ * GET /api/dev-insights/symbol-search?q=ForceGraph
+ *
+ * Searches for exported symbols by name across the whole project.
+ */
+router.get("/symbol-search", (req, res) => {
+	const query = req.query.q as string | undefined;
+	if (!query) {
+		res.status(400).json({ error: "Missing ?q= query parameter" });
+		return;
+	}
+	try {
+		const symbols = searchSymbols(query);
+		res.json({ symbols });
+	} catch (err: unknown) {
+		const msg = err instanceof Error ? err.message : String(err);
+		res.status(500).json({ error: msg });
+	}
+});
 
 export default router;
