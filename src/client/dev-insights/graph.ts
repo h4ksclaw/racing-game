@@ -39,11 +39,17 @@ export class ForceGraph {
 	private selectedNode: string | null = null;
 	private searchTerm = "";
 	private matchSet: Set<string> = new Set();
+	private mouseDownX = 0;
+	private mouseDownY = 0;
+	private mouseDownNodeId: string | null = null;
+	private isDragThresholdReached = false;
+	private static readonly DRAG_THRESHOLD = 3;
 
 	// Physics
 	private cooling = 1;
 	private layoutRunning = true;
-	private alphaDecay = 0.998;
+	private layoutFrozen = false; // once true, tick() is a no-op
+	private alphaDecay = 0.98; // fast cooldown — layout settles in ~3s
 
 	constructor(canvas: HTMLCanvasElement, data: DepcruiseResult) {
 		this.canvas = canvas;
@@ -54,8 +60,8 @@ export class ForceGraph {
 		this.resize();
 		window.addEventListener("resize", () => this.resize());
 
-		// Auto-fit after initial layout settles
-		setTimeout(() => this.resetView(), 2000);
+		// Auto-fit once layout cools down
+		this.waitForLayout(() => this.resetView());
 	}
 
 	// ── Graph construction ─────────────────────────────────────────────
@@ -140,13 +146,17 @@ export class ForceGraph {
 	// ── Force simulation ───────────────────────────────────────────────
 
 	tick() {
-		if (!this.layoutRunning || this.cooling < 0.001) return;
+		if (this.layoutFrozen) return;
+		if (!this.layoutRunning || this.cooling < 0.005) {
+			this.layoutFrozen = true;
+			return;
+		}
 
 		const nodes = Array.from(this.nodes.values());
-		const k = Math.sqrt(8000 / nodes.length); // ideal distance
-		const repulsionStrength = 600;
-		const attractionStrength = 0.005;
-		const gravityStrength = 0.01;
+		const k = Math.sqrt(6000 / nodes.length); // ideal distance
+		const repulsionStrength = 200;
+		const attractionStrength = 0.008;
+		const gravityStrength = 0.02;
 
 		// Repulsion (Coulomb)
 		for (let i = 0; i < nodes.length; i++) {
@@ -248,15 +258,15 @@ export class ForceGraph {
 			const isViolation = node.violations.length > 0 || node.circular;
 			const isHoverNeighbor = this.isNeighborOfSelected(node.id);
 
-			const alpha = isDim ? DIM_ALPHA : isHoverNeighbor || isSelected || isMatch ? HIGHLIGHT_ALPHA : 0.5;
+			const alpha = isDim ? DIM_ALPHA : isHoverNeighbor || isSelected || isMatch ? HIGHLIGHT_ALPHA : 0.6;
 			const baseColor = isViolation ? VIOLATION_COLOR : GROUP_COLORS[node.group];
 			const radius = this.nodeRadius(node);
 
 			// Glow for selected/highlighted
 			if (isSelected || isMatch) {
 				ctx.beginPath();
-				ctx.arc(node.x, node.y, radius + 4, 0, Math.PI * 2);
-				ctx.fillStyle = baseColor.replace(")", `, 0.15)`).replace("rgb", "rgba");
+				ctx.arc(node.x, node.y, radius + 6, 0, Math.PI * 2);
+				ctx.fillStyle = baseColor.replace(")", ", 0.15)").replace("rgb", "rgba");
 				ctx.fill();
 			}
 
@@ -275,12 +285,15 @@ export class ForceGraph {
 				ctx.stroke();
 			}
 
-			// Label
-			if (this.scale > 0.4 || isSelected || isMatch) {
-				ctx.font = `${isSelected || isMatch ? "11" : "9"}px 'JetBrains Mono', monospace`;
-				ctx.fillStyle = `rgba(240, 244, 255, ${isDim ? 0.05 : isMatch || isSelected ? 0.95 : 0.4})`;
+			// Label — show at readable zoom, scale font with zoom level
+			const labelAlpha = isDim ? 0.05 : isMatch || isSelected ? 0.95 : 0.7;
+			if (this.scale > 0.15 || isSelected || isMatch) {
+				const fontSize = isSelected || isMatch ? 12 : this.scale > 0.5 ? 10 : 8;
+				ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
+				ctx.fillStyle = `rgba(240, 244, 255, ${labelAlpha})`;
 				ctx.textAlign = "center";
-				ctx.fillText(node.label, node.x, node.y + radius + 12);
+				ctx.textBaseline = "top";
+				ctx.fillText(node.label, node.x, node.y + radius + 4);
 			}
 		}
 
@@ -288,7 +301,8 @@ export class ForceGraph {
 	}
 
 	private nodeRadius(node: GraphNode): number {
-		return Math.max(3, Math.min(8, 2 + Math.log2(node.degree + 1) * 1.5));
+		// Bigger base size so nodes are visible without zooming
+		return Math.max(5, Math.min(14, 4 + Math.log2(node.degree + 1) * 2));
 	}
 
 	private isEdgeHighlighted(edge: GraphEdge): boolean {
@@ -339,12 +353,12 @@ export class ForceGraph {
 	private findNodeAt(wx: number, wy: number): GraphNode | null {
 		let closest: GraphNode | null = null;
 		let closestDist = Infinity;
+		const hitRadius = 20 / this.scale; // 20 screen pixels in world units
 		for (const node of this.nodes.values()) {
 			const dx = node.x - wx;
 			const dy = node.y - wy;
 			const dist = Math.sqrt(dx * dx + dy * dy);
-			const r = this.nodeRadius(node) + 5;
-			if (dist < r && dist < closestDist) {
+			if (dist < hitRadius && dist < closestDist) {
 				closest = node;
 				closestDist = dist;
 			}
@@ -353,12 +367,22 @@ export class ForceGraph {
 	}
 
 	private onMouseDown(e: MouseEvent) {
+		this.mouseDownX = e.clientX;
+		this.mouseDownY = e.clientY;
+		this.isDragThresholdReached = false;
+
 		const [wx, wy] = this.screenToWorld(e.offsetX, e.offsetY);
 		const node = this.findNodeAt(wx, wy);
 		if (node) {
-			this.dragging = node.id;
-			this.cooling = Math.max(this.cooling, 0.1); // reheat
+			// Select immediately, but don't start dragging until threshold
+			this.mouseDownNodeId = node.id;
+			this.selectNode(node.id);
+			this.showNodeDetail(node);
 		} else {
+			this.mouseDownNodeId = null;
+			// Click on empty space deselects
+			this.selectNode(null);
+			(document.getElementById("detail") as HTMLElement).classList.remove("visible");
 			this.panning = true;
 			this.panStartX = e.clientX;
 			this.panStartY = e.clientY;
@@ -368,6 +392,24 @@ export class ForceGraph {
 	}
 
 	private onMouseMove(e: MouseEvent) {
+		// Check if mouse has moved beyond drag threshold
+		if (this.mouseDownNodeId && !this.isDragThresholdReached) {
+			const dx = e.clientX - this.mouseDownX;
+			const dy = e.clientY - this.mouseDownY;
+			if (dx * dx + dy * dy > ForceGraph.DRAG_THRESHOLD * ForceGraph.DRAG_THRESHOLD) {
+				this.isDragThresholdReached = true;
+				this.dragging = this.mouseDownNodeId;
+				this.cooling = Math.max(this.cooling, 0.1); // reheat
+			}
+		}
+
+		// Update cursor for hover feedback
+		if (!this.dragging && !this.panning) {
+			const [wx, wy] = this.screenToWorld(e.offsetX, e.offsetY);
+			const hovered = this.findNodeAt(wx, wy);
+			this.canvas.style.cursor = hovered ? "pointer" : "grab";
+		}
+
 		if (this.dragging) {
 			const [wx, wy] = this.screenToWorld(e.offsetX, e.offsetY);
 			const node = this.nodes.get(this.dragging);
@@ -386,23 +428,40 @@ export class ForceGraph {
 	private onMouseUp() {
 		this.dragging = null;
 		this.panning = false;
+		this.mouseDownNodeId = null;
+		this.isDragThresholdReached = false;
 	}
 
 	private onWheel(e: WheelEvent) {
 		e.preventDefault();
 		const factor = e.deltaY > 0 ? 0.9 : 1.1;
-		this.zoom(factor);
+
+		// Zoom toward cursor position
+		const rect = this.canvas.getBoundingClientRect();
+		const mx = e.clientX - rect.left;
+		const my = e.clientY - rect.top;
+
+		// World coords under cursor before zoom
+		const cx = rect.width / 2 + this.offsetX;
+		const cy = rect.height / 2 + this.offsetY;
+		const wx = (mx - cx) / this.scale;
+		const wy = (my - cy) / this.scale;
+
+		// Apply zoom
+		this.scale *= factor;
+		this.scale = Math.max(0.05, Math.min(20, this.scale));
+
+		// Adjust offset so the same world point stays under cursor
+		this.offsetX = mx - rect.width / 2 - wx * this.scale;
+		this.offsetY = my - rect.height / 2 - wy * this.scale;
 	}
 
 	private onDoubleClick(e: MouseEvent) {
 		const [wx, wy] = this.screenToWorld(e.offsetX, e.offsetY);
 		const node = this.findNodeAt(wx, wy);
 		if (node) {
-			this.selectNode(node.id);
-			this.showNodeDetail(node);
-		} else {
-			this.selectNode(null);
-			(document.getElementById("detail") as HTMLElement).classList.remove("visible");
+			// Double-click opens in GitHub
+			window.open(`https://github.com/h4ksclaw/racing-game/blob/feat/code-intelligence/${node.id}`, "_blank");
 		}
 	}
 
@@ -410,6 +469,17 @@ export class ForceGraph {
 
 	selectNode(nodeId: string | null) {
 		this.selectedNode = nodeId;
+	}
+
+	navigateToNode(nodeId: string) {
+		const node = this.nodes.get(nodeId);
+		if (!node) return;
+		this.selectNode(nodeId);
+		this.showNodeDetail(node);
+
+		// Pan to center the node on screen
+		this.offsetX = -node.x * this.scale;
+		this.offsetY = -node.y * this.scale;
 	}
 
 	showNodeDetail(node: GraphNode) {
@@ -422,10 +492,12 @@ export class ForceGraph {
 
 		name.textContent = node.id;
 
+		const githubUrl = `https://github.com/h4ksclaw/racing-game/blob/feat/code-intelligence/${node.id}`;
 		const inDeps = this.edges.filter((e) => e.target === node.id).map((e) => this.nodes.get(e.source));
 		const outDeps = this.edges.filter((e) => e.source === node.id).map((e) => this.nodes.get(e.target));
 
 		body.innerHTML = `
+			<a href="${githubUrl}" target="_blank" class="github-link" title="Open on GitHub">${node.id} ↗</a>
 			<table>
 				<tr><td>Group</td><td style="color:${GROUP_COLORS[node.group]}">${node.group}</td></tr>
 				<tr><td>Degree</td><td>${node.degree} (in: ${node.inDegree}, out: ${node.outDegree})</td></tr>
@@ -457,30 +529,37 @@ export class ForceGraph {
 		detail.classList.add("visible");
 	}
 
+	private waitForLayout(cb: () => void) {
+		if (this.layoutFrozen) {
+			cb();
+			return;
+		}
+		requestAnimationFrame(() => this.waitForLayout(cb));
+	}
+
 	zoom(factor: number) {
 		this.scale *= factor;
-		this.scale = Math.max(0.1, Math.min(5, this.scale));
+		this.scale = Math.max(0.05, Math.min(20, this.scale));
 	}
 
 	resetView() {
-		this.scale = 1;
 		this.offsetX = 0;
 		this.offsetY = 0;
 
 		// Auto-fit to node bounds
 		const nodes = Array.from(this.nodes.values());
 		if (nodes.length === 0) return;
-		let minX = Infinity,
-			maxX = -Infinity,
-			minY = Infinity,
-			maxY = -Infinity;
+		let minX = Infinity;
+		let maxX = -Infinity;
+		let minY = Infinity;
+		let maxY = -Infinity;
 		for (const n of nodes) {
 			minX = Math.min(minX, n.x);
 			maxX = Math.max(maxX, n.x);
 			minY = Math.min(minY, n.y);
 			maxY = Math.max(maxY, n.y);
 		}
-		const padding = 100;
+		const padding = 150;
 		const graphW = maxX - minX + padding * 2;
 		const graphH = maxY - minY + padding * 2;
 		const rect = this.canvas.getBoundingClientRect();
@@ -492,6 +571,7 @@ export class ForceGraph {
 	}
 
 	toggleLayout() {
+		this.layoutFrozen = false;
 		this.cooling = 1;
 		this.layoutRunning = true;
 	}
@@ -519,7 +599,6 @@ export class ForceGraph {
 
 // Global navigation helper for detail panel clicks
 (window as unknown as Record<string, unknown>)._navigateTo = (nodeId: string) => {
-	// Find and click the node in the graph
 	// biome-ignore lint/style/noNonNullAssertion: DOM element guaranteed by HTML
 	const detail = document.getElementById("detail")!;
 	detail.classList.remove("visible");

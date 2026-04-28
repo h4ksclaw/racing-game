@@ -126,29 +126,28 @@ function extractTableInfo(tableName: string, table: unknown): TableInfo {
 
 function extractRoutes(app: express.Express): Array<{ method: string; path: string }> {
 	const routes: Array<{ method: string; path: string }> = [];
-	// Express 5 uses app.router (not app._router)
-	const stack = ((app as unknown as Record<string, unknown>).router ??
-		(app as unknown as Record<string, unknown>)._router) as Array<Record<string, unknown>> | undefined;
+	// Express 5: app.router is a Router function with .stack; Express 4: app._router has .stack
+	const router =
+		(app as unknown as Record<string, unknown>).router ?? (app as unknown as Record<string, unknown>)._router;
+	const stack = (router as Record<string, unknown>).stack as Array<Record<string, unknown>> | undefined;
+	if (!stack) return routes;
 
 	function walk(layer: Record<string, unknown>) {
 		const route = layer.route as Record<string, Record<string, unknown>> | undefined;
 		if (!route?.methods) return;
 		const methods = Object.keys(route.methods).filter((m) => m !== "_all");
 		for (const method of methods) {
-			routes.push({
-				method: method.toUpperCase(),
-				path: String(route?.path),
-			});
+			const path = String(route.path);
+			if (!path) continue;
+			routes.push({ method: method.toUpperCase(), path });
 		}
 	}
 
-	for (const layer of stack ?? []) {
+	for (const layer of stack) {
 		walk(layer);
 	}
 
-	return routes
-		.filter((r) => r.path && typeof r.path === "string")
-		.sort((a, b) => `${a.method} ${a.path}`.localeCompare(`${b.method} ${b.path}`));
+	return routes.sort((a, b) => `${a.method} ${a.path}`.localeCompare(`${b.method} ${b.path}`));
 }
 
 export default router;
