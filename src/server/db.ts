@@ -1,37 +1,24 @@
 /**
  * SQLite database manager for game assets and car metadata.
  *
- * Uses better-sqlite3 for synchronous, fast access.
+ * Uses Drizzle ORM (with better-sqlite3 driver) for type-safe queries.
  * DB path configurable via DB_PATH env var (default: ./data/game_assets.db).
+ *
+ * The underlying better-sqlite3 handle is available via _getDbForTesting()
+ * for cases that need raw SQL (e.g. complex joins).
  */
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import Database from "better-sqlite3";
+import { and, asc, desc, eq, like, or, sql } from "drizzle-orm";
+import { getDrizzle, getRawDb, resetDrizzle } from "./drizzle.js";
+import { assets, attributions, carConfigs, carMetadata } from "./schema.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.resolve(__dirname, "../..");
+// ── Internal: ensure schema exists (idempotent, mirrors original db.ts) ──
 
-const DEFAULT_DB_PATH = path.join(PROJECT_ROOT, "data", "game_assets.db");
+let _initialized = false;
 
-let _db: Database.Database | null = null;
-
-/** @internal Test-only access to the raw DB handle. */
-export function _getDbForTesting(): Database.Database {
-	return getDb();
-}
-
-function getDb(): Database.Database {
-	if (_db) return _db;
-
-	const dbPath = process.env.DB_PATH || DEFAULT_DB_PATH;
-	fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-
-	_db = new Database(dbPath);
-	const db = _db;
-	db.pragma("journal_mode = WAL");
-	db.pragma("foreign_keys = ON");
+function ensureSchema() {
+	if (_initialized) return;
+	const db = getRawDb();
 
 	// Init schema
 	db.exec(`
@@ -144,7 +131,19 @@ function getDb(): Database.Database {
 		// Duplicate entries prevent unique index — non-critical for now
 	}
 
-	return db;
+	_initialized = true;
+}
+
+/** Lazy-initialize the schema on first query access. */
+function db() {
+	ensureSchema();
+	return getDrizzle();
+}
+
+/** @internal Test-only access to the raw DB handle. */
+export function _getDbForTesting() {
+	ensureSchema();
+	return getRawDb();
 }
 
 // ── Asset queries ──────────────────────────────────────────────────────
@@ -165,19 +164,26 @@ export interface AssetRow {
 }
 
 export function getAssets(status?: string): AssetRow[] {
-	const db = getDb();
+	const d = db();
 	if (status) {
-		return db.prepare("SELECT * FROM assets WHERE status = ? ORDER BY download_date DESC").all(status) as AssetRow[];
+		return d
+			.select()
+			.from(assets)
+			.where(eq(assets.status, status))
+			.orderBy(desc(assets.downloadDate))
+			.all() as unknown as AssetRow[];
 	}
-	return db.prepare("SELECT * FROM assets ORDER BY download_date DESC").all() as AssetRow[];
+	return d.select().from(assets).orderBy(desc(assets.downloadDate)).all() as unknown as AssetRow[];
 }
 
 export function getAssetById(id: number): AssetRow | undefined {
-	return getDb().prepare("SELECT * FROM assets WHERE id = ?").get(id) as AssetRow | undefined;
+	const row = db().select().from(assets).where(eq(assets.id, id)).get();
+	return row ? (row as unknown as AssetRow) : undefined;
 }
 
 export function getAssetByHash(hash: string): AssetRow | undefined {
-	return getDb().prepare("SELECT * FROM assets WHERE sha256_hash = ?").get(hash) as AssetRow | undefined;
+	const row = db().select().from(assets).where(eq(assets.sha256Hash, hash)).get();
+	return row ? (row as unknown as AssetRow) : undefined;
 }
 
 export function insertAsset(asset: {
@@ -191,47 +197,42 @@ export function insertAsset(asset: {
 	status?: string;
 	metadata_json?: string;
 }): number {
-	const db = getDb();
-	const result = db
-		.prepare(
-			`
-		INSERT INTO assets (filepath, sha256_hash, source_url, source_type, license, attribution, original_name, status, metadata_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`,
-		)
-		.run(
-			asset.filepath,
-			asset.sha256_hash,
-			asset.source_url,
-			asset.source_type,
-			asset.license ?? null,
-			asset.attribution ?? null,
-			asset.original_name,
-			asset.status ?? "pending",
-			asset.metadata_json ?? null,
-		);
-	return result.lastInsertRowid as number;
+	const result = db()
+		.insert(assets)
+		.values({
+			filepath: asset.filepath,
+			sha256Hash: asset.sha256_hash,
+			sourceUrl: asset.source_url,
+			sourceType: asset.source_type,
+			license: asset.license ?? null,
+			attribution: asset.attribution ?? null,
+			originalName: asset.original_name,
+			status: asset.status ?? "pending",
+			metadataJson: asset.metadata_json ?? null,
+		})
+		.run();
+	return Number(result.lastInsertRowid);
 }
 
 export function deleteAsset(id: number): boolean {
-	const db = getDb();
-	const asset = db.prepare("SELECT * FROM assets WHERE id = ?").get(id) as AssetRow | undefined;
+	const d = db();
+	const asset = getAssetById(id);
 	if (!asset) return false;
 	// Delete related attributions
-	db.prepare("DELETE FROM attributions WHERE asset_id = ?").run(id);
+	d.delete(attributions).where(eq(attributions.assetId, id)).run();
 	// Delete related car configs that reference this asset
-	db.prepare("DELETE FROM car_configs WHERE asset_id = ?").run(id);
+	d.delete(carConfigs).where(eq(carConfigs.assetId, id)).run();
 	// Delete the asset itself
-	db.prepare("DELETE FROM assets WHERE id = ?").run(id);
+	d.delete(assets).where(eq(assets.id, id)).run();
 	return true;
 }
 
 export function updateAssetStatus(id: number, status: string, filepath?: string): void {
-	const db = getDb();
+	const d = db();
 	if (filepath) {
-		db.prepare("UPDATE assets SET status = ?, filepath = ? WHERE id = ?").run(status, filepath, id);
+		d.update(assets).set({ status, filepath }).where(eq(assets.id, id)).run();
 	} else {
-		db.prepare("UPDATE assets SET status = ? WHERE id = ?").run(status, id);
+		d.update(assets).set({ status }).where(eq(assets.id, id)).run();
 	}
 }
 
@@ -441,6 +442,7 @@ export interface CarMetadata {
 	confidence: number;
 }
 
+/** Convert a Drizzle car_metadata row to the CarMetadata interface. */
 function rowToMeta(row: CarMetadataRow): CarMetadata {
 	return {
 		id: row.id,
@@ -469,20 +471,59 @@ function rowToMeta(row: CarMetadataRow): CarMetadata {
 	};
 }
 
+/** Convert a Drizzle schema row to CarMetadataRow (snake_case). */
+function toMetaRow(row: typeof carMetadata.$inferSelect): CarMetadataRow {
+	return {
+		id: row.id,
+		asset_id: row.assetId,
+		make: row.make ?? "",
+		model: row.model ?? "",
+		year: row.year,
+		trim: row.trim,
+		body_type: row.bodyType,
+		dimensions_json: row.dimensionsJson,
+		engine_json: row.engineJson,
+		performance_json: row.performanceJson,
+		drivetrain: row.drivetrain,
+		transmission_json: row.transmissionJson,
+		brakes_json: row.brakesJson,
+		suspension_json: row.suspensionJson,
+		tires_json: row.tiresJson,
+		aero_json: row.aeroJson,
+		weight_kg: row.weightKg,
+		weight_front_pct: row.weightFrontPct,
+		fuel_type: row.fuelType,
+		price_json: row.priceJson,
+		eras: row.eras,
+		tags: row.tags,
+		source: row.source,
+		confidence: row.confidence ?? 0.5,
+		created_at: row.createdAt,
+		updated_at: row.updatedAt,
+	};
+}
+
 export function getAllCars(): CarMetadata[] {
-	const rows = getDb().prepare("SELECT * FROM car_metadata ORDER BY make, model, year").all() as CarMetadataRow[];
-	return rows.map(rowToMeta);
+	const rows = db()
+		.select()
+		.from(carMetadata)
+		.orderBy(asc(carMetadata.make), asc(carMetadata.model), asc(carMetadata.year))
+		.all();
+	return rows.map((r) => rowToMeta(toMetaRow(r)));
 }
 
 export function searchCars(query: string, limit = 20): CarMetadata[] {
-	const db = getDb();
 	const q = `%${query}%`;
-	const rows = db
-		.prepare(
-			"SELECT * FROM car_metadata WHERE make LIKE ? OR model LIKE ? OR trim LIKE ? OR tags LIKE ? ORDER BY confidence DESC LIMIT ?",
+	const rows = db()
+		.select()
+		.from(carMetadata)
+		.where(
+			or(like(carMetadata.make, q), like(carMetadata.model, q), like(carMetadata.trim, q), like(carMetadata.tags, q)),
 		)
-		.all(q, q, q, q, limit) as CarMetadataRow[];
-	return rows.map(rowToMeta);
+		.orderBy(desc(carMetadata.confidence))
+		.limit(limit)
+		.all();
+	return rows.map((r) => rowToMeta(toMetaRow(r)));
 }
 
 /** Filter cars by specific fields. All params optional. */
@@ -499,61 +540,50 @@ export function filterCars(filters: {
 	tag?: string;
 	limit?: number;
 }): CarMetadata[] {
-	const db = getDb();
-	const conditions: string[] = [];
-	const params: unknown[] = [];
+	const d = db();
+	const conditions = [];
 
-	const add = (col: string, val: unknown) => {
-		conditions.push(`${col} = ?`);
-		params.push(val);
-	};
-
-	const addLike = (col: string, val: string) => {
-		conditions.push(`${col} LIKE ?`);
-		params.push(`%${val}%`);
-	};
-
-	const addRange = (col: string, min?: number, max?: number) => {
-		if (min !== undefined) {
-			conditions.push(`${col} >= ?`);
-			params.push(min);
-		}
-		if (max !== undefined) {
-			conditions.push(`${col} <= ?`);
-			params.push(max);
-		}
-	};
-
-	if (filters.drivetrain) add("drivetrain", filters.drivetrain);
-	if (filters.body_type) addLike("body_type", filters.body_type);
-	addRange("year", filters.min_year, filters.max_year);
-	if (filters.eras) addLike("eras", filters.eras);
-	if (filters.tag) addLike("tags", filters.tag);
-	addRange("weight_kg", filters.min_weight_kg, filters.max_weight_kg);
-
-	// JSON field filters need json_extract
-	if (filters.min_power_hp !== undefined || filters.max_power_hp !== undefined) {
-		if (filters.min_power_hp !== undefined) {
-			conditions.push("json_extract(engine_json, '$.power_hp') >= ?");
-			params.push(filters.min_power_hp);
-		}
-		if (filters.max_power_hp !== undefined) {
-			conditions.push("json_extract(engine_json, '$.power_hp') <= ?");
-			params.push(filters.max_power_hp);
-		}
+	if (filters.drivetrain) {
+		conditions.push(eq(carMetadata.drivetrain, filters.drivetrain));
+	}
+	if (filters.body_type) {
+		conditions.push(like(carMetadata.bodyType, `%${filters.body_type}%`));
+	}
+	if (filters.min_year !== undefined) {
+		conditions.push(sql`${carMetadata.year} >= ${filters.min_year}`);
+	}
+	if (filters.max_year !== undefined) {
+		conditions.push(sql`${carMetadata.year} <= ${filters.max_year}`);
+	}
+	if (filters.eras) {
+		conditions.push(like(carMetadata.eras, `%${filters.eras}%`));
+	}
+	if (filters.tag) {
+		conditions.push(like(carMetadata.tags, `%${filters.tag}%`));
+	}
+	if (filters.min_weight_kg !== undefined) {
+		conditions.push(sql`${carMetadata.weightKg} >= ${filters.min_weight_kg}`);
+	}
+	if (filters.max_weight_kg !== undefined) {
+		conditions.push(sql`${carMetadata.weightKg} <= ${filters.max_weight_kg}`);
+	}
+	if (filters.min_power_hp !== undefined) {
+		conditions.push(sql`json_extract(${carMetadata.engineJson}, '$.power_hp') >= ${filters.min_power_hp}`);
+	}
+	if (filters.max_power_hp !== undefined) {
+		conditions.push(sql`json_extract(${carMetadata.engineJson}, '$.power_hp') <= ${filters.max_power_hp}`);
 	}
 
 	const limit = filters.limit ?? 50;
-	const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-	const sql = `SELECT * FROM car_metadata ${where} ORDER BY confidence DESC LIMIT ?`;
+	const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-	const rows = db.prepare(sql).all(...params, limit) as CarMetadataRow[];
-	return rows.map(rowToMeta);
+	const rows = d.select().from(carMetadata).where(where).orderBy(desc(carMetadata.confidence)).limit(limit).all();
+	return rows.map((r) => rowToMeta(toMetaRow(r)));
 }
 
 export function getCarById(id: number): CarMetadata | undefined {
-	const row = getDb().prepare("SELECT * FROM car_metadata WHERE id = ?").get(id) as CarMetadataRow | undefined;
-	return row ? rowToMeta(row) : undefined;
+	const row = db().select().from(carMetadata).where(eq(carMetadata.id, id)).get();
+	return row ? rowToMeta(toMetaRow(row)) : undefined;
 }
 
 export function upsertCarMetadata(car: {
@@ -580,122 +610,101 @@ export function upsertCarMetadata(car: {
 	source?: string;
 	confidence?: number;
 }): number {
-	const db = getDb();
+	const d = db();
+	const rawDb = getRawDb();
 	const now = new Date().toISOString();
 	const tagsStr = car.tags?.join(",") ?? null;
 
-	const existing = db
+	const existing = rawDb
 		.prepare("SELECT id, confidence FROM car_metadata WHERE make = ? AND model = ? AND year = ?")
 		.get(car.make, car.model, car.year) as { id: number; confidence: number } | undefined;
 
 	if (existing && (car.confidence ?? 0.5) > existing.confidence) {
 		// Merge: update only non-null fields
-		const current = db.prepare("SELECT * FROM car_metadata WHERE id = ?").get(existing.id) as CarMetadataRow;
+		const current = d.select().from(carMetadata).where(eq(carMetadata.id, existing.id)).get()!;
+		const curRow = toMetaRow(current);
 		const dims = {
-			...parseJson<CarDimensions>(current.dimensions_json),
+			...parseJson<CarDimensions>(curRow.dimensions_json),
 			...car.dimensions,
 		};
-		const eng = { ...parseJson<CarEngine>(current.engine_json), ...car.engine };
+		const eng = { ...parseJson<CarEngine>(curRow.engine_json), ...car.engine };
 		const perf = {
-			...parseJson<CarPerformance>(current.performance_json),
+			...parseJson<CarPerformance>(curRow.performance_json),
 			...car.performance,
 		};
 		const trans = {
-			...parseJson<CarTransmission>(current.transmission_json),
+			...parseJson<CarTransmission>(curRow.transmission_json),
 			...car.transmission,
 		};
 		const brakes = {
-			...parseJson<CarBrakes>(current.brakes_json),
+			...parseJson<CarBrakes>(curRow.brakes_json),
 			...car.brakes,
 		};
 		const susp = {
-			...parseJson<CarSuspension>(current.suspension_json),
+			...parseJson<CarSuspension>(curRow.suspension_json),
 			...car.suspension,
 		};
-		const tires = { ...parseJson<CarTires>(current.tires_json), ...car.tires };
-		const aero = { ...parseJson<CarAero>(current.aero_json), ...car.aero };
-		const price = { ...parseJson<CarPrice>(current.price_json), ...car.price };
+		const tires = { ...parseJson<CarTires>(curRow.tires_json), ...car.tires };
+		const aero = { ...parseJson<CarAero>(curRow.aero_json), ...car.aero };
+		const price = { ...parseJson<CarPrice>(curRow.price_json), ...car.price };
 
-		db.prepare(
-			`
-			UPDATE car_metadata SET
-				trim = COALESCE(NULLIF(?, trim), trim),
-				body_type = COALESCE(NULLIF(?, body_type), body_type),
-				dimensions_json = ?, engine_json = ?, performance_json = ?,
-				drivetrain = COALESCE(NULLIF(?, drivetrain), drivetrain),
-				transmission_json = ?, brakes_json = ?, suspension_json = ?,
-				tires_json = ?, aero_json = ?,
-				weight_kg = COALESCE(?, weight_kg),
-				weight_front_pct = COALESCE(?, weight_front_pct),
-				fuel_type = COALESCE(NULLIF(?, fuel_type), fuel_type),
-				price_json = ?,
-				eras = COALESCE(NULLIF(?, eras), eras),
-				tags = COALESCE(NULLIF(?, tags), tags),
-				source = ?, confidence = ?, updated_at = ?
-			WHERE id = ?
-		`,
-		).run(
-			car.trim ?? null,
-			car.body_type ?? null,
-			JSON.stringify(dims),
-			JSON.stringify(eng),
-			JSON.stringify(perf),
-			car.drivetrain ?? null,
-			JSON.stringify(trans),
-			JSON.stringify(brakes),
-			JSON.stringify(susp),
-			JSON.stringify(tires),
-			JSON.stringify(aero),
-			car.weight_kg ?? null,
-			car.weight_front_pct ?? null,
-			car.fuel_type ?? null,
-			JSON.stringify(price),
-			car.eras ?? null,
-			tagsStr,
-			car.source ?? "manual",
-			car.confidence ?? 0.5,
-			now,
-			existing.id,
-		);
+		d.update(carMetadata)
+			.set({
+				trim: car.trim ?? null,
+				bodyType: car.body_type ?? null,
+				dimensionsJson: JSON.stringify(dims),
+				engineJson: JSON.stringify(eng),
+				performanceJson: JSON.stringify(perf),
+				drivetrain: car.drivetrain ?? null,
+				transmissionJson: JSON.stringify(trans),
+				brakesJson: JSON.stringify(brakes),
+				suspensionJson: JSON.stringify(susp),
+				tiresJson: JSON.stringify(tires),
+				aeroJson: JSON.stringify(aero),
+				weightKg: car.weight_kg ?? null,
+				weightFrontPct: car.weight_front_pct ?? null,
+				fuelType: car.fuel_type ?? null,
+				priceJson: JSON.stringify(price),
+				eras: car.eras ?? null,
+				tags: tagsStr,
+				source: car.source ?? "manual",
+				confidence: car.confidence ?? 0.5,
+				updatedAt: now,
+			})
+			.where(eq(carMetadata.id, existing.id))
+			.run();
 		return existing.id;
 	}
 
 	if (!existing) {
-		const result = db
-			.prepare(
-				`
-			INSERT INTO car_metadata (make, model, year, trim, body_type, dimensions_json, engine_json,
-				performance_json, drivetrain, transmission_json, brakes_json, suspension_json,
-				tires_json, aero_json, weight_kg, weight_front_pct, fuel_type, price_json,
-				eras, tags, source, confidence)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`,
-			)
-			.run(
-				car.make,
-				car.model,
-				car.year,
-				car.trim ?? null,
-				car.body_type ?? null,
-				JSON.stringify(car.dimensions ?? {}),
-				JSON.stringify(car.engine ?? {}),
-				JSON.stringify(car.performance ?? {}),
-				car.drivetrain ?? null,
-				JSON.stringify(car.transmission ?? {}),
-				JSON.stringify(car.brakes ?? {}),
-				JSON.stringify(car.suspension ?? {}),
-				JSON.stringify(car.tires ?? {}),
-				JSON.stringify(car.aero ?? {}),
-				car.weight_kg ?? null,
-				car.weight_front_pct ?? null,
-				car.fuel_type ?? null,
-				JSON.stringify(car.price ?? {}),
-				car.eras ?? null,
-				tagsStr,
-				car.source ?? "manual",
-				car.confidence ?? 0.5,
-			);
-		return result.lastInsertRowid as number;
+		const result = d
+			.insert(carMetadata)
+			.values({
+				make: car.make,
+				model: car.model,
+				year: car.year,
+				trim: car.trim ?? null,
+				bodyType: car.body_type ?? null,
+				dimensionsJson: JSON.stringify(car.dimensions ?? {}),
+				engineJson: JSON.stringify(car.engine ?? {}),
+				performanceJson: JSON.stringify(car.performance ?? {}),
+				drivetrain: car.drivetrain ?? null,
+				transmissionJson: JSON.stringify(car.transmission ?? {}),
+				brakesJson: JSON.stringify(car.brakes ?? {}),
+				suspensionJson: JSON.stringify(car.suspension ?? {}),
+				tiresJson: JSON.stringify(car.tires ?? {}),
+				aeroJson: JSON.stringify(car.aero ?? {}),
+				weightKg: car.weight_kg ?? null,
+				weightFrontPct: car.weight_front_pct ?? null,
+				fuelType: car.fuel_type ?? null,
+				priceJson: JSON.stringify(car.price ?? {}),
+				eras: car.eras ?? null,
+				tags: tagsStr,
+				source: car.source ?? "manual",
+				confidence: car.confidence ?? 0.5,
+			})
+			.run();
+		return Number(result.lastInsertRowid);
 	}
 
 	return existing.id;
@@ -714,49 +723,65 @@ export interface CarConfigRow {
 	created_date: string;
 }
 
+/** Convert a Drizzle car_configs row to CarConfigRow (snake_case). */
+function toConfigRow(row: typeof carConfigs.$inferSelect): CarConfigRow {
+	return {
+		id: row.id,
+		asset_id: row.assetId,
+		car_metadata_id: row.carMetadataId,
+		config_json: row.configJson,
+		model_schema_json: row.modelSchemaJson,
+		physics_overrides_json: row.physicsOverridesJson,
+		attribution: row.attribution,
+		created_date: row.createdDate,
+	};
+}
+
 export function saveCarConfig(
 	assetId: number,
 	configJson: string,
 	modelSchemaJson?: string,
 	carMetadataId?: number,
 ): number {
-	const db = getDb();
-	const result = db
-		.prepare(
-			`
-		INSERT INTO car_configs (asset_id, car_metadata_id, config_json, model_schema_json)
-		VALUES (?, ?, ?, ?)
-	`,
-		)
-		.run(assetId, carMetadataId ?? null, configJson, modelSchemaJson ?? null);
+	const result = db()
+		.insert(carConfigs)
+		.values({
+			assetId,
+			carMetadataId: carMetadataId ?? null,
+			configJson,
+			modelSchemaJson: modelSchemaJson ?? null,
+		})
+		.run();
 
 	// Mark asset as ready
 	updateAssetStatus(assetId, "ready");
 
-	return result.lastInsertRowid as number;
+	return Number(result.lastInsertRowid);
 }
 
 export function getCarConfigs(): CarConfigRow[] {
-	return getDb().prepare("SELECT * FROM car_configs ORDER BY created_date DESC").all() as CarConfigRow[];
+	const rows = db().select().from(carConfigs).orderBy(desc(carConfigs.createdDate)).all();
+	return rows.map(toConfigRow);
 }
 
 export function getCarConfigById(id: number): CarConfigRow | undefined {
-	return getDb().prepare("SELECT * FROM car_configs WHERE id = ?").get(id) as CarConfigRow | undefined;
+	const row = db().select().from(carConfigs).where(eq(carConfigs.id, id)).get();
+	return row ? toConfigRow(row) : undefined;
 }
 
 export function getCarConfigsByAsset(assetId: number): CarConfigRow[] {
-	return getDb().prepare("SELECT * FROM car_configs WHERE asset_id = ?").all(assetId) as CarConfigRow[];
+	const rows = db().select().from(carConfigs).where(eq(carConfigs.assetId, assetId)).all();
+	return rows.map(toConfigRow);
 }
 
 /** Delete a car config by ID. Returns the associated asset for S3 cleanup. */
 export function deleteCarConfig(configId: number): { s3Key: string | null; assetId: number } | null {
-	const db = getDb();
 	const config = getCarConfigById(configId);
 	if (!config) return null;
 	const asset = getAssetById(config.asset_id);
 	const s3Key = asset?.s3_key ?? null;
 	// Delete config row
-	db.prepare("DELETE FROM car_configs WHERE id = ?").run(configId);
+	db().delete(carConfigs).where(eq(carConfigs.id, configId)).run();
 	// Also delete the asset if no other configs reference it
 	const remaining = getCarConfigsByAsset(config.asset_id);
 	if (remaining.length === 0 && config.asset_id) {
@@ -765,7 +790,7 @@ export function deleteCarConfig(configId: number): { s3Key: string | null; asset
 	return { s3Key, assetId: config.asset_id };
 }
 
-/** Full car import: creates asset + car_config + attribution rows in one transaction. */
+/** Full car import: creates asset + car_config rows in one transaction. */
 export function insertCarImport(data: {
 	s3Key: string;
 	configJson: string;
@@ -774,55 +799,63 @@ export function insertCarImport(data: {
 	attribution?: string;
 	carMetadataId?: number;
 }): { configId: number; assetId: number; s3Key: string } {
-	const db = getDb();
+	const rawDb = getRawDb();
 	const hash = data.s3Key.replace(/^cars\//, "").replace(/\.glb$/, "");
 
-	// Create asset
-	const assetResult = db
-		.prepare(
-			`
-		INSERT INTO assets (filepath, sha256_hash, source_url, source_type, license, attribution, original_name, status, s3_key)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`,
-		)
-		.run(
-			`s3://${data.s3Key}`,
-			hash,
-			`s3://${data.s3Key}`,
-			"s3",
-			null,
-			data.attribution ?? null,
-			data.s3Key.split("/").pop() ?? "import.glb",
-			"ready",
-			data.s3Key,
-		);
-	const assetId = assetResult.lastInsertRowid as number;
+	// Use a transaction via the raw DB for atomicity (Drizzle's better-sqlite3
+	// transaction helper requires a callback, which is more complex here).
+	rawDb.exec("BEGIN");
 
-	// Create car config
-	const configResult = db
-		.prepare(
-			`
-		INSERT INTO car_configs (asset_id, car_metadata_id, config_json, model_schema_json, physics_overrides_json, attribution)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`,
-		)
-		.run(
-			assetId,
-			data.carMetadataId ?? null,
-			data.configJson,
-			data.modelSchemaJson ?? null,
-			data.physicsOverridesJson ?? null,
-			data.attribution ?? null,
-		);
-	const configId = configResult.lastInsertRowid as number;
+	try {
+		// Create asset
+		const assetResult = rawDb
+			.prepare(
+				`
+			INSERT INTO assets (filepath, sha256_hash, source_url, source_type, license, attribution, original_name, status, s3_key)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`,
+			)
+			.run(
+				`s3://${data.s3Key}`,
+				hash,
+				`s3://${data.s3Key}`,
+				"s3",
+				null,
+				data.attribution ?? null,
+				data.s3Key.split("/").pop() ?? "import.glb",
+				"ready",
+				data.s3Key,
+			);
+		const assetId = Number(assetResult.lastInsertRowid);
 
-	// Mark any existing asset with the same hash as "imported" (no longer pending)
-	db.prepare("UPDATE assets SET status = 'imported' WHERE sha256_hash = ? AND status = 'pending'").run(hash);
+		// Create car config
+		const configResult = rawDb
+			.prepare(
+				`
+			INSERT INTO car_configs (asset_id, car_metadata_id, config_json, model_schema_json, physics_overrides_json, attribution)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`,
+			)
+			.run(
+				assetId,
+				data.carMetadataId ?? null,
+				data.configJson,
+				data.modelSchemaJson ?? null,
+				data.physicsOverridesJson ?? null,
+				data.attribution ?? null,
+			);
+		const configId = Number(configResult.lastInsertRowid);
 
-	return { configId, assetId, s3Key: data.s3Key };
+		// Mark any existing asset with the same hash as "imported" (no longer pending)
+		rawDb.prepare("UPDATE assets SET status = 'imported' WHERE sha256_hash = ? AND status = 'pending'").run(hash);
+
+		rawDb.exec("COMMIT");
+		return { configId, assetId, s3Key: data.s3Key };
+	} catch (err) {
+		rawDb.exec("ROLLBACK");
+		throw err;
+	}
 }
-
-/** Close the database connection. */
 
 // ── Attribution queries ──────────────────────────────────────────────
 
@@ -843,6 +876,26 @@ export interface AttributionRow {
 	created_at: string;
 }
 
+/** Convert a Drizzle attributions row to AttributionRow (snake_case). */
+function toAttrRow(row: typeof attributions.$inferSelect): AttributionRow {
+	return {
+		id: row.id,
+		asset_id: row.assetId,
+		car_config_id: row.carConfigId,
+		source_type: row.sourceType,
+		model_name: row.modelName,
+		author_name: row.authorName,
+		author_url: row.authorUrl,
+		license_label: row.licenseLabel,
+		license_slug: row.licenseSlug,
+		source_url: row.sourceUrl,
+		license_url: row.licenseUrl,
+		description: row.description,
+		notes: row.notes,
+		created_at: row.createdAt,
+	};
+}
+
 export function insertAttribution(data: {
 	asset_id?: number;
 	car_config_id?: number;
@@ -857,67 +910,75 @@ export function insertAttribution(data: {
 	description?: string;
 	notes?: string;
 }): number {
-	const db = getDb();
-	const result = db
-		.prepare(
-			`
-		INSERT INTO attributions (asset_id, car_config_id, source_type, model_name, author_name,
-			author_url, license_label, license_slug, source_url, license_url, description, notes)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`,
-		)
-		.run(
-			data.asset_id ?? null,
-			data.car_config_id ?? null,
-			data.source_type ?? "sketchfab",
-			data.model_name ?? null,
-			data.author_name ?? null,
-			data.author_url ?? null,
-			data.license_label ?? null,
-			data.license_slug ?? null,
-			data.source_url ?? null,
-			data.license_url ?? null,
-			data.description ?? null,
-			data.notes ?? null,
-		);
-	return result.lastInsertRowid as number;
+	const result = db()
+		.insert(attributions)
+		.values({
+			assetId: data.asset_id ?? null,
+			carConfigId: data.car_config_id ?? null,
+			sourceType: data.source_type ?? "sketchfab",
+			modelName: data.model_name ?? null,
+			authorName: data.author_name ?? null,
+			authorUrl: data.author_url ?? null,
+			licenseLabel: data.license_label ?? null,
+			licenseSlug: data.license_slug ?? null,
+			sourceUrl: data.source_url ?? null,
+			licenseUrl: data.license_url ?? null,
+			description: data.description ?? null,
+			notes: data.notes ?? null,
+		})
+		.run();
+	return Number(result.lastInsertRowid);
 }
 
 export function getAttributionByAsset(assetId: number): AttributionRow | undefined {
-	return getDb().prepare("SELECT * FROM attributions WHERE asset_id = ?").get(assetId) as AttributionRow | undefined;
+	const row = db().select().from(attributions).where(eq(attributions.assetId, assetId)).get();
+	return row ? toAttrRow(row) : undefined;
 }
 
 export function getAttributionByConfig(configId: number): AttributionRow | undefined {
-	return getDb().prepare("SELECT * FROM attributions WHERE car_config_id = ?").get(configId) as
-		| AttributionRow
-		| undefined;
+	const row = db().select().from(attributions).where(eq(attributions.carConfigId, configId)).get();
+	return row ? toAttrRow(row) : undefined;
 }
 
 export function getAllAttributions(): AttributionRow[] {
-	return getDb().prepare("SELECT * FROM attributions ORDER BY created_at DESC").all() as AttributionRow[];
+	const rows = db().select().from(attributions).orderBy(desc(attributions.createdAt)).all();
+	return rows.map(toAttrRow);
 }
 
 export function updateAttribution(id: number, data: Partial<AttributionRow>): void {
-	const fields: string[] = [];
-	const values: unknown[] = [];
+	const fields: Partial<typeof attributions.$inferInsert> = {};
 	for (const [key, val] of Object.entries(data)) {
 		if (key === "id" || key === "created_at") continue;
-		fields.push(`${key} = ?`);
-		values.push(val);
+		// Map snake_case to camelCase
+		const mapping: Record<string, keyof typeof fields> = {
+			asset_id: "assetId",
+			car_config_id: "carConfigId",
+			source_type: "sourceType",
+			model_name: "modelName",
+			author_name: "authorName",
+			author_url: "authorUrl",
+			license_label: "licenseLabel",
+			license_slug: "licenseSlug",
+			source_url: "sourceUrl",
+			license_url: "licenseUrl",
+			description: "description",
+			notes: "notes",
+		};
+		const mapped = mapping[key];
+		if (mapped) {
+			(fields as Record<string, unknown>)[mapped] = val;
+		}
 	}
-	if (fields.length === 0) return;
-	values.push(id);
-	getDb()
-		.prepare(`UPDATE attributions SET ${fields.join(", ")} WHERE id = ?`)
-		.run(...values);
+	if (Object.keys(fields).length === 0) return;
+	db().update(attributions).set(fields).where(eq(attributions.id, id)).run();
 }
 
 export function deleteAttribution(id: number): void {
-	getDb().prepare("DELETE FROM attributions WHERE id = ?").run(id);
+	db().delete(attributions).where(eq(attributions.id, id)).run();
 }
+
+/** Close the database connection and reset the singleton. */
 export function closeDb(): void {
-	if (_db) {
-		_db.close();
-		_db = null;
-	}
+	resetDrizzle();
+	_initialized = false;
 }
