@@ -5,10 +5,11 @@
  * Data sourced from dependency-cruiser JSON and Drizzle schema.
  */
 
-import type { DepcruiseResult } from "./types.ts";
 import { ForceGraph } from "./graph.ts";
 import { Sidebar } from "./sidebar.ts";
+import type { DepcruiseResult } from "./types.ts";
 
+// biome-ignore lint/style/noNonNullAssertion: DOM element guaranteed by HTML
 const loading = document.getElementById("loading")!;
 const canvas = document.getElementById("graph-canvas") as HTMLCanvasElement;
 
@@ -50,11 +51,13 @@ function renderLoop() {
 }
 
 // ── Toolbar actions ──
-(window as any).zoomIn = () => graph.zoom(1.3);
-(window as any).zoomOut = () => graph.zoom(0.7);
-(window as any).resetView = () => graph.resetView();
-(window as any).toggleLayout = () => graph.toggleLayout();
-(window as any).hideDetail = () => {
+const win = window as unknown as Record<string, (...args: unknown[]) => void>;
+win.zoomIn = () => graph.zoom(1.3);
+win.zoomOut = () => graph.zoom(0.7);
+win.resetView = () => graph.resetView();
+win.toggleLayout = () => graph.toggleLayout();
+win.hideDetail = () => {
+	// biome-ignore lint/style/noNonNullAssertion: DOM element guaranteed by HTML
 	document.getElementById("detail")!.classList.remove("visible");
 	graph.selectNode(null);
 };

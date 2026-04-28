@@ -5,7 +5,7 @@
  * to lay out the dependency graph. Supports pan, zoom, and node selection.
  */
 
-import type { DepcruiseResult, GraphNode, GraphEdge } from "./types.ts";
+import type { DepcruiseResult, GraphEdge, GraphNode } from "./types.ts";
 
 const GROUP_COLORS = {
 	client: "#5c9eff",
@@ -47,6 +47,7 @@ export class ForceGraph {
 
 	constructor(canvas: HTMLCanvasElement, data: DepcruiseResult) {
 		this.canvas = canvas;
+		// biome-ignore lint/style/noNonNullAssertion: HTMLCanvasElement always has 2d context
 		this.ctx = canvas.getContext("2d")!;
 		this.buildGraph(data);
 		this.setupInteraction();
@@ -113,7 +114,7 @@ export class ForceGraph {
 					if (matchFrom) {
 						node.violations.push(rule.name);
 						if (!this.violations.has(node.id)) this.violations.set(node.id, new Set());
-						this.violations.get(node.id)!.add(rule.name);
+						this.violations.get(node.id)?.add(rule.name);
 					}
 				}
 			}
@@ -129,7 +130,7 @@ export class ForceGraph {
 
 	private shortLabel(source: string): string {
 		// Strip common prefixes
-		let s = source.replace(/^src\//, "").replace(/\\/g, "/");
+		const s = source.replace(/^src\//, "").replace(/\\/g, "/");
 		// Show last 2-3 segments
 		const parts = s.split("/");
 		if (parts.length > 2) return parts.slice(-2).join("/");
@@ -152,12 +153,12 @@ export class ForceGraph {
 			for (let j = i + 1; j < nodes.length; j++) {
 				const a = nodes[i];
 				const b = nodes[j];
-				let dx = b.x - a.x;
-				let dy = b.y - a.y;
-				let dist = Math.sqrt(dx * dx + dy * dy) || 1;
-				let force = (repulsionStrength * k * k) / dist;
-				let fx = (dx / dist) * force;
-				let fy = (dy / dist) * force;
+				const dx = b.x - a.x;
+				const dy = b.y - a.y;
+				const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+				const force = (repulsionStrength * k * k) / dist;
+				const fx = (dx / dist) * force;
+				const fy = (dy / dist) * force;
 				a.vx -= fx * this.cooling;
 				a.vy -= fy * this.cooling;
 				b.vx += fx * this.cooling;
@@ -170,12 +171,12 @@ export class ForceGraph {
 			const a = this.nodes.get(edge.source);
 			const b = this.nodes.get(edge.target);
 			if (!a || !b) continue;
-			let dx = b.x - a.x;
-			let dy = b.y - a.y;
-			let dist = Math.sqrt(dx * dx + dy * dy) || 1;
-			let force = (dist - k) * attractionStrength;
-			let fx = (dx / dist) * force;
-			let fy = (dy / dist) * force;
+			const dx = b.x - a.x;
+			const dy = b.y - a.y;
+			const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+			const force = (dist - k) * attractionStrength;
+			const fx = (dx / dist) * force;
+			const fy = (dy / dist) * force;
 			a.vx += fx * this.cooling;
 			a.vy += fy * this.cooling;
 			b.vx -= fx * this.cooling;
@@ -412,8 +413,11 @@ export class ForceGraph {
 	}
 
 	showNodeDetail(node: GraphNode) {
+		// biome-ignore lint/style/noNonNullAssertion: DOM element guaranteed by HTML
 		const detail = document.getElementById("detail")!;
+		// biome-ignore lint/style/noNonNullAssertion: DOM element guaranteed by HTML
 		const name = document.getElementById("detail-name")!;
+		// biome-ignore lint/style/noNonNullAssertion: DOM element guaranteed by HTML
 		const body = document.getElementById("detail-body")!;
 
 		name.textContent = node.id;
@@ -483,8 +487,8 @@ export class ForceGraph {
 		const scaleX = rect.width / graphW;
 		const scaleY = rect.height / graphH;
 		this.scale = Math.min(scaleX, scaleY, 2);
-		this.offsetX = -(minX + maxX) / 2 * this.scale;
-		this.offsetY = -(minY + maxY) / 2 * this.scale;
+		this.offsetX = (-(minX + maxX) / 2) * this.scale;
+		this.offsetY = (-(minY + maxY) / 2) * this.scale;
 	}
 
 	toggleLayout() {
@@ -514,8 +518,9 @@ export class ForceGraph {
 }
 
 // Global navigation helper for detail panel clicks
-(window as any)._navigateTo = (nodeId: string) => {
+(window as unknown as Record<string, unknown>)._navigateTo = (nodeId: string) => {
 	// Find and click the node in the graph
+	// biome-ignore lint/style/noNonNullAssertion: DOM element guaranteed by HTML
 	const detail = document.getElementById("detail")!;
 	detail.classList.remove("visible");
 	// Dispatch a custom event that app.ts can pick up

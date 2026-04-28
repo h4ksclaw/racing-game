@@ -4,11 +4,11 @@
  * Only active when NODE_ENV !== production.
  */
 
-import express from "express";
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import express from "express";
 import * as schema from "./schema.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,19 +32,18 @@ router.get("/dependencies", (_req, res) => {
 				res.status(503).json({ error: ".dependency-cruiser.cjs not found" });
 				return;
 			}
-			_depCache = execSync(
-				`npx depcruise src --config .dependency-cruiser.cjs --output-type json`,
-				{
-					cwd: PROJECT_ROOT,
-					timeout: 30_000,
-					encoding: "utf-8",
-					stdio: ["pipe", "pipe", "pipe"],
-				},
-			);
+			_depCache = execSync(`npx depcruise src --config .dependency-cruiser.cjs --output-type json`, {
+				cwd: PROJECT_ROOT,
+				timeout: 30_000,
+				encoding: "utf-8",
+				stdio: ["pipe", "pipe", "pipe"],
+			});
 		}
 		res.type("json").send(_depCache);
-	} catch (err: any) {
-		res.status(500).json({ error: err.message, stderr: err.stderr?.toString() });
+	} catch (err: unknown) {
+		const msg = err instanceof Error ? err.message : String(err);
+		const stderr = (err as Record<string, unknown>)?.stderr;
+		res.status(500).json({ error: msg, stderr: stderr ? String(stderr) : undefined });
 	}
 });
 
@@ -101,18 +100,21 @@ interface TableInfo {
 	indexes: string[];
 }
 
-function extractTableInfo(tableName: string, table: any): TableInfo {
+function extractTableInfo(tableName: string, table: unknown): TableInfo {
 	const columns: ColumnInfo[] = [];
-	for (const [colName, colDef] of Object.entries(table)) {
+	const entries = Object.entries(table as Record<string, unknown>);
+	for (const [colName, colDef] of entries) {
 		if (typeof colDef !== "object" || colDef === null || !("dataType" in colDef)) continue;
-		const def = colDef as any;
+		const def = colDef as Record<string, unknown>;
 		columns.push({
 			name: String(colName),
-			type: def.dataType || "unknown",
+			type: String(def.dataType || def.columnType || "unknown"),
 			nullable: !def.notNull,
-			primaryKey: !!def.primaryKey,
+			primaryKey: !!def.primary,
 			default: def.default !== undefined ? String(def.default) : undefined,
-			references: def.reference ? `${def.reference.table}.${def.reference.column}` : undefined,
+			references: def.reference
+				? `${(def.reference as Record<string, unknown>).table}.${(def.reference as Record<string, unknown>).column}`
+				: undefined,
 		});
 	}
 	return {
@@ -124,33 +126,29 @@ function extractTableInfo(tableName: string, table: any): TableInfo {
 
 function extractRoutes(app: express.Express): Array<{ method: string; path: string }> {
 	const routes: Array<{ method: string; path: string }> = [];
-	const stack = (app as any)._router?.stack || [];
+	// Express 5 uses app.router (not app._router)
+	const stack = ((app as unknown as Record<string, unknown>).router ??
+		(app as unknown as Record<string, unknown>)._router) as Array<Record<string, unknown>> | undefined;
 
-	function walk(layer: any, prefix = "") {
-		if (layer.route) {
-			const methods = Object.keys(layer.route.methods).filter((m) => m !== "_all");
-			for (const method of methods) {
-				routes.push({
-					method: method.toUpperCase(),
-					path: `${prefix}${layer.route.path}`,
-				});
-			}
-		} else if (layer.name === "router" && layer.handle?.stack) {
-			const p = layer.regexp.source
-				.replace("^\\/", "")
-				.replace("\\/?(?=\\/|$)", "")
-				.replace(/\?\(\?=\\\/\|\$\)/g, "");
-			for (const sub of layer.handle.stack) {
-				walk(sub, prefix + "/" + p);
-			}
+	function walk(layer: Record<string, unknown>) {
+		const route = layer.route as Record<string, Record<string, unknown>> | undefined;
+		if (!route?.methods) return;
+		const methods = Object.keys(route.methods).filter((m) => m !== "_all");
+		for (const method of methods) {
+			routes.push({
+				method: method.toUpperCase(),
+				path: String(route?.path),
+			});
 		}
 	}
 
-	for (const layer of stack) {
+	for (const layer of stack ?? []) {
 		walk(layer);
 	}
 
-	return routes.sort((a, b) => `${a.method} ${a.path}`.localeCompare(`${b.method} ${b.path}`));
+	return routes
+		.filter((r) => r.path && typeof r.path === "string")
+		.sort((a, b) => `${a.method} ${a.path}`.localeCompare(`${b.method} ${b.path}`));
 }
 
 export default router;

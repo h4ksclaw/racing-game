@@ -16,7 +16,9 @@ export class Sidebar {
 	}
 
 	private render() {
+		// biome-ignore lint/style/noNonNullAssertion: DOM element guaranteed by HTML
 		const nav = document.getElementById("nav")!;
+		// biome-ignore lint/style/noNonNullAssertion: DOM element guaranteed by HTML
 		const stats = document.getElementById("stats")!;
 
 		// Navigation sections
@@ -91,12 +93,12 @@ export class Sidebar {
 		`;
 
 		// Nav click handlers
-		nav.querySelectorAll(".nav-item").forEach((el) => {
+		for (const el of nav.querySelectorAll(".nav-item")) {
 			el.addEventListener("click", () => {
-				nav.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
+				for (const n of nav.querySelectorAll(".nav-item")) n.classList.remove("active");
 				el.classList.add("active");
 			});
-		});
+		}
 	}
 
 	private countViolations(): number {
