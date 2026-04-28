@@ -92,6 +92,13 @@ interface LobbyRoom {
 const app = express();
 app.use(express.json());
 
+// ── Dev Insights (dev only) ─────────────────────────────────────────────
+if (process.env.NODE_ENV !== "production") {
+	const { default: devInsights, registerEndpointDiscovery } = await import("./dev-insights.js");
+	app.use("/api/dev-insights", devInsights);
+	registerEndpointDiscovery(app);
+}
+
 const lobbies = new Map<string, LobbyRoom>();
 
 function generateCode(): string {

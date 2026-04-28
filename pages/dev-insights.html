@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Dev Insights — Racing Game</title>
+	<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		:root {
+			--bg: #0d0f16;
+			--panel: rgba(22, 25, 38, 0.95);
+			--border: rgba(46, 53, 80, 0.6);
+			--accent: #5c9eff;
+			--accent-dim: rgba(92, 158, 255, 0.35);
+			--orange: #ff8c4b;
+			--red: #f43f5e;
+			--green: #a3e635;
+			--purple: #a78bfa;
+			--yellow: #facc15;
+			--text: rgba(240, 244, 255, 0.55);
+			--text-dim: rgba(240, 244, 255, 0.35);
+			--text-bright: rgba(240, 244, 255, 0.85);
+			--text-white: #f0f4ff;
+			--mono: 'JetBrains Mono', monospace;
+			--sans: 'IBM Plex Sans', sans-serif;
+		}
+		body {
+			font-family: var(--sans);
+			background: var(--bg);
+			color: var(--text-bright);
+			overflow: hidden;
+			height: 100vh;
+		}
+		#app { display: flex; height: 100vh; }
+
+		/* ── Sidebar ── */
+		#sidebar {
+			width: 280px;
+			min-width: 280px;
+			background: var(--panel);
+			border-right: 1px solid var(--border);
+			display: flex;
+			flex-direction: column;
+			overflow-y: auto;
+		}
+		#sidebar h1 {
+			font-size: 14px;
+			font-weight: 600;
+			color: var(--text-white);
+			padding: 16px;
+			letter-spacing: 0.5px;
+			text-transform: uppercase;
+			border-bottom: 1px solid var(--border);
+		}
+		.nav-item {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			padding: 10px 16px;
+			cursor: pointer;
+			font-size: 13px;
+			color: var(--text);
+			transition: all 0.15s;
+			border-left: 2px solid transparent;
+		}
+		.nav-item:hover { background: rgba(92, 158, 255, 0.06); color: var(--text-bright); }
+		.nav-item.active {
+			background: rgba(92, 158, 255, 0.1);
+			color: var(--accent);
+			border-left-color: var(--accent);
+		}
+		.nav-item .badge {
+			margin-left: auto;
+			font-size: 10px;
+			font-family: var(--mono);
+			padding: 2px 6px;
+			border-radius: 4px;
+			background: rgba(92, 158, 255, 0.15);
+			color: var(--accent);
+		}
+		.nav-item .badge.warn { background: rgba(255, 140, 75, 0.15); color: var(--orange); }
+		.nav-item .badge.err { background: rgba(244, 63, 94, 0.15); color: var(--red); }
+
+		/* ── Stats panel ── */
+		#stats {
+			margin-top: auto;
+			padding: 12px 16px;
+			border-top: 1px solid var(--border);
+			font-size: 11px;
+			color: var(--text-dim);
+			font-family: var(--mono);
+		}
+		#stats .stat-row { display: flex; justify-content: space-between; padding: 2px 0; }
+		#stats .stat-val { color: var(--text); }
+
+		/* ── Main canvas area ── */
+		#main {
+			flex: 1;
+			position: relative;
+			overflow: hidden;
+		}
+		#graph-canvas {
+			width: 100%;
+			height: 100%;
+			display: block;
+			cursor: grab;
+		}
+		#graph-canvas:active { cursor: grabbing; }
+
+		/* ── Toolbar ── */
+		#toolbar {
+			position: absolute;
+			top: 12px;
+			right: 12px;
+			display: flex;
+			gap: 6px;
+			z-index: 10;
+		}
+		#toolbar button {
+			background: var(--panel);
+			border: 1px solid var(--border);
+			color: var(--text);
+			padding: 6px 12px;
+			border-radius: 6px;
+			font-size: 12px;
+			font-family: var(--sans);
+			cursor: pointer;
+			transition: all 0.15s;
+		}
+		#toolbar button:hover { background: rgba(92, 158, 255, 0.1); color: var(--accent); }
+
+		/* ── Legend ── */
+		#legend {
+			position: absolute;
+			bottom: 12px;
+			left: 12px;
+			display: flex;
+			gap: 16px;
+			font-size: 11px;
+			color: var(--text-dim);
+			background: var(--panel);
+			padding: 8px 14px;
+			border-radius: 8px;
+			border: 1px solid var(--border);
+			z-index: 10;
+		}
+		.legend-dot {
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			display: inline-block;
+			margin-right: 4px;
+			vertical-align: middle;
+		}
+
+		/* ── Detail panel ── */
+		#detail {
+			position: absolute;
+			top: 12px;
+			left: 12px;
+			width: 320px;
+			max-height: calc(100% - 60px);
+			background: var(--panel);
+			border: 1px solid var(--border);
+			border-radius: 10px;
+			padding: 16px;
+			overflow-y: auto;
+			z-index: 10;
+			display: none;
+			font-size: 13px;
+		}
+		#detail.visible { display: block; }
+		#detail h2 {
+			font-size: 13px;
+			color: var(--accent);
+			font-family: var(--mono);
+			word-break: break-all;
+			margin-bottom: 10px;
+		}
+		#detail .close-btn {
+			position: absolute;
+			top: 8px;
+			right: 12px;
+			cursor: pointer;
+			color: var(--text-dim);
+			font-size: 16px;
+		}
+		#detail .close-btn:hover { color: var(--text-white); }
+		#detail table { width: 100%; font-size: 12px; }
+		#detail td { padding: 3px 0; vertical-align: top; }
+		#detail td:first-child { color: var(--text-dim); padding-right: 10px; white-space: nowrap; }
+		#detail .dep-list { list-style: none; padding: 0; }
+		#detail .dep-list li {
+			padding: 3px 0;
+			font-family: var(--mono);
+			font-size: 11px;
+			color: var(--text);
+			cursor: pointer;
+			transition: color 0.1s;
+		}
+		#detail .dep-list li:hover { color: var(--accent); }
+		#detail .section-title {
+			font-size: 11px;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			color: var(--text-dim);
+			margin: 12px 0 6px;
+		}
+
+		/* ── Loading ── */
+		#loading {
+			position: absolute;
+			inset: 0;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			color: var(--text-dim);
+			font-size: 14px;
+			z-index: 20;
+		}
+		.hidden { display: none !important; }
+
+		/* ── Search ── */
+		#search-wrap {
+			padding: 8px 16px 4px;
+			border-bottom: 1px solid var(--border);
+		}
+		#search {
+			width: 100%;
+			background: rgba(0,0,0,0.3);
+			border: 1px solid var(--border);
+			color: var(--text-bright);
+			padding: 6px 10px;
+			border-radius: 6px;
+			font-size: 12px;
+			font-family: var(--mono);
+			outline: none;
+		}
+		#search:focus { border-color: var(--accent-dim); }
+		#search::placeholder { color: var(--text-dim); }
+
+		/* ── Violations panel ── */
+		.violation-item {
+			padding: 8px 16px;
+			font-size: 11px;
+			font-family: var(--mono);
+			border-bottom: 1px solid rgba(46, 53, 80, 0.3);
+		}
+		.violation-item .v-rule { color: var(--red); font-weight: 600; }
+		.violation-item .v-from { color: var(--orange); }
+		.violation-item .v-to { color: var(--text); }
+	</style>
+</head>
+<body>
+<div id="app">
+	<aside id="sidebar">
+		<h1>🦞 Dev Insights</h1>
+		<div id="search-wrap"><input id="search" placeholder="Search modules..." /></div>
+		<nav id="nav"></nav>
+		<div id="stats"></div>
+	</aside>
+	<div id="main">
+		<div id="loading">Loading dependency graph...</div>
+		<canvas id="graph-canvas"></canvas>
+		<div id="toolbar">
+			<button onclick="zoomIn()">+</button>
+			<button onclick="zoomOut()">−</button>
+			<button onclick="resetView()">Reset</button>
+			<button onclick="toggleLayout()">Layout</button>
+		</div>
+		<div id="legend">
+			<span><span class="legend-dot" style="background:#5c9eff"></span>client</span>
+			<span><span class="legend-dot" style="background:#a78bfa"></span>server</span>
+			<span><span class="legend-dot" style="background:#a3e635"></span>shared</span>
+			<span><span class="legend-dot" style="background:#f43f5e"></span>violation</span>
+		</div>
+		<div id="detail">
+			<span class="close-btn" onclick="hideDetail()">✕</span>
+			<h2 id="detail-name"></h2>
+			<div id="detail-body"></div>
+		</div>
+	</div>
+</div>
+
+<script type="module">
+import "/src/client/dev-insights/app.ts";
+</script>
+</body>
+</html>

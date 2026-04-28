@@ -17,6 +17,7 @@ export default defineConfig({
 				practice: resolve(__dirname, "pages/practice.html"),
 				garage: resolve(__dirname, "pages/garage.html"),
 				editor: resolve(__dirname, "pages/editor.html"),
+				insights: resolve(__dirname, "pages/dev-insights.html"),
 			},
 			output: {
 				entryFileNames: "assets/[name]-[hash].js",
@@ -56,6 +57,7 @@ export default defineConfig({
 				server.middlewares.use((req, _res, next) => {
 					const pageMap: Record<string, string> = {
 						"/editor": "/pages/editor.html",
+						"/dev-insights": "/pages/dev-insights.html",
 						"/practice": "/pages/practice.html",
 						"/world": "/pages/world.html",
 						"/garage": "/pages/garage.html",
